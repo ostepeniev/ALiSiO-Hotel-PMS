@@ -1,0 +1,47 @@
+name: Deploy ALiSiO PMS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            cd /root/projects/alisio-pms
+
+            # Pull latest code
+            if [ ! -d ".git" ]; then
+              cd ..
+              rm -rf alisio-pms
+              git clone https://github.com/ostepeniev/ALiSiO-Hotel-PMS.git alisio-pms
+              cd alisio-pms
+            else
+              git fetch origin
+              git reset --hard origin/main
+            fi
+
+            # Ensure data dir exists (DB lives here, excluded from git)
+            mkdir -p data
+
+            # Install dependencies
+            npm ci --production=false
+
+            # Build Next.js
+            npm run build
+
+            # Restart service
+            systemctl restart alisio-pms
+            echo "✅ Deploy complete"
+            systemctl status alisio-pms --no-pager

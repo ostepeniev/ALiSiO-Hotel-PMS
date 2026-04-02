@@ -1,0 +1,20 @@
+[Unit]
+Description=ALiSiO PMS - Property Management System
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/projects/alisio-pms
+ExecStart=/usr/bin/node node_modules/.bin/next start -p 3001
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3001
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=alisio-pms
+
+[Install]
+WantedBy=multi-user.target
