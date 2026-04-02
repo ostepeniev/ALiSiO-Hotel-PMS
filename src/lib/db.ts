@@ -1290,6 +1290,25 @@ function runMigrations(database: any) {
   try {
     database.exec("ALTER TABLE booking_sources ADD COLUMN city_tax_included_default INTEGER DEFAULT 0");
   } catch { /* column already exists */ }
+
+  // --- Migration: booking_activity_log table ---
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS booking_activity_log (
+        id TEXT PRIMARY KEY,
+        reservation_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        details TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE
+      )
+    `);
+  } catch { /* already exists */ }
+
+  // --- Migration: add internal_notes to reservations ---
+  try {
+    database.exec("ALTER TABLE reservations ADD COLUMN internal_notes TEXT");
+  } catch { /* column already exists */ }
 }
 
 // Generate a random 12-char token for guest pages

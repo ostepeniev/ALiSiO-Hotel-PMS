@@ -154,7 +154,9 @@ export default function CalendarPage() {
     status: 'confirmed', paymentStatus: 'unpaid',
     totalPrice: '', commissionAmount: '',
     cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending',
+    internalNotes: '',
   });
+  const [tooltip, setTooltip] = useState<{ booking: BookingRow; x: number; y: number } | null>(null);
 
   // Build dynamic source map
   const sourceMap = useMemo(() => {
@@ -384,6 +386,7 @@ export default function CalendarPage() {
       cityTaxAmount: String((b as any).city_tax_amount || ''),
       cityTaxIncluded: !!(b as any).city_tax_included,
       cityTaxPaid: (b as any).city_tax_paid || 'pending',
+      internalNotes: (b as any).internal_notes || '',
     });
     setEditBooking(b);
     setViewBooking(null);
@@ -427,6 +430,7 @@ export default function CalendarPage() {
           city_tax_amount: Number(form.cityTaxAmount) || 0,
           city_tax_included: form.cityTaxIncluded ? 1 : 0,
           city_tax_paid: form.cityTaxPaid,
+          internal_notes: form.internalNotes || null,
         }),
       });
       if (res.ok) {
@@ -476,6 +480,7 @@ export default function CalendarPage() {
           cityTaxAmount: Number(form.cityTaxAmount) || 0,
           cityTaxIncluded: form.cityTaxIncluded,
           cityTaxPaid: form.cityTaxPaid,
+          internalNotes: form.internalNotes || null,
         }),
       });
       if (res.ok) {
@@ -540,7 +545,7 @@ export default function CalendarPage() {
               <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <Users size={14} /> Групове
               </button>
-              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending' }); setShowNewBooking(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending', internalNotes: '' }); setShowNewBooking(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <Plus size={14} /> Нове бронювання
               </button>
             </div>
@@ -754,7 +759,21 @@ export default function CalendarPage() {
                                 borderLeft: isTd ? '2px solid var(--accent-primary)' : 'none',
                                 borderRightColor: isTd ? 'var(--accent-primary)' : 'var(--border-primary)',
                                 background: isTd ? 'rgba(96, 165, 250, 0.06)' : isWknd ? 'rgba(255,255,255,0.015)' : 'transparent',
-                              }} />
+                                cursor: 'pointer',
+                              }}
+                              onClick={() => {
+                                const ds = day.toISOString().split('T')[0];
+                                const nextDay = new Date(day); nextDay.setDate(nextDay.getDate() + 1);
+                                const de = nextDay.toISOString().split('T')[0];
+                                setForm(p => ({
+                                  ...p,
+                                  unitId: unit.id, checkIn: ds, checkOut: de,
+                                  category: unit.category_type,
+                                  cityTaxAmount: recalcCityTax(p.adults, ds, de),
+                                }));
+                                setShowNewBooking(true);
+                              }}
+                              />
                             );
                           })}
 
@@ -762,33 +781,40 @@ export default function CalendarPage() {
                           {unitBookings.map(booking => {
                             const bar = getBarStyle(booking);
                             if (!bar) return null;
-                            const bgColor = statusColors[booking.status] || '#6c7086';
+                            const srcColor = sourceMap[booking.source]?.color || '#6c7086';
+                            const stColor = statusColors[booking.status] || '#6c7086';
                             return (
                               <div
                                 key={booking.id}
                                 onClick={() => openBookingDetails(booking.id)}
-                                title={`${booking.first_name} ${booking.last_name} — ${sourceMap[booking.source]?.label || booking.source} ${booking.nights} н.`}
+                                onMouseEnter={e => {
+                                  const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                  setTooltip({ booking, x: rect.left + rect.width / 2, y: rect.top - 8 });
+                                }}
+                                onMouseLeave={() => setTooltip(null)}
                                 style={{
                                   position: 'absolute', top: 4, height: ROW_H - 8,
                                   left: bar.left, width: bar.width,
-                                  background: `linear-gradient(135deg, ${bgColor}dd, ${bgColor}99)`,
+                                  background: `linear-gradient(135deg, ${srcColor}dd, ${srcColor}99)`,
+                                  borderLeft: `3px solid ${stColor}`,
                                   borderRadius: 6, display: 'flex', alignItems: 'center',
                                   padding: '0 8px', overflow: 'hidden', cursor: 'pointer',
-                                  gap: 6, zIndex: 2,
-                                  boxShadow: `0 1px 4px ${bgColor}44`,
+                                  gap: 4, zIndex: 2,
+                                  boxShadow: `0 1px 4px ${srcColor}44`,
                                   transition: 'transform 0.15s, box-shadow 0.15s',
                                 }}
-                                onMouseEnter={e => { (e.target as HTMLElement).style.transform = 'scaleY(1.08)'; (e.target as HTMLElement).style.boxShadow = `0 2px 8px ${bgColor}66`; }}
-                                onMouseLeave={e => { (e.target as HTMLElement).style.transform = ''; (e.target as HTMLElement).style.boxShadow = `0 1px 4px ${bgColor}44`; }}
                               >
                                 <span style={{ fontWeight: 700, fontSize: 11, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {booking.first_name} {booking.last_name}
                                 </span>
                                 <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>
-                                  {sourceMap[booking.source]?.label || booking.source} {booking.nights} н.
+                                  {booking.nights}н.
                                 </span>
+                                {(booking as any).internal_notes && (
+                                  <span style={{ fontSize: 9 }}>📝</span>
+                                )}
                                 {booking.payment_status && booking.payment_status !== 'paid' && (
-                                  <span title={PAYMENT_STATUS_MAP[booking.payment_status]?.label || booking.payment_status} style={{
+                                  <span style={{
                                     fontSize: 10, fontWeight: 700, lineHeight: 1,
                                     color: PAYMENT_STATUS_MAP[booking.payment_status]?.color || '#888',
                                     background: 'rgba(0,0,0,0.3)', borderRadius: 4, padding: '1px 4px',
@@ -816,6 +842,45 @@ export default function CalendarPage() {
           <Check size={16} /> {toast}
         </div>
       )}
+
+      {/* ─── Today Red Vertical Line (overlay hint) ─── */}
+      <style>{`
+        @keyframes todayPulse { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.5; } }
+      `}</style>
+
+      {/* ─── Custom Tooltip ───────── */}
+      {tooltip && (() => {
+        const b = tooltip.booking;
+        const pm = PAYMENT_STATUS_MAP[b.payment_status] || PAYMENT_STATUS_MAP.unpaid;
+        return (
+          <div style={{
+            position: 'fixed', left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)',
+            zIndex: 9999, pointerEvents: 'none',
+            background: 'var(--bg-card)', border: '1px solid var(--border-primary)',
+            borderRadius: 10, padding: '10px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            minWidth: 220, maxWidth: 300,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{b.first_name} {b.last_name}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', fontSize: 12 }}>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Заїзд:</span> {b.check_in}</div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Виїзд:</span> {b.check_out}</div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Ночей:</span> {b.nights}</div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Гостей:</span> {b.adults} дор.{b.children > 0 ? ` + ${b.children} діт.` : ''}</div>
+              <div><span style={{ color: 'var(--text-tertiary)' }}>Сума:</span> <strong>{(b.total_price || 0).toLocaleString()} CZK</strong></div>
+              <div><span style={{ color: pm.color }}>{pm.icon} {pm.label}</span></div>
+            </div>
+            <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086', fontSize: 11 }}>
+                {sourceMap[b.source]?.label || b.source}
+              </span>
+              <span className={`badge ${STATUS_MAP[b.status]?.badge}`} style={{ fontSize: 11 }}>{STATUS_MAP[b.status]?.label || b.status}</span>
+            </div>
+            {b.guest_phone && <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>📞 {b.guest_phone}</div>}
+            {(b as any).internal_notes && <div style={{ fontSize: 11, color: '#facc15', marginTop: 4 }}>📝 {(b as any).internal_notes.substring(0, 60)}{(b as any).internal_notes.length > 60 ? '...' : ''}</div>}
+            <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%) rotate(45deg)', width: 10, height: 10, background: 'var(--bg-card)', borderRight: '1px solid var(--border-primary)', borderBottom: '1px solid var(--border-primary)' }} />
+          </div>
+        );
+      })()}
 
       {/* ─── View Booking Modal (same as Bookings page) ───────── */}
       {viewBooking && (
@@ -1072,6 +1137,14 @@ export default function CalendarPage() {
               </div>
             </div>
 
+            {/* 📝 Notes */}
+            {(viewBooking as any).internal_notes && (
+              <div style={{ padding: 12, background: 'rgba(250,204,21,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(250,204,21,0.2)' }}>
+                <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>📝 Примітки</div>
+                <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{(viewBooking as any).internal_notes}</div>
+              </div>
+            )}
+
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setViewBooking(null)}>Закрити</button>
               {(viewBooking as any).guest_page_token && (
@@ -1188,6 +1261,13 @@ export default function CalendarPage() {
                 </div>
               </div>
             </div>
+              {/* 📝 Примітки */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📝 Примітки</div>
+                <textarea className="form-input" placeholder="Внутрішні примітки..."
+                  value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))}
+                  style={{ minHeight: 50, resize: 'vertical' }} />
+              </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setEditBooking(null)}>Скасувати</button>
               <button className="btn btn-primary" onClick={handleSaveEdit} disabled={saving}>
@@ -1292,6 +1372,13 @@ export default function CalendarPage() {
                   <input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
                   <span>Включено у вартість</span>
                 </div>
+              </div>
+              {/* 📝 Примітки */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📝 Примітки</div>
+                <textarea className="form-input" placeholder="Внутрішні примітки..."
+                  value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))}
+                  style={{ minHeight: 50, resize: 'vertical' }} />
               </div>
             </div>
             <div className="modal-footer">

@@ -14,8 +14,9 @@ export async function GET(request: NextRequest) {
     let query = `
       SELECT
         r.id, r.check_in, r.check_out, r.nights, r.adults, r.children,
-        r.status, r.payment_status, r.source, r.total_price, r.notes, r.created_at, r.guest_page_token,
+        r.status, r.payment_status, r.source, r.total_price, r.notes, r.internal_notes, r.created_at, r.guest_page_token,
         r.group_id, r.commission_amount,
+        r.city_tax_amount, r.city_tax_included, r.city_tax_paid,
         g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone,
         u.id as unit_id, u.name as unit_name, u.code as unit_code,
         c.id as category_id, c.name as category_name, c.type as category_type,
@@ -56,6 +57,24 @@ export async function GET(request: NextRequest) {
       params.push(paymentStatus);
     }
 
+    const dateFrom = searchParams.get('date_from') || '';
+    if (dateFrom) {
+      query += ' AND r.check_in >= ?';
+      params.push(dateFrom);
+    }
+
+    const dateTo = searchParams.get('date_to') || '';
+    if (dateTo) {
+      query += ' AND r.check_in <= ?';
+      params.push(dateTo);
+    }
+
+    const sourceFilter = searchParams.get('source') || '';
+    if (sourceFilter) {
+      query += ' AND r.source = ?';
+      params.push(sourceFilter);
+    }
+
     query += ' ORDER BY r.check_in ASC';
 
     const rows = db.prepare(query).all(...params);
@@ -79,6 +98,7 @@ export async function POST(request: NextRequest) {
       adults, children, status, source, totalPrice,
       commissionAmount: commissionOverride,
       cityTaxAmount, cityTaxIncluded, cityTaxPaid,
+      internalNotes,
     } = body;
 
     if (!firstName || !lastName || !unitId || !checkIn || !checkOut) {
@@ -146,9 +166,9 @@ export async function POST(request: NextRequest) {
     const guestPageToken = (bookingStatus === 'confirmed' || bookingStatus === 'checked_in') ? generateGuestToken() : null;
 
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, commission_amount, guest_page_token, city_tax_amount, city_tax_included, city_tax_paid)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(resId, unit.property_id, unitId, guestId, checkIn, checkOut, nights || 1, adults || 1, children || 0, bookingStatus, body.paymentStatus || 'unpaid', source || 'direct', totalPrice || 0, commissionAmount, guestPageToken, finalCityTaxAmount, finalCityTaxIncluded, finalCityTaxPaid);
+      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, commission_amount, guest_page_token, city_tax_amount, city_tax_included, city_tax_paid, internal_notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(resId, unit.property_id, unitId, guestId, checkIn, checkOut, nights || 1, adults || 1, children || 0, bookingStatus, body.paymentStatus || 'unpaid', source || 'direct', totalPrice || 0, commissionAmount, guestPageToken, finalCityTaxAmount, finalCityTaxIncluded, finalCityTaxPaid, internalNotes || null);
 
     return NextResponse.json({ id: resId, guestId, guestPageToken }, { status: 201 });
   } catch (error) {

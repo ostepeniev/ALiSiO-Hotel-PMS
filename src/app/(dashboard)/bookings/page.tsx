@@ -59,6 +59,10 @@ interface BookingRow {
   group_id: string | null;
   commission_amount: number;
   guest_page_token: string | null;
+  internal_notes: string | null;
+  city_tax_amount: number;
+  city_tax_included: number;
+  city_tax_paid: string;
 }
 
 interface GroupRow {
@@ -146,6 +150,7 @@ function emptyForm() {
     cityTaxAmount: '',
     cityTaxIncluded: false,
     cityTaxPaid: 'pending',
+    internalNotes: '',
   };
 }
 
@@ -196,6 +201,11 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [sortCol, setSortCol] = useState<string>('check_in');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   /* ── modals ───────────────────────────────────────── */
   const [showNewBooking, setShowNewBooking] = useState(false);
@@ -205,10 +215,11 @@ export default function BookingsPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  /* ── payments ─────────────────────────────────────── */
+  /* ── payments + activity ──────────────────────────── */
   const [payments, setPayments] = useState<any[]>([]);
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
+  const [activityLog, setActivityLog] = useState<any[]>([]);
   const onMenuClick = useMobileMenu();
 
   /* ── group bookings ──────────────────────────────── */
@@ -227,6 +238,14 @@ export default function BookingsPage() {
 
   // Build merged list: group headers + children interleaved with standalone bookings
   const mergedBookingRows = useMemo(() => {
+    // Sort bookings first
+    const sorted = [...bookings].sort((a, b) => {
+      const aVal = (a as any)[sortCol] ?? '';
+      const bVal = (b as any)[sortCol] ?? '';
+      const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
     const rows: Array<
       | { type: 'booking'; data: BookingRow }
       | { type: 'group'; data: GroupRow }
@@ -236,30 +255,27 @@ export default function BookingsPage() {
     const groupMap = new Map<string, GroupRow>();
     for (const g of groupBookings) groupMap.set(g.id, g);
 
-    for (const b of bookings) {
+    for (const b of sorted) {
       if (b.group_id && groupMap.has(b.group_id)) {
         if (!seenGroups.has(b.group_id)) {
           seenGroups.add(b.group_id);
           rows.push({ type: 'group', data: groupMap.get(b.group_id)! });
-          // Insert all children for this group right after the header
-          const children = bookings.filter(bb => bb.group_id === b.group_id);
+          const children = sorted.filter(bb => bb.group_id === b.group_id);
           for (const c of children) {
             rows.push({ type: 'child', data: c, groupId: b.group_id });
           }
         }
-        // Skip individual push — already handled above
       } else {
         rows.push({ type: 'booking', data: b });
       }
     }
-    // Also add groups that have no matching bookings in the current filter
     for (const g of groupBookings) {
       if (!seenGroups.has(g.id)) {
         rows.push({ type: 'group', data: g });
       }
     }
     return rows;
-  }, [bookings, groupBookings]);
+  }, [bookings, groupBookings, sortCol, sortDir]);
 
   const fetchGroupBookings = useCallback(async () => {
     try {
@@ -288,6 +304,21 @@ export default function BookingsPage() {
     } catch (e) { console.error('Failed to fetch payments', e); }
   }, []);
 
+  const fetchActivity = useCallback(async (resId: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${resId}/activity`);
+      const data = await res.json();
+      if (Array.isArray(data)) setActivityLog(data);
+    } catch { setActivityLog([]); }
+  }, []);
+
+  const openViewBooking = useCallback((b: BookingRow) => {
+    setViewBooking(b);
+    fetchPayments(b.id);
+    fetchActivity(b.id);
+    setShowPayForm(false);
+  }, [fetchPayments, fetchActivity]);
+
   /* ── fetch bookings ───────────────────────────────── */
   const fetchBookings = useCallback(async () => {
     setLoading(true);
@@ -297,6 +328,9 @@ export default function BookingsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (categoryFilter) params.set('category', categoryFilter);
       if (paymentFilter) params.set('payment_status', paymentFilter);
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (sourceFilter) params.set('source', sourceFilter);
 
       const res = await fetch(`/api/bookings?${params}`);
       const data = await res.json();
@@ -306,7 +340,7 @@ export default function BookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, categoryFilter, paymentFilter]);
+  }, [search, statusFilter, categoryFilter, paymentFilter, dateFrom, dateTo, sourceFilter]);
 
   /* ── fetch ref data ───────────────────────────────── */
   useEffect(() => {
@@ -378,6 +412,7 @@ export default function BookingsPage() {
       cityTaxAmount: String((b as any).city_tax_amount || ''),
       cityTaxIncluded: !!(b as any).city_tax_included,
       cityTaxPaid: (b as any).city_tax_paid || 'pending',
+      internalNotes: b.internal_notes || '',
     });
     setEditBooking(b);
   };
@@ -508,6 +543,7 @@ export default function BookingsPage() {
           city_tax_amount: Number(form.cityTaxAmount) || 0,
           city_tax_included: form.cityTaxIncluded ? 1 : 0,
           city_tax_paid: form.cityTaxPaid,
+          internal_notes: form.internalNotes || null,
           firstName: form.firstName,
           lastName: form.lastName,
           email: form.email || undefined,
@@ -722,6 +758,13 @@ export default function BookingsPage() {
             <label className="form-label">Прізвище *</label>
             <input className="form-input" placeholder="Прізвище" value={form.lastName} onChange={(e) => setForm(p => ({ ...p, lastName: e.target.value }))} />
           </div>
+      {/* ── Примітки ── */}
+      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>📝 Примітки</h4>
+        <textarea className="form-input" placeholder="Внутрішні примітки (бачить лише персонал)..."
+          value={form.internalNotes} onChange={(e) => setForm(p => ({ ...p, internalNotes: e.target.value }))}
+          style={{ minHeight: 60, resize: 'vertical' }} />
+      </div>
         </div>
         <div className="form-row">
           <div className="form-group">
@@ -806,11 +849,26 @@ export default function BookingsPage() {
                 <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
-            {(search || statusFilter || categoryFilter || paymentFilter) && (
-              <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setStatusFilter(''); setCategoryFilter(''); setPaymentFilter(''); }}>
+            {(search || statusFilter || categoryFilter || paymentFilter || dateFrom || dateTo || sourceFilter) && (
+              <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setStatusFilter(''); setCategoryFilter(''); setPaymentFilter(''); setDateFrom(''); setDateTo(''); setSourceFilter(''); }}>
                 <X size={14} /> Скинути
               </button>
             )}
+          </div>
+          {/* Row 2: date + source */}
+          <div className="flex gap-3 items-center" style={{ flexWrap: 'wrap', marginTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <span style={{ color: 'var(--text-tertiary)' }}>Заїзд:</span>
+              <input className="form-input" type="date" style={{ width: 140 }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+              <input className="form-input" type="date" style={{ width: 140 }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+            <select className="form-select" style={{ width: 160 }} value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+              <option value="">Всі джерела</option>
+              {bookingSources.map((s: any) => (
+                <option key={s.code} value={s.code}>{s.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -848,17 +906,24 @@ export default function BookingsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Гість</th>
-                <th>Юніт</th>
-                <th>Заїзд</th>
-                <th>Виїзд</th>
-                <th>Ночей</th>
-                <th>Гостей</th>
-                <th>Статус</th>
-                <th>Оплата</th>
-                <th>Джерело</th>
-                <th>Сума</th>
-                <th></th>
+                {[
+                  { key: 'last_name', label: 'Гість' },
+                  { key: 'unit_name', label: 'Юніт' },
+                  { key: 'check_in', label: 'Заїзд' },
+                  { key: 'check_out', label: 'Виїзд' },
+                  { key: 'nights', label: 'Ночей' },
+                  { key: 'adults', label: 'Гостей' },
+                  { key: 'status', label: 'Статус' },
+                  { key: 'payment_status', label: 'Оплата' },
+                  { key: 'source', label: 'Джерело' },
+                  { key: 'total_price', label: 'Сума' },
+                  { key: '', label: '' },
+                ].map(col => (
+                  <th key={col.key || 'actions'} style={col.key ? { cursor: 'pointer', userSelect: 'none' } : {}}
+                    onClick={() => { if (col.key) { setSortCol(col.key); setSortDir(prev => sortCol === col.key ? (prev === 'asc' ? 'desc' : 'asc') : 'asc'); } }}>
+                    {col.label}{sortCol === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -915,7 +980,7 @@ export default function BookingsPage() {
                   const b = row.data;
                   return (
                     <tr key={b.id} style={{ cursor: 'pointer', background: 'rgba(99,102,241,0.03)' }}
-                      onClick={() => { setViewBooking(b); fetchPayments(b.id); setShowPayForm(false); }}>
+                      onClick={() => openViewBooking(b)}>
                       <td style={{ fontWeight: 500, paddingLeft: 40 }}>↳ {b.first_name} {b.last_name}</td>
                       <td><span className="badge badge-primary">{b.unit_name}</span></td>
                       <td>{b.check_in}</td><td>{b.check_out}</td><td>{b.nights}</td>
@@ -925,7 +990,7 @@ export default function BookingsPage() {
                       <td><span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086' }}>{sourceMap[b.source]?.label || b.source}</span></td>
                       <td><div style={{ fontWeight: 700 }}>{(b.total_price || 0).toLocaleString()} CZK</div>{(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}</td>
                       <td><div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                        <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути" onClick={() => { setViewBooking(b); fetchPayments(b.id); setShowPayForm(false); }}><Eye size={14} /></button>
+                        <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути" onClick={() => openViewBooking(b)}><Eye size={14} /></button>
                       </div></td>
                     </tr>
                   );
@@ -933,7 +998,7 @@ export default function BookingsPage() {
                 // type === 'booking' — standalone
                 const b = row.data;
                 return (
-                  <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => { setViewBooking(b); fetchPayments(b.id); setShowPayForm(false); }}>
+                  <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => openViewBooking(b)}>
                     <td style={{ fontWeight: 500 }}>{b.first_name} {b.last_name}</td>
                     <td><span className="badge badge-primary">{b.unit_name}</span></td>
                     <td>{b.check_in}</td><td>{b.check_out}</td><td>{b.nights}</td>
@@ -943,7 +1008,7 @@ export default function BookingsPage() {
                     <td><span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color || '#6c7086' }}>{sourceMap[b.source]?.label || b.source}</span></td>
                     <td><div style={{ fontWeight: 700 }}>{(b.total_price || 0).toLocaleString()} CZK</div>{(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}</td>
                     <td><div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути" onClick={() => { setViewBooking(b); fetchPayments(b.id); setShowPayForm(false); }}><Eye size={14} /></button>
+                      <button className="btn btn-sm btn-ghost btn-icon" title="Переглянути" onClick={() => openViewBooking(b)}><Eye size={14} /></button>
                       <button className="btn btn-sm btn-ghost btn-icon" title="Редагувати" onClick={() => openEditBooking(b)}><Edit3 size={14} /></button>
                       {b.guest_page_token && (
                         <button className="btn btn-sm btn-ghost btn-icon" title="Гостьова сторінка" style={{ color: 'var(--accent-primary)' }} onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}><ExternalLink size={14} /></button>
@@ -1007,7 +1072,7 @@ export default function BookingsPage() {
                 const b = row.data;
                 return (
                   <div key={b.id} className="booking-card" style={{ marginLeft: 20, borderLeft: '2px solid rgba(99,102,241,0.3)' }}
-                    onClick={() => { setViewBooking(b); fetchPayments(b.id); setShowPayForm(false); }}>
+                    onClick={() => openViewBooking(b)}>
                     <div className="booking-card-row">
                       <div className="booking-card-source">
                         <SourceIcon source={b.source} size={36} iconColor={sourceMap[b.source]?.color}
@@ -1034,7 +1099,7 @@ export default function BookingsPage() {
               // standalone booking
               const b = row.data;
               return (
-                <div key={b.id} className="booking-card" onClick={() => { setViewBooking(b); fetchPayments(b.id); setShowPayForm(false); }}>
+                <div key={b.id} className="booking-card" onClick={() => openViewBooking(b)}>
                   <div className="booking-card-row">
                     <div className="booking-card-source">
                       <SourceIcon source={b.source} size={36}
@@ -1358,6 +1423,38 @@ export default function BookingsPage() {
                   ))}
                 </div>
               </div>
+
+              {/* 📝 Internal Notes */}
+              {viewBooking.internal_notes && (
+                <div style={{ padding: 12, background: 'rgba(250,204,21,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(250,204,21,0.2)' }}>
+                  <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>📝 Примітки</div>
+                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{viewBooking.internal_notes}</div>
+                </div>
+              )}
+
+              {/* 📋 Activity Timeline */}
+              {activityLog.length > 0 && (
+                <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 10 }}>📋 Історія</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {activityLog.slice(0, 10).map((log: any) => {
+                      const actionIcons: Record<string, string> = {
+                        status_change: '🔄', payment_status_change: '💳',
+                        price_change: '💰', note: '📝', created: '➕',
+                      };
+                      return (
+                        <div key={log.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                          <span style={{ fontSize: 14 }}>{actionIcons[log.action] || '•'}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12 }}>{log.details}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>{log.created_at}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </Modal>

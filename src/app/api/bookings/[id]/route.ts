@@ -90,6 +90,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
       }
     }
+    // Auto-log activity for significant changes
+    try {
+      const logActions: { action: string; details: string }[] = [];
+      if (body.status) logActions.push({ action: 'status_change', details: `Статус → ${body.status}` });
+      if (body.payment_status) logActions.push({ action: 'payment_status_change', details: `Оплата → ${body.payment_status}` });
+      if (body.total_price !== undefined) logActions.push({ action: 'price_change', details: `Ціна → ${body.total_price} CZK` });
+      for (const log of logActions) {
+        db.prepare("INSERT INTO booking_activity_log (id, reservation_id, action, details) VALUES (?, ?, ?, ?)")
+          .run(`al_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, id, log.action, log.details);
+      }
+    } catch { /* non-critical */ }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
