@@ -141,6 +141,11 @@ function emptyForm() {
     phone: '',
     status: 'confirmed',
     paymentStatus: 'unpaid',
+    totalPrice: '',
+    commissionAmount: '',
+    cityTaxAmount: '',
+    cityTaxIncluded: false,
+    cityTaxPaid: 'pending',
   };
 }
 
@@ -368,8 +373,35 @@ export default function BookingsPage() {
       phone: b.guest_phone || '',
       status: b.status,
       paymentStatus: b.payment_status || 'unpaid',
+      totalPrice: String(b.total_price || ''),
+      commissionAmount: String((b as any).commission_amount || ''),
+      cityTaxAmount: String((b as any).city_tax_amount || ''),
+      cityTaxIncluded: !!(b as any).city_tax_included,
+      cityTaxPaid: (b as any).city_tax_paid || 'pending',
     });
     setEditBooking(b);
+  };
+
+  /* ── auto-calc helpers ───────────────────────────── */
+  const getSourceCommissionPct = (sourceCode: string) => {
+    const src = bookingSources.find((s: any) => s.code === sourceCode);
+    return src?.commission_percent || 0;
+  };
+
+  const recalcCommission = (price: string, sourceCode: string) => {
+    const pct = getSourceCommissionPct(sourceCode);
+    if (pct > 0 && Number(price) > 0) {
+      return String(Math.round(Number(price) * pct / 100));
+    }
+    return '0';
+  };
+
+  const recalcCityTax = (adults: number, checkIn: string, checkOut: string) => {
+    const nights = calcNights(checkIn, checkOut);
+    if (nights > 0 && adults > 0) {
+      return String(adults * nights * 25);
+    }
+    return '0';
   };
 
   /* ── create booking ───────────────────────────────── */
@@ -396,17 +428,19 @@ export default function BookingsPage() {
 
     setSaving(true);
     try {
-      // Auto-calculate price from pricing API
-      let totalPrice = 0;
-      try {
-        const quoteRes = await fetch('/api/pricing/quote', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ unitTypeId: form.unitTypeId, checkIn: form.checkIn, checkOut: form.checkOut, adults: form.adults, children: form.children }),
-        });
-        const quoteData = await quoteRes.json();
-        if (quoteRes.ok && quoteData.total > 0) totalPrice = quoteData.total;
-      } catch { /* fallback to 0 */ }
+      // Use form price or auto-calculate from pricing API
+      let totalPrice = Number(form.totalPrice) || 0;
+      if (!totalPrice) {
+        try {
+          const quoteRes = await fetch('/api/pricing/quote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ unitTypeId: form.unitTypeId, checkIn: form.checkIn, checkOut: form.checkOut, adults: form.adults, children: form.children }),
+          });
+          const quoteData = await quoteRes.json();
+          if (quoteRes.ok && quoteData.total > 0) totalPrice = quoteData.total;
+        } catch { /* fallback to 0 */ }
+      }
 
       const res = await fetch('/api/bookings', {
         method: 'POST',
@@ -426,6 +460,10 @@ export default function BookingsPage() {
           paymentStatus: form.paymentStatus,
           source: form.source,
           totalPrice,
+          commissionAmount: form.commissionAmount ? Number(form.commissionAmount) : undefined,
+          cityTaxAmount: Number(form.cityTaxAmount) || 0,
+          cityTaxIncluded: form.cityTaxIncluded,
+          cityTaxPaid: form.cityTaxPaid,
         }),
       });
       const data = await res.json();
@@ -450,19 +488,7 @@ export default function BookingsPage() {
 
     setSaving(true);
     try {
-      // Auto-calculate price from pricing API
-      let totalPrice: number | undefined = undefined;
-      if (nights > 0) {
-        try {
-          const quoteRes = await fetch('/api/pricing/quote', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ unitTypeId: form.unitTypeId, checkIn: form.checkIn, checkOut: form.checkOut, adults: form.adults, children: form.children }),
-          });
-          const quoteData = await quoteRes.json();
-          if (quoteRes.ok && quoteData.total > 0) totalPrice = quoteData.total;
-        } catch { /* keep undefined */ }
-      }
+      const totalPrice = form.totalPrice ? Number(form.totalPrice) : undefined;
 
       const res = await fetch(`/api/bookings/${editBooking.id}`, {
         method: 'PATCH',
@@ -478,6 +504,10 @@ export default function BookingsPage() {
           payment_status: form.paymentStatus,
           source: form.source,
           total_price: totalPrice,
+          commission_amount: form.commissionAmount ? Number(form.commissionAmount) : 0,
+          city_tax_amount: Number(form.cityTaxAmount) || 0,
+          city_tax_included: form.cityTaxIncluded ? 1 : 0,
+          city_tax_paid: form.cityTaxPaid,
           firstName: form.firstName,
           lastName: form.lastName,
           email: form.email || undefined,
@@ -571,7 +601,12 @@ export default function BookingsPage() {
         </div>
         <div className="form-group">
           <label className="form-label">Джерело</label>
-          <select className="form-select" value={form.source} onChange={(e) => setForm(p => ({ ...p, source: e.target.value }))}>
+          <select className="form-select" value={form.source} onChange={(e) => {
+            const newSource = e.target.value;
+            const newCommission = recalcCommission(form.totalPrice, newSource);
+            const src = bookingSources.find((s: any) => s.code === newSource);
+            setForm(p => ({ ...p, source: newSource, commissionAmount: newCommission, cityTaxIncluded: !!src?.city_tax_included_default }));
+          }}>
             {bookingSources.map(s => (
               <option key={s.code} value={s.code}>{s.name}</option>
             ))}
@@ -597,7 +632,10 @@ export default function BookingsPage() {
       <div className="form-row">
         <div className="form-group">
           <label className="form-label">Дорослих</label>
-          <input className="form-input" type="number" value={form.adults} onChange={(e) => setForm(p => ({ ...p, adults: Number(e.target.value) }))} min={1} max={10} />
+          <input className="form-input" type="number" value={form.adults} onChange={(e) => {
+            const adults = Number(e.target.value);
+            setForm(p => ({ ...p, adults, cityTaxAmount: recalcCityTax(adults, p.checkIn, p.checkOut) }));
+          }} min={1} max={10} />
         </div>
         <div className="form-group">
           <label className="form-label">Дітей</label>
@@ -627,6 +665,52 @@ export default function BookingsPage() {
         </div>
         </>
       )}
+      {/* ── Фінанси ── */}
+      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>💰 Фінанси</h4>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Вартість (CZK)</label>
+            <input className="form-input" type="number" placeholder="0" value={form.totalPrice}
+              onChange={(e) => {
+                const price = e.target.value;
+                setForm(p => ({ ...p, totalPrice: price, commissionAmount: recalcCommission(price, p.source) }));
+              }} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Комісія (CZK){getSourceCommissionPct(form.source) > 0 && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>авто: {getSourceCommissionPct(form.source)}%</span>}</label>
+            <input className="form-input" type="number" placeholder="0" value={form.commissionAmount}
+              onChange={(e) => setForm(p => ({ ...p, commissionAmount: e.target.value }))} />
+          </div>
+        </div>
+        {Number(form.totalPrice) > 0 && Number(form.commissionAmount) > 0 && (
+          <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 8 }}>Чиста ставка: {(Number(form.totalPrice) - Number(form.commissionAmount)).toLocaleString()} CZK</div>
+        )}
+      </div>
+      {/* ── Туристичний збір ── */}
+      <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>🏛️ Туристичний збір</h4>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Сума збору (CZK){form.checkIn && form.checkOut && form.adults > 0 && <span style={{ fontSize: 11, color: 'var(--text-tertiary)', marginLeft: 4 }}>авто: {form.adults}×{calcNights(form.checkIn, form.checkOut)}×25</span>}</label>
+            <input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount}
+              onChange={(e) => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Статус збору</label>
+            <select className="form-select" value={form.cityTaxPaid} onChange={(e) => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))}>
+              <option value="pending">⏳ Очікує оплати</option>
+              <option value="paid">✅ Оплачено</option>
+              <option value="exempt">🚫 Звільнено</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <input type="checkbox" id="cityTaxIncluded" checked={form.cityTaxIncluded}
+            onChange={(e) => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
+          <label htmlFor="cityTaxIncluded" style={{ fontSize: 13, cursor: 'pointer' }}>Збір включено у вартість бронювання</label>
+        </div>
+      </div>
       <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 16, paddingTop: 16 }}>
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Дані гостя</h4>
         <div className="form-row">
@@ -1086,7 +1170,28 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* 💰 Payment Section */}
+              {/* 🏛️ City Tax display */}
+              {(() => {
+                const taxAmt = (viewBooking as any).city_tax_amount || 0;
+                const taxIncluded = !!(viewBooking as any).city_tax_included;
+                const taxPaid = (viewBooking as any).city_tax_paid || 'pending';
+                const taxStatusMap: Record<string, { label: string; color: string; icon: string }> = {
+                  pending: { label: 'Очікує оплати', color: '#f59e0b', icon: '⏳' },
+                  paid: { label: 'Оплачено', color: '#22c55e', icon: '✅' },
+                  exempt: { label: 'Звільнено', color: '#6c7086', icon: '🚫' },
+                };
+                const ts = taxStatusMap[taxPaid] || taxStatusMap.pending;
+                return (
+                  <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>🏛️ Туристичний збір</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{taxAmt.toLocaleString()} CZK</div>
+                      {taxIncluded && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Включено у вартість</div>}
+                    </div>
+                    <span className="badge" style={{ background: ts.color + '22', color: ts.color, fontSize: 12 }}>{ts.icon} {ts.label}</span>
+                  </div>
+                );
+              })()}
               {(() => {
                 const total = viewBooking.total_price || 0;
                 const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);

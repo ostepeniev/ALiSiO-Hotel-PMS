@@ -43,7 +43,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     console.log('[PATCH] booking id:', id, 'body:', JSON.stringify(body));
 
     // Build dynamic SET clause for reservations
-    const allowed = ['unit_id', 'check_in', 'check_out', 'nights', 'adults', 'children', 'infants', 'status', 'payment_status', 'source', 'total_price', 'commission_amount', 'notes', 'internal_notes'];
+    const allowed = ['unit_id', 'check_in', 'check_out', 'nights', 'adults', 'children', 'infants', 'status', 'payment_status', 'source', 'total_price', 'commission_amount', 'notes', 'internal_notes', 'city_tax_amount', 'city_tax_included', 'city_tax_paid'];
     const sets: string[] = [];
     const values: (string | number)[] = [];
 

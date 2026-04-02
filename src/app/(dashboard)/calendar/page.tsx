@@ -152,6 +152,8 @@ export default function CalendarPage() {
     checkIn: '', checkOut: '', adults: 2, children: 0,
     firstName: '', lastName: '', email: '', phone: '',
     status: 'confirmed', paymentStatus: 'unpaid',
+    totalPrice: '', commissionAmount: '',
+    cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending',
   });
 
   // Build dynamic source map
@@ -377,9 +379,33 @@ export default function CalendarPage() {
       firstName: b.first_name, lastName: b.last_name,
       email: b.guest_email || '', phone: b.guest_phone || '',
       status: b.status, paymentStatus: b.payment_status || 'unpaid',
+      totalPrice: String(b.total_price || ''),
+      commissionAmount: String((b as any).commission_amount || ''),
+      cityTaxAmount: String((b as any).city_tax_amount || ''),
+      cityTaxIncluded: !!(b as any).city_tax_included,
+      cityTaxPaid: (b as any).city_tax_paid || 'pending',
     });
     setEditBooking(b);
     setViewBooking(null);
+  };
+
+  // ─── Auto-calc helpers ──────
+  const getSourceCommissionPct = (sourceCode: string) => {
+    const src = bookingSources.find((s: any) => s.code === sourceCode);
+    return src?.commission_percent || 0;
+  };
+  const recalcCommission = (price: string, sourceCode: string) => {
+    const pct = getSourceCommissionPct(sourceCode);
+    if (pct > 0 && Number(price) > 0) return String(Math.round(Number(price) * pct / 100));
+    return '0';
+  };
+  const calcNightsLocal = (ci: string, co: string) => {
+    if (!ci || !co) return 0;
+    return Math.max(0, Math.floor((new Date(co).getTime() - new Date(ci).getTime()) / 86400000));
+  };
+  const recalcCityTax = (adults: number, ci: string, co: string) => {
+    const n = calcNightsLocal(ci, co);
+    return n > 0 && adults > 0 ? String(adults * n * 25) : '0';
   };
 
   // ─── Save Edit ──────
@@ -396,6 +422,11 @@ export default function CalendarPage() {
           status: form.status, payment_status: form.paymentStatus,
           source: form.source, firstName: form.firstName, lastName: form.lastName,
           email: form.email, phone: form.phone,
+          total_price: form.totalPrice ? Number(form.totalPrice) : undefined,
+          commission_amount: form.commissionAmount ? Number(form.commissionAmount) : 0,
+          city_tax_amount: Number(form.cityTaxAmount) || 0,
+          city_tax_included: form.cityTaxIncluded ? 1 : 0,
+          city_tax_paid: form.cityTaxPaid,
         }),
       });
       if (res.ok) {
@@ -425,11 +456,13 @@ export default function CalendarPage() {
     if (!unitId) { alert('Немає доступних юнітів'); return; }
     setSaving(true);
     try {
-      let totalPrice = 0;
-      try {
-        const qRes = await fetch(`/api/pricing/quote?unitTypeId=${form.unitTypeId}&checkIn=${form.checkIn}&checkOut=${form.checkOut}&adults=${form.adults}&children=${form.children}`);
-        if (qRes.ok) { const q = await qRes.json(); totalPrice = q.totalPrice || 0; }
-      } catch {}
+      let totalPrice = Number(form.totalPrice) || 0;
+      if (!totalPrice) {
+        try {
+          const qRes = await fetch(`/api/pricing/quote?unitTypeId=${form.unitTypeId}&checkIn=${form.checkIn}&checkOut=${form.checkOut}&adults=${form.adults}&children=${form.children}`);
+          if (qRes.ok) { const q = await qRes.json(); totalPrice = q.totalPrice || 0; }
+        } catch {}
+      }
       const res = await fetch('/api/bookings', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -439,6 +472,10 @@ export default function CalendarPage() {
           email: form.email, phone: form.phone,
           status: form.status, paymentStatus: form.paymentStatus,
           source: form.source, totalPrice,
+          commissionAmount: form.commissionAmount ? Number(form.commissionAmount) : undefined,
+          cityTaxAmount: Number(form.cityTaxAmount) || 0,
+          cityTaxIncluded: form.cityTaxIncluded,
+          cityTaxPaid: form.cityTaxPaid,
         }),
       });
       if (res.ok) {
@@ -503,7 +540,7 @@ export default function CalendarPage() {
               <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <Users size={14} /> Групове
               </button>
-              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid' }); setShowNewBooking(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending' }); setShowNewBooking(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <Plus size={14} /> Нове бронювання
               </button>
             </div>
@@ -843,6 +880,29 @@ export default function CalendarPage() {
                   </div>
                 </div>
 
+                {/* 🏛️ City Tax */}
+                {(() => {
+                  const taxAmt = (viewBooking as any).city_tax_amount || 0;
+                  const taxIncl = !!(viewBooking as any).city_tax_included;
+                  const taxPaid = (viewBooking as any).city_tax_paid || 'pending';
+                  const tsMap: Record<string, { label: string; color: string; icon: string }> = {
+                    pending: { label: 'Очікує', color: '#f59e0b', icon: '⏳' },
+                    paid: { label: 'Оплачено', color: '#22c55e', icon: '✅' },
+                    exempt: { label: 'Звільнено', color: '#6c7086', icon: '🚫' },
+                  };
+                  const ts = tsMap[taxPaid] || tsMap.pending;
+                  return (
+                    <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>🏛️ Туристичний збір</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{taxAmt.toLocaleString()} CZK</div>
+                        {taxIncl && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Включено у вартість</div>}
+                      </div>
+                      <span className="badge" style={{ background: ts.color + '22', color: ts.color, fontSize: 12 }}>{ts.icon} {ts.label}</span>
+                    </div>
+                  );
+                })()}
+
                 {/* 💰 Payment Section */}
                 {(() => {
                   const total = viewBooking.total_price || 0;
@@ -1088,6 +1148,45 @@ export default function CalendarPage() {
                   </select>
                 </div>
               </div>
+              {/* 💰 Фінанси */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>💰 Фінанси</div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Вартість (CZK)</label>
+                    <input className="form-input" type="number" placeholder="0" value={form.totalPrice}
+                      onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Комісія (CZK){getSourceCommissionPct(form.source) > 0 && <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 4 }}>{getSourceCommissionPct(form.source)}%</span>}</label>
+                    <input className="form-input" type="number" placeholder="0" value={form.commissionAmount}
+                      onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+              {/* 🏛️ Тур. збір */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>🏛️ Туристичний збір</div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Сума (CZK)</label>
+                    <input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount}
+                      onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Статус</label>
+                    <select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))}>
+                      <option value="pending">⏳ Очікує</option>
+                      <option value="paid">✅ Оплачено</option>
+                      <option value="exempt">🚫 Звільнено</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 }}>
+                  <input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
+                  <span>Включено у вартість</span>
+                </div>
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setEditBooking(null)}>Скасувати</button>
@@ -1148,12 +1247,51 @@ export default function CalendarPage() {
                 </div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value }))} /></div>
+                <div className="form-group"><label className="form-label">Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value, cityTaxAmount: recalcCityTax(p.adults, e.target.value, p.checkOut) }))} /></div>
+                <div className="form-group"><label className="form-label">Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value, cityTaxAmount: recalcCityTax(p.adults, p.checkIn, e.target.value) }))} /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Дорослих</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => setForm(p => ({ ...p, adults: Number(e.target.value) }))} /></div>
+                <div className="form-group"><label className="form-label">Дорослих</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => { const a = Number(e.target.value); setForm(p => ({ ...p, adults: a, cityTaxAmount: recalcCityTax(a, p.checkIn, p.checkOut) })); }} /></div>
                 <div className="form-group"><label className="form-label">Дітей</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} /></div>
+              </div>
+              {/* 💰 Фінанси */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>💰 Фінанси</div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Вартість (CZK)</label>
+                    <input className="form-input" type="number" placeholder="0" value={form.totalPrice}
+                      onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Комісія (CZK){getSourceCommissionPct(form.source) > 0 && <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 4 }}>{getSourceCommissionPct(form.source)}%</span>}</label>
+                    <input className="form-input" type="number" placeholder="0" value={form.commissionAmount}
+                      onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+              {/* 🏛️ Тур. збір */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>🏛️ Туристичний збір</div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Сума (CZK)</label>
+                    <input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount}
+                      onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Статус</label>
+                    <select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))}>
+                      <option value="pending">⏳ Очікує</option>
+                      <option value="paid">✅ Оплачено</option>
+                      <option value="exempt">🚫 Звільнено</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 }}>
+                  <input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
+                  <span>Включено у вартість</span>
+                </div>
               </div>
             </div>
             <div className="modal-footer">

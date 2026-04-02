@@ -1274,6 +1274,22 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.error('[DB] Building F renumbering error:', e.message);
   }
+
+  // --- Migration: add city_tax fields to reservations ---
+  try {
+    database.exec("ALTER TABLE reservations ADD COLUMN city_tax_amount REAL DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE reservations ADD COLUMN city_tax_included INTEGER DEFAULT 0");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE reservations ADD COLUMN city_tax_paid TEXT DEFAULT 'pending'");
+  } catch { /* column already exists */ }
+
+  // --- Migration: add city_tax_included_default to booking_sources ---
+  try {
+    database.exec("ALTER TABLE booking_sources ADD COLUMN city_tax_included_default INTEGER DEFAULT 0");
+  } catch { /* column already exists */ }
 }
 
 // Generate a random 12-char token for guest pages
