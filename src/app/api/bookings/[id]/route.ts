@@ -43,9 +43,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     console.log('[PATCH] booking id:', id, 'body:', JSON.stringify(body));
 
     // Build dynamic SET clause for reservations
-    const allowed = ['unit_id', 'check_in', 'check_out', 'nights', 'adults', 'children', 'infants', 'status', 'payment_status', 'source', 'total_price', 'commission_amount', 'notes', 'internal_notes', 'city_tax_amount', 'city_tax_included', 'city_tax_paid'];
+    const allowed = ['unit_id', 'check_in', 'check_out', 'nights', 'adults', 'children', 'infants', 'status', 'payment_status', 'source', 'total_price', 'commission_amount', 'notes', 'internal_notes', 'city_tax_amount', 'city_tax_included', 'city_tax_paid', 'registration_status'];
     const sets: string[] = [];
     const values: (string | number)[] = [];
+
+    // GATE: block check-in without full payment + registration
+    if (body.status === 'checked_in') {
+      const current = db.prepare('SELECT payment_status, registration_status FROM reservations WHERE id = ?').get(id) as any;
+      const payStatus = body.payment_status || current?.payment_status;
+      const regStatus = current?.registration_status;
+
+      if (payStatus !== 'paid') {
+        return NextResponse.json({ error: 'Неможливо заселити без повної оплати. Спочатку завершіть оплату.' }, { status: 422 });
+      }
+      if (regStatus !== 'registered') {
+        return NextResponse.json({ error: 'Неможливо заселити без реєстрації гостей. Заповніть документи всіх гостей.' }, { status: 422 });
+      }
+    }
 
     for (const key of allowed) {
       if (body[key] !== undefined) {

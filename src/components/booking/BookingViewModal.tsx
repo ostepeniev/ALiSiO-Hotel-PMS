@@ -1,0 +1,450 @@
+'use client';
+
+import React, { useState } from 'react';
+import {
+  Edit3, X, Save, Plus, Check, ArrowRight, Copy, ExternalLink,
+  Loader2, Trash2, Phone,
+} from 'lucide-react';
+
+function Modal({ open, onClose, title, children, footer, size }: {
+  open: boolean; onClose: () => void; title: string;
+  children: React.ReactNode; footer?: React.ReactNode; size?: 'lg';
+}) {
+  if (!open) return null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className={`modal ${size === 'lg' ? 'modal-lg' : ''}`} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 className="modal-title">{title}</h3>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-footer">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+const STATUS_MAP: Record<string, { label: string; badge: string }> = {
+  draft: { label: 'Чернетка', badge: 'badge-info' },
+  tentative: { label: 'Очікується', badge: 'badge-warning' },
+  confirmed: { label: 'Підтверджено', badge: 'badge-success' },
+  checked_in: { label: 'Заселено', badge: 'badge-primary' },
+  checked_out: { label: 'Виселено', badge: 'badge-info' },
+  cancelled: { label: 'Скасовано', badge: 'badge-danger' },
+};
+
+const METHOD_LABELS: Record<string, string> = {
+  cash: '💵 Готівка', card: '💳 Картою', bank_transfer: '🏦 На рахунок', invoice: '📄 Фактура',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  deposit: 'Передплата', full: 'Повна', partial: 'Часткова', refund: 'Повернення',
+};
+
+function toEur(czk: number) { return Math.round(czk / 25.5).toLocaleString(); }
+
+interface Props {
+  booking: any;
+  payments: any[];
+  registrations: any[];
+  activityLog: any[];
+  sourceMap: Record<string, { label: string; color: string }>;
+  onClose: () => void;
+  onEdit: () => void;
+  onChangeStatus: (id: string, status: string) => void;
+  onFetchPayments: (id: string) => void;
+  onFetchBookings: () => void;
+  onFetchRegistrations: (id: string) => void;
+  showToast: (msg: string) => void;
+  setBooking: (b: any) => void;
+}
+
+export default function BookingViewModal({
+  booking: b, payments, registrations, activityLog, sourceMap,
+  onClose, onEdit, onChangeStatus, onFetchPayments, onFetchBookings, onFetchRegistrations,
+  showToast, setBooking,
+}: Props) {
+  const [viewTab, setViewTab] = useState<'payment' | 'registration' | 'tax' | 'notes' | 'history'>('payment');
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
+  const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
+  const [savingReg, setSavingReg] = useState(false);
+
+  const total = b.total_price || 0;
+  const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
+  const remaining = Math.max(0, total - paid);
+  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
+  const isPaid = b.payment_status === 'paid';
+  const isRegistered = b.registration_status === 'registered';
+  const canCheckIn = isPaid && isRegistered;
+  const regNeeded = b.adults || 1;
+
+  const saveRegistration = async (formData: any) => {
+    setSavingReg(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/registrations`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Помилка'); return; }
+      setRegForm({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
+      onFetchRegistrations(b.id);
+      onFetchBookings();
+      showToast('Гостя зареєстровано!');
+    } catch { showToast('Помилка реєстрації'); }
+    finally { setSavingReg(false); }
+  };
+
+  const deleteRegistration = async (regId: string) => {
+    if (!confirm('Видалити реєстрацію гостя?')) return;
+    await fetch(`/api/bookings/${b.id}/registrations?reg_id=${regId}`, { method: 'DELETE' });
+    onFetchRegistrations(b.id);
+    onFetchBookings();
+    showToast('Реєстрацію видалено');
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title="Бронювання" size="lg"
+      footer={<>
+        <button className="btn btn-secondary" onClick={onClose}>Закрити</button>
+        {b.guest_page_token && (
+          <>
+            <button className="btn btn-secondary" title="Скопіювати" onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}/guest/${b.guest_page_token}`).then(() => showToast('Скопійовано!'));
+            }}><Copy size={14} /> Копіювати</button>
+            <button className="btn btn-secondary" style={{ color: 'var(--accent-primary)' }}
+              onClick={() => window.open(`/guest/${b.guest_page_token}`, '_blank')}>
+              <ExternalLink size={14} /> Гостьова
+            </button>
+          </>
+        )}
+        <button className="btn btn-primary" onClick={onEdit}><Edit3 size={14} /> Редагувати</button>
+      </>}>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {/* ── Compact Header ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid var(--border-primary)', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{b.first_name} {b.last_name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+              <span className="badge badge-primary">{b.unit_name}</span>
+              <span>{b.check_in} → {b.check_out}</span>
+              <span>{b.nights} н. · {b.adults} дор.{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
+              <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color }}>{sourceMap[b.source]?.label || b.source}</span>
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} CZK</div>
+            {(b.commission_amount || 0) > 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>Комісія {(b.commission_amount || 0).toLocaleString()}</div>}
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>
+          </div>
+        </div>
+
+        {/* ── Pipeline Stepper ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '16px 0', borderBottom: '1px solid var(--border-primary)', overflow: 'auto' }}>
+          {[
+            { label: 'Підтверджено', done: ['confirmed','checked_in','checked_out'].includes(b.status), icon: '✅' },
+            { label: 'Оплата', done: isPaid, icon: isPaid ? '✅' : '⏳' },
+            { label: 'Реєстрація', done: isRegistered, icon: isRegistered ? '✅' : '❌', count: `${registrations.length}/${regNeeded}` },
+            { label: 'Заселено', done: b.status === 'checked_in' || b.status === 'checked_out', icon: canCheckIn ? (b.status === 'checked_in' || b.status === 'checked_out' ? '✅' : '🔓') : '🔒' },
+            { label: 'Виселено', done: b.status === 'checked_out', icon: b.status === 'checked_out' ? '✅' : '⬜' },
+          ].map((step, i, arr) => (
+            <div key={step.label} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, opacity: step.done ? 1 : 0.5, minWidth: 70 }}>
+                <span style={{ fontSize: 20 }}>{step.icon}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap' }}>{step.label}</span>
+                {step.count && <span style={{ fontSize: 9, color: 'var(--text-tertiary)' }}>{step.count}</span>}
+              </div>
+              {i < arr.length - 1 && (
+                <div style={{ flex: 1, height: 2, background: step.done ? '#22c55e' : 'var(--border-primary)', minWidth: 20 }} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* ── Action Buttons ── */}
+        <div style={{ display: 'flex', gap: 8, padding: '12px 0', borderBottom: '1px solid var(--border-primary)', flexWrap: 'wrap' }}>
+          {b.status === 'confirmed' && (
+            <button className="btn btn-sm btn-primary" disabled={!canCheckIn}
+              onClick={() => onChangeStatus(b.id, 'checked_in')}
+              title={!canCheckIn ? 'Спочатку оплатіть та зареєструйте гостей' : ''}>
+              <Check size={14} /> Заселити
+              {!canCheckIn && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>🔒</span>}
+            </button>
+          )}
+          {b.status === 'checked_in' && (
+            <button className="btn btn-sm btn-secondary" onClick={() => onChangeStatus(b.id, 'checked_out')}>
+              <ArrowRight size={14} /> Виселити
+            </button>
+          )}
+          {b.status === 'tentative' && (
+            <button className="btn btn-sm btn-primary" onClick={() => onChangeStatus(b.id, 'confirmed')}>
+              <Check size={14} /> Підтвердити
+            </button>
+          )}
+          {!['cancelled', 'checked_out'].includes(b.status) && (
+            <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444' }} onClick={() => onChangeStatus(b.id, 'cancelled')}>
+              <X size={14} /> Скасувати
+            </button>
+          )}
+          <span className={`badge ${STATUS_MAP[b.status]?.badge}`} style={{ alignSelf: 'center' }}>{STATUS_MAP[b.status]?.label}</span>
+        </div>
+
+        {/* ── Tab Bar ── */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-primary)', overflow: 'auto' }}>
+          {([
+            { key: 'payment' as const, label: '💰 Оплата', badge: isPaid ? undefined : `${pct}%` },
+            { key: 'registration' as const, label: '📋 Реєстрація', badge: !isRegistered ? `${registrations.length}/${regNeeded}` : undefined },
+            { key: 'tax' as const, label: '🏛️ Збір', badge: undefined as string | undefined },
+            { key: 'notes' as const, label: '📝 Примітки', badge: undefined as string | undefined },
+            { key: 'history' as const, label: '📊 Історія', badge: undefined as string | undefined },
+          ]).map(tab => (
+            <button key={tab.key} onClick={() => setViewTab(tab.key)}
+              style={{
+                padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
+                fontSize: 13, fontWeight: viewTab === tab.key ? 700 : 400,
+                color: viewTab === tab.key ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                borderBottom: viewTab === tab.key ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                whiteSpace: 'nowrap', display: 'flex', gap: 6, alignItems: 'center',
+              }}>
+              {tab.label}
+              {tab.badge && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>{tab.badge}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Tab Content ── */}
+        <div style={{ padding: '16px 0', minHeight: 200 }}>
+
+          {/* 💰 PAYMENT TAB */}
+          {viewTab === 'payment' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} CZK</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} CZK</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div><div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} CZK</div></div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-full)', height: 8, overflow: 'hidden' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: barColor, minWidth: 36 }}>{pct}%</span>
+              </div>
+              {payments.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>Транзакції</div>
+                  {payments.map((p: any) => (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-primary)', fontSize: 12 }}>
+                      <span style={{ color: 'var(--text-tertiary)', minWidth: 70 }}>{p.paid_at || '—'}</span>
+                      <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#ef4444' : '#22c55e', minWidth: 80 }}>{p.type === 'refund' ? '-' : '+'}{p.amount.toLocaleString()} CZK</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>{METHOD_LABELS[p.method] || p.method}</span>
+                      <span style={{ color: 'var(--text-tertiary)' }}>{TYPE_LABELS[p.type] || p.type}</span>
+                      {p.notes && <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes}</span>}
+                      <button style={{ background: 'none', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', padding: 2, marginLeft: 'auto', flexShrink: 0 }} title="Видалити"
+                        onClick={async () => { if (!confirm('Видалити?')) return; await fetch(`/api/payments/${p.id}`, { method: 'DELETE' }); onFetchPayments(b.id); onFetchBookings(); showToast('Видалено'); }}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!showPayForm ? (
+                <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => setShowPayForm(true)}><Plus size={14} /> Додати платіж</button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="form-input" type="number" placeholder="Сума CZK" style={{ flex: 1, fontSize: 13 }} value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
+                    <select className="form-select" style={{ width: 140, fontSize: 13 }} value={payForm.method} onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}>
+                      <option value="cash">💵 Готівка</option><option value="card">💳 Картою</option><option value="bank_transfer">🏦 Рахунок</option><option value="invoice">📄 Фактура</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select className="form-select" style={{ flex: 1, fontSize: 13 }} value={payForm.type} onChange={e => setPayForm(p => ({ ...p, type: e.target.value }))}>
+                      <option value="deposit">Передплата</option><option value="partial">Часткова</option><option value="full">Повна</option><option value="refund">Повернення</option>
+                    </select>
+                    <input className="form-input" placeholder="Примітка" style={{ flex: 2, fontSize: 13 }} value={payForm.notes} onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setShowPayForm(false)}>Скасувати</button>
+                    <button className="btn btn-sm btn-primary" disabled={!payForm.amount || Number(payForm.amount) <= 0}
+                      onClick={async () => { await fetch('/api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reservation_id: b.id, amount: Number(payForm.amount), method: payForm.method, type: payForm.type, notes: payForm.notes || undefined }) }); setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' }); setShowPayForm(false); onFetchPayments(b.id); onFetchBookings(); showToast('Платіж додано!'); }}>
+                      <Save size={12} /> Зберегти
+                    </button>
+                  </div>
+                  {remaining > 0 && (
+                    <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, alignSelf: 'flex-start' }}
+                      onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}>
+                      Залишок: {remaining.toLocaleString()} CZK
+                    </button>
+                  )}
+                </div>
+              )}
+              <button className={`btn btn-sm ${b.payment_status === 'payment_requested' ? 'btn-primary' : 'btn-ghost'}`} style={{ fontSize: 11, alignSelf: 'flex-start' }}
+                onClick={async () => { const ns = b.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested'; await fetch(`/api/bookings/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_status: ns }) }); setBooking({ ...b, payment_status: ns }); onFetchBookings(); showToast(ns === 'payment_requested' ? 'Запит надіслано' : 'Скасовано'); }}>
+                ✉ Запит оплати
+              </button>
+            </div>
+          )}
+
+          {/* 📋 REGISTRATION TAB */}
+          {viewTab === 'registration' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{
+                padding: '10px 16px', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 8,
+                background: isRegistered ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                border: `1px solid ${isRegistered ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+              }}>
+                <span style={{ fontSize: 18 }}>{isRegistered ? '✅' : '❌'}</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: isRegistered ? '#22c55e' : '#ef4444' }}>
+                    {isRegistered ? 'Реєстрація завершена' : `Зареєструйте ще ${regNeeded - registrations.length} гостей`}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{registrations.length} з {regNeeded}</div>
+                </div>
+              </div>
+
+              {registrations.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 8, fontWeight: 700 }}>Зареєстровані</div>
+                  {registrations.map((r: any) => (
+                    <div key={r.reg_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', marginBottom: 6 }}>
+                      <span style={{ fontSize: 20 }}>👤</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{r.last_name} {r.first_name} {r.is_primary ? '⭐' : ''}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <span>🪪 {r.document_type}: {r.document_number}</span>
+                          {r.nationality && <span>🌐 {r.nationality}</span>}
+                          {r.country && <span>🏳️ {r.country}</span>}
+                          {r.date_of_birth && <span>🎂 {r.date_of_birth}</span>}
+                        </div>
+                        {r.address && <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>🏠 {r.address}</div>}
+                      </div>
+                      <button className="btn btn-sm btn-ghost" style={{ color: '#ef4444' }} onClick={() => deleteRegistration(r.reg_id)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {registrations.length < regNeeded && (
+                <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-primary)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>➕ Гість #{registrations.length + 1}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Прізвище *</label>
+                      <input className="form-input" placeholder="ROTARU" value={regForm.lastName} onChange={e => setRegForm(p => ({ ...p, lastName: e.target.value }))} style={{ textTransform: 'uppercase' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Ім&apos;я *</label>
+                      <input className="form-input" placeholder="MARIN" value={regForm.firstName} onChange={e => setRegForm(p => ({ ...p, firstName: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Дата народження</label>
+                      <input className="form-input" type="date" value={regForm.dateOfBirth} onChange={e => setRegForm(p => ({ ...p, dateOfBirth: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Тип документа</label>
+                      <select className="form-select" value={regForm.documentType} onChange={e => setRegForm(p => ({ ...p, documentType: e.target.value }))}>
+                        <option value="ID_CARD">ID Card</option><option value="PASSPORT">Passport</option><option value="DRIVING_LICENCE">Driving Licence</option><option value="TRAVEL_DOCUMENT">Travel Document</option><option value="OTHER">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Номер документа *</label>
+                      <input className="form-input" placeholder="RK381280" value={regForm.documentNumber} onChange={e => setRegForm(p => ({ ...p, documentNumber: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Національність</label>
+                      <input className="form-input" placeholder="Romanian" value={regForm.nationality} onChange={e => setRegForm(p => ({ ...p, nationality: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Країна (код)</label>
+                      <input className="form-input" placeholder="ROU" maxLength={3} value={regForm.country} onChange={e => setRegForm(p => ({ ...p, country: e.target.value.toUpperCase() }))} />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Адреса</label>
+                      <input className="form-input" placeholder="Str.C.A.Rosetti nr.15..." value={regForm.address} onChange={e => setRegForm(p => ({ ...p, address: e.target.value }))} />
+                    </div>
+                  </div>
+                  <button className="btn btn-sm btn-primary" style={{ marginTop: 12, width: '100%' }}
+                    disabled={savingReg || !regForm.lastName || !regForm.firstName || !regForm.documentNumber}
+                    onClick={() => saveRegistration({ ...regForm, isPrimary: registrations.length === 0 })}>
+                    {savingReg ? <Loader2 size={14} className="animate-pulse" /> : <Check size={14} />} Зареєструвати
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 🏛️ TAX TAB */}
+          {viewTab === 'tax' && (() => {
+            const taxAmt = b.city_tax_amount || 0;
+            const taxIncluded = !!b.city_tax_included;
+            const taxPaid = b.city_tax_paid || 'pending';
+            const txMap: Record<string, { label: string; color: string; icon: string }> = {
+              pending: { label: 'Очікує', color: '#f59e0b', icon: '⏳' },
+              paid: { label: 'Оплачено', color: '#22c55e', icon: '✅' },
+              exempt: { label: 'Звільнено', color: '#6c7086', icon: '🚫' },
+            };
+            const ts = txMap[taxPaid] || txMap.pending;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>🏛️ Туристичний збір</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{taxAmt.toLocaleString()} CZK</div>
+                    {taxIncluded && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Включено у вартість</div>}
+                  </div>
+                  <span className="badge" style={{ background: ts.color + '22', color: ts.color, fontSize: 13 }}>{ts.icon} {ts.label}</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  {b.adults} дор. × {b.nights} н. × 25 CZK = {b.adults * b.nights * 25} CZK
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 📝 NOTES TAB */}
+          {viewTab === 'notes' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {b.internal_notes ? (
+                <div style={{ padding: 16, background: 'rgba(250,204,21,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(250,204,21,0.2)' }}>
+                  <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>📝 Примітки</div>
+                  <div style={{ fontSize: 14, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{b.internal_notes}</div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Немає приміток</div>
+              )}
+              {b.guest_email && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>📧 {b.guest_email}</div>}
+              {b.guest_phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}><Phone size={12} style={{ display: 'inline' }} /> {b.guest_phone}</div>}
+            </div>
+          )}
+
+          {/* 📊 HISTORY TAB */}
+          {viewTab === 'history' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {activityLog.length === 0 && <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Немає записів</div>}
+              {activityLog.map((log: any) => {
+                const icons: Record<string, string> = { status_change: '🔄', payment_status_change: '💳', price_change: '💰', note: '📝', created: '➕' };
+                return (
+                  <div key={log.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-primary)' }}>
+                    <span style={{ fontSize: 16 }}>{icons[log.action] || '•'}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13 }}>{log.details}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{log.created_at}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}

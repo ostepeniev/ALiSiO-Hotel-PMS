@@ -1309,6 +1309,32 @@ function runMigrations(database: any) {
   try {
     database.exec("ALTER TABLE reservations ADD COLUMN internal_notes TEXT");
   } catch { /* column already exists */ }
+
+  // --- Migration: guest_registrations table (multi-guest per reservation) ---
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS guest_registrations (
+        id TEXT PRIMARY KEY,
+        reservation_id TEXT NOT NULL,
+        guest_id TEXT NOT NULL,
+        is_primary INTEGER DEFAULT 0,
+        registered_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
+        FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE CASCADE
+      )
+    `);
+  } catch { /* already exists */ }
+
+  // --- Migration: add registration_status to reservations ---
+  try {
+    database.exec("ALTER TABLE reservations ADD COLUMN registration_status TEXT DEFAULT 'not_registered'");
+  } catch { /* column already exists */ }
+
+  // --- Migration: add nationality to guests ---
+  try {
+    database.exec("ALTER TABLE guests ADD COLUMN nationality TEXT");
+  } catch { /* column already exists */ }
 }
 
 // Generate a random 12-char token for guest pages

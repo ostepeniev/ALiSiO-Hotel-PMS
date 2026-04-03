@@ -7,6 +7,7 @@ import SourceIcon from '@/components/ui/SourceIcon';
 import MobileFilterBar from '@/components/mobile/MobileFilterBar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
 import GroupViewModal from '@/components/booking/GroupViewModal';
+import BookingViewModal from '@/components/booking/BookingViewModal';
 import {
   Plus,
   Search,
@@ -26,6 +27,9 @@ import {
   ChevronRight,
   ExternalLink,
   Copy,
+  AlertTriangle,
+  FileText,
+  Bell,
 } from 'lucide-react';
 
 /* ================================================================
@@ -63,6 +67,8 @@ interface BookingRow {
   city_tax_amount: number;
   city_tax_included: number;
   city_tax_paid: string;
+  registration_status: string;
+  nationality: string | null;
 }
 
 interface GroupRow {
@@ -220,6 +226,8 @@ export default function BookingsPage() {
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
   const [activityLog, setActivityLog] = useState<any[]>([]);
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const onMenuClick = useMobileMenu();
 
   /* ── group bookings ──────────────────────────────── */
@@ -312,12 +320,29 @@ export default function BookingsPage() {
     } catch { setActivityLog([]); }
   }, []);
 
+  const fetchRegistrations = useCallback(async (resId: string) => {
+    try {
+      const res = await fetch(`/api/bookings/${resId}/registrations`);
+      const data = await res.json();
+      if (Array.isArray(data)) setRegistrations(data);
+    } catch { setRegistrations([]); }
+  }, []);
+
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/alerts');
+      const data = await res.json();
+      if (Array.isArray(data)) setAlerts(data);
+    } catch { setAlerts([]); }
+  }, []);
+
   const openViewBooking = useCallback((b: BookingRow) => {
     setViewBooking(b);
     fetchPayments(b.id);
     fetchActivity(b.id);
+    fetchRegistrations(b.id);
     setShowPayForm(false);
-  }, [fetchPayments, fetchActivity]);
+  }, [fetchPayments, fetchActivity, fetchRegistrations]);
 
   /* ── fetch bookings ───────────────────────────────── */
   const fetchBookings = useCallback(async () => {
@@ -358,9 +383,9 @@ export default function BookingsPage() {
 
   /* ── fetch on filter change ───────────────────────── */
   useEffect(() => {
-    const debounce = setTimeout(() => { fetchBookings(); fetchGroupBookings(); }, 300);
+    const debounce = setTimeout(() => { fetchBookings(); fetchGroupBookings(); fetchAlerts(); }, 300);
     return () => clearTimeout(debounce);
-  }, [fetchBookings, fetchGroupBookings]);
+  }, [fetchBookings, fetchGroupBookings, fetchAlerts]);
 
   /* ── cascading dropdowns ──────────────────────────── */
   const unitTypesForCategory = useMemo(() => {
@@ -797,6 +822,33 @@ export default function BookingsPage() {
           </div>
         )}
 
+        {/* ── Alert Banner ── */}
+        {alerts.length > 0 && (
+          <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {alerts.slice(0, 5).map((a: any, i: number) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
+                borderRadius: 'var(--radius-md)', fontSize: 13, cursor: 'pointer',
+                background: a.severity === 'danger' ? 'rgba(239,68,68,0.1)' : a.severity === 'warning' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)',
+                border: `1px solid ${a.severity === 'danger' ? 'rgba(239,68,68,0.3)' : a.severity === 'warning' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                color: a.severity === 'danger' ? '#ef4444' : a.severity === 'warning' ? '#f59e0b' : '#3b82f6',
+              }} onClick={() => {
+                const booking = bookings.find(b => b.id === a.bookingId);
+                if (booking) openViewBooking(booking);
+              }}>
+                {a.severity === 'danger' ? <AlertTriangle size={16} /> : a.severity === 'warning' ? <Bell size={16} /> : <FileText size={16} />}
+                <span style={{ fontWeight: 600 }}>{a.guestName}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{a.message}</span>
+              </div>
+            ))}
+            {alerts.length > 5 && (
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                + ще {alerts.length - 5} сповіщень
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="page-header">
           <div>
             <h2 className="page-title">Бронювання</h2>
@@ -1156,308 +1208,24 @@ export default function BookingsPage() {
           </div>
         </div>
 
-        {/* View Modal */}
-        <Modal open={!!viewBooking} onClose={() => setViewBooking(null)} title={`Бронювання`} size="lg"
-          footer={<>
-            <button className="btn btn-secondary" onClick={() => setViewBooking(null)}>Закрити</button>
-            {viewBooking?.guest_page_token && (
-              <>
-                <button className="btn btn-secondary" title="Скопіювати посилання" onClick={() => {
-                  const url = `${window.location.origin}/guest/${viewBooking.guest_page_token}`;
-                  navigator.clipboard.writeText(url).then(() => showToast('Посилання скопійовано!'));
-                }}>
-                  <Copy size={14} /> Скопіювати
-                </button>
-                <button className="btn btn-secondary" style={{ color: 'var(--accent-primary)' }} onClick={() => window.open(`/guest/${viewBooking.guest_page_token}`, '_blank')}>
-                  <ExternalLink size={14} /> Гостьова сторінка
-                </button>
-              </>
-            )}
-            <button className="btn btn-primary" onClick={() => { if (viewBooking) { openEditBooking(viewBooking); setViewBooking(null); } }}>
-              <Edit3 size={14} /> Редагувати
-            </button>
-          </>}>
-          {viewBooking && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Гість</div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>{viewBooking.first_name} {viewBooking.last_name}</div>
-                  {viewBooking.guest_email && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{viewBooking.guest_email}</div>}
-                  {viewBooking.guest_phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{viewBooking.guest_phone}</div>}
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Розміщення</div>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>{viewBooking.unit_name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                    <span className={`badge ${STATUS_MAP[viewBooking.status]?.badge}`}>{STATUS_MAP[viewBooking.status]?.label}</span>{' '}
-                    <span className="badge badge-info">{viewBooking.category_name}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center', padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Заїзд</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{viewBooking.check_in}</div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <ArrowRight size={16} style={{ color: 'var(--text-tertiary)' }} />
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent-primary)' }}>{viewBooking.nights} н.</div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Виїзд</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{viewBooking.check_out}</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Гостей</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{viewBooking.adults} дор.{viewBooking.children > 0 && ` + ${viewBooking.children} діт.`}</div>
-                </div>
-                <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Джерело</div>
-                  <div style={{ marginTop: 4 }}><span className="badge" style={{ background: (sourceMap[viewBooking.source]?.color || '#6c7086') + '22', color: sourceMap[viewBooking.source]?.color || '#6c7086' }}>{sourceMap[viewBooking.source]?.label || viewBooking.source}</span></div>
-                </div>
-                <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Тариф</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 4 }}>{(viewBooking.total_price || 0).toLocaleString()} CZK</div>
-                  {(viewBooking.commission_amount || 0) > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 12 }}>
-                      <div style={{ color: '#f59e0b', fontWeight: 600 }}>Комісія: {(viewBooking.commission_amount || 0).toLocaleString()} CZK</div>
-                      <div style={{ color: '#22c55e', fontWeight: 600 }}>Чиста ставка: {((viewBooking.total_price || 0) - (viewBooking.commission_amount || 0)).toLocaleString()} CZK</div>
-                    </div>
-                  )}
-                  {(viewBooking.commission_amount || 0) === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Комісія 0</div>
-                  )}
-                </div>
-              </div>
-
-              {/* 🏛️ City Tax display */}
-              {(() => {
-                const taxAmt = (viewBooking as any).city_tax_amount || 0;
-                const taxIncluded = !!(viewBooking as any).city_tax_included;
-                const taxPaid = (viewBooking as any).city_tax_paid || 'pending';
-                const taxStatusMap: Record<string, { label: string; color: string; icon: string }> = {
-                  pending: { label: 'Очікує оплати', color: '#f59e0b', icon: '⏳' },
-                  paid: { label: 'Оплачено', color: '#22c55e', icon: '✅' },
-                  exempt: { label: 'Звільнено', color: '#6c7086', icon: '🚫' },
-                };
-                const ts = taxStatusMap[taxPaid] || taxStatusMap.pending;
-                return (
-                  <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>🏛️ Туристичний збір</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{taxAmt.toLocaleString()} CZK</div>
-                      {taxIncluded && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Включено у вартість</div>}
-                    </div>
-                    <span className="badge" style={{ background: ts.color + '22', color: ts.color, fontSize: 12 }}>{ts.icon} {ts.label}</span>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const total = viewBooking.total_price || 0;
-                const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
-                const remaining = Math.max(0, total - paid);
-                const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-                const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
-                return (
-                  <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-primary)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, fontWeight: 700 }}>💰 Оплата</div>
-
-                    {/* Totals */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} CZK</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} CZK</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(paid)} EUR</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} CZK</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(remaining)} EUR</div>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-full)', height: 8, overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: barColor, minWidth: 36 }}>{pct}%</span>
-                    </div>
-
-                    {/* Transactions */}
-                    {payments.length > 0 && (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>Транзакції</div>
-                        {payments.map((p: any) => (
-                          <div key={p.id} style={{
-                            display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
-                            borderBottom: '1px solid var(--border-primary)', fontSize: 12,
-                          }}>
-                            <span style={{ color: 'var(--text-tertiary)', minWidth: 70 }}>{p.paid_at || '—'}</span>
-                            <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#ef4444' : '#22c55e', minWidth: 80 }}>
-                              {p.type === 'refund' ? '-' : '+'}{p.amount.toLocaleString()} CZK
-                            </span>
-                            <span style={{ color: 'var(--text-secondary)' }}>{METHOD_LABELS[p.method] || p.method}</span>
-                            <span style={{ color: 'var(--text-tertiary)' }}>{TYPE_LABELS[p.type] || p.type}</span>
-                            {p.notes && <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes}</span>}
-                            <button
-                              style={{ background: 'none', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', padding: 2, marginLeft: 'auto', flexShrink: 0 }}
-                              title="Видалити"
-                              onClick={async () => {
-                                if (!confirm('Видалити транзакцію?')) return;
-                                await fetch(`/api/payments/${p.id}`, { method: 'DELETE' });
-                                fetchPayments(viewBooking.id);
-                                fetchBookings();
-                                showToast('Транзакцію видалено');
-                              }}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Add payment form */}
-                    {!showPayForm ? (
-                      <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => setShowPayForm(true)}>
-                        <Plus size={14} /> Додати платіж
-                      </button>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <input className="form-input" type="number" placeholder="Сума CZK" style={{ flex: 1, fontSize: 13 }}
-                            value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
-                          <select className="form-select" style={{ width: 140, fontSize: 13 }} value={payForm.method}
-                            onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}>
-                            <option value="cash">💵 Готівка</option>
-                            <option value="card">💳 Картою</option>
-                            <option value="bank_transfer">🏦 На рахунок</option>
-                            <option value="invoice">📄 Фактура</option>
-                          </select>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <select className="form-select" style={{ flex: 1, fontSize: 13 }} value={payForm.type}
-                            onChange={e => setPayForm(p => ({ ...p, type: e.target.value }))}>
-                            <option value="deposit">Передплата</option>
-                            <option value="partial">Часткова</option>
-                            <option value="full">Повна оплата</option>
-                            <option value="refund">Повернення</option>
-                          </select>
-                          <input className="form-input" placeholder="Примітка" style={{ flex: 2, fontSize: 13 }}
-                            value={payForm.notes} onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))} />
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button className="btn btn-sm btn-ghost" onClick={() => setShowPayForm(false)}>Скасувати</button>
-                          <button className="btn btn-sm btn-primary" disabled={!payForm.amount || Number(payForm.amount) <= 0}
-                            onClick={async () => {
-                              await fetch('/api/payments', {
-                                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  reservation_id: viewBooking.id, amount: Number(payForm.amount),
-                                  method: payForm.method, type: payForm.type, notes: payForm.notes || undefined,
-                                }),
-                              });
-                              setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
-                              setShowPayForm(false);
-                              fetchPayments(viewBooking.id);
-                              fetchBookings();
-                              showToast('Платіж додано!');
-                            }}
-                          >
-                            <Save size={12} /> Зберегти
-                          </button>
-                        </div>
-
-                        {/* Quick fill: remaining amount */}
-                        {remaining > 0 && (
-                          <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, alignSelf: 'flex-start' }}
-                            onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}>
-                            Заповнити залишок: {remaining.toLocaleString()} CZK
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Manual: payment_requested toggle */}
-                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button
-                        className={`btn btn-sm ${viewBooking.payment_status === 'payment_requested' ? 'btn-primary' : 'btn-ghost'}`}
-                        style={{ fontSize: 11 }}
-                        onClick={async () => {
-                          const newSt = viewBooking.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested';
-                          await fetch(`/api/bookings/${viewBooking.id}`, {
-                            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ payment_status: newSt }),
-                          });
-                          setViewBooking({ ...viewBooking, payment_status: newSt });
-                          fetchBookings();
-                          showToast(newSt === 'payment_requested' ? 'Запит на оплату надіслано' : 'Запит скасовано');
-                        }}
-                      >
-                        ✉ Запит на оплату
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 8 }}>Змінити статус</div>
-                <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                  {(['confirmed', 'checked_in', 'checked_out', 'cancelled'] as const).map(st => (
-                    <button key={st} className={`btn btn-sm ${viewBooking.status === st ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => changeStatus(viewBooking.id, st)}>
-                      {STATUS_MAP[st].label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 📝 Internal Notes */}
-              {viewBooking.internal_notes && (
-                <div style={{ padding: 12, background: 'rgba(250,204,21,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(250,204,21,0.2)' }}>
-                  <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>📝 Примітки</div>
-                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{viewBooking.internal_notes}</div>
-                </div>
-              )}
-
-              {/* 📋 Activity Timeline */}
-              {activityLog.length > 0 && (
-                <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 10 }}>📋 Історія</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {activityLog.slice(0, 10).map((log: any) => {
-                      const actionIcons: Record<string, string> = {
-                        status_change: '🔄', payment_status_change: '💳',
-                        price_change: '💰', note: '📝', created: '➕',
-                      };
-                      return (
-                        <div key={log.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                          <span style={{ fontSize: 14 }}>{actionIcons[log.action] || '•'}</span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 12 }}>{log.details}</div>
-                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>{log.created_at}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </Modal>
+        {/* View Modal — Pipeline Design */}
+        {viewBooking && (
+          <BookingViewModal
+            booking={viewBooking}
+            payments={payments}
+            registrations={registrations}
+            activityLog={activityLog}
+            sourceMap={sourceMap}
+            onClose={() => setViewBooking(null)}
+            onEdit={() => { openEditBooking(viewBooking); setViewBooking(null); }}
+            onChangeStatus={changeStatus}
+            onFetchPayments={fetchPayments}
+            onFetchBookings={fetchBookings}
+            onFetchRegistrations={fetchRegistrations}
+            showToast={showToast}
+            setBooking={setViewBooking}
+          />
+        )}
 
         {/* New Booking Modal */}
         <Modal open={showNewBooking} onClose={() => setShowNewBooking(false)} title="Нове бронювання" size="lg"
