@@ -63,6 +63,13 @@ export interface Translations {
   lastName: string;
   dateOfBirth: string;
   residence: string;
+  nationality: string;
+  documentType: string;
+  documentNumber: string;
+  selectDocument: string;
+  passport: string;
+  idCard: string;
+  drivingLicense: string;
   addGuest: string;
   save: string;
   saving: string;
@@ -88,6 +95,23 @@ export interface Translations {
   orderError: string;
   // Map
   openMap: string;
+  // Navigation
+  howToGetThere: string;
+  // Stay phases
+  welcome: (name: string) => string;
+  enjoyStay: string;
+  thankYou: (name: string) => string;
+  comeBack: string;
+  arrivesIn: (days: number) => string;
+  // Progress stepper
+  stepRegistration: string;
+  stepPayment: string;
+  stepCheckIn: string;
+  completeSteps: string;
+  lockCode: string;
+  // Dark mode
+  darkMode: string;
+  lightMode: string;
   // Footer
   footerLocation: string;
   // Misc
@@ -99,6 +123,15 @@ export interface Translations {
   perDay: string;
   perHour: string;
   perPerson: string;
+  // Post-stay
+  thankYouStay: string;
+  bookAgain: string;
+  earlyBooking: string;
+  earlyBookingDesc: string;
+  discount: string;
+  selectAccommodation: string;
+  fromPrice: string;
+  ourAccommodations: string;
 }
 
 const translations: Record<Lang, Translations> = {
@@ -136,6 +169,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Last name *',
     dateOfBirth: 'Date of birth',
     residence: 'Place of residence',
+    nationality: 'Nationality *',
+    documentType: 'Document type',
+    documentNumber: 'Document number',
+    selectDocument: 'Select document…',
+    passport: 'Passport',
+    idCard: 'ID card',
+    drivingLicense: 'Driving license',
     addGuest: '+ Add guest',
     save: 'Save',
     saving: 'Saving...',
@@ -157,12 +197,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Service ordered!',
     orderError: 'Order error',
     openMap: 'Open map',
+    howToGetThere: '📍 How to get there',
+    welcome: (name: string) => `Welcome, ${name}!`,
+    enjoyStay: 'Enjoy your stay!',
+    thankYou: (name: string) => `Thank you, ${name}!`,
+    comeBack: 'We hope to see you again!',
+    arrivesIn: (d: number) => `Your stay begins in ${d} ${d === 1 ? 'day' : 'days'}`,
+    stepRegistration: 'Registration',
+    stepPayment: 'Payment',
+    stepCheckIn: 'Check-in',
+    completeSteps: 'Complete registration and payment to receive check-in access',
+    lockCode: 'Door code',
+    darkMode: 'Dark mode',
+    lightMode: 'Light mode',
     footerLocation: 'Luhačovice, Czech Republic',
     loading: 'Loading...',
     notFound: 'Booking not found',
     notFoundDesc: 'Check the link or contact the administration.',
     regError: 'Registration error',
     perNight: '/night', perDay: '/day', perHour: '/hour', perPerson: '/person',
+    thankYouStay: 'Thank you for staying with us!',
+    bookAgain: 'Book again',
+    earlyBooking: '🎁 Early Booking — 30% OFF',
+    earlyBookingDesc: 'Book your next stay now with a 30% discount. Minimum 2 nights.',
+    discount: 'discount',
+    selectAccommodation: 'Select accommodation',
+    fromPrice: 'from',
+    ourAccommodations: 'Our accommodations',
   },
 
   de: {
@@ -199,6 +260,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Nachname *',
     dateOfBirth: 'Geburtsdatum',
     residence: 'Wohnort',
+    nationality: 'Staatsangehörigkeit *',
+    documentType: 'Dokumententyp',
+    documentNumber: 'Dokumentennummer',
+    selectDocument: 'Dokument wählen…',
+    passport: 'Reisepass',
+    idCard: 'Personalausweis',
+    drivingLicense: 'Führerschein',
     addGuest: '+ Gast hinzufügen',
     save: 'Speichern',
     saving: 'Wird gespeichert...',
@@ -220,12 +288,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Leistung bestellt!',
     orderError: 'Bestellfehler',
     openMap: 'Karte öffnen',
+    howToGetThere: '📍 Anfahrt',
+    welcome: (name: string) => `Willkommen, ${name}!`,
+    enjoyStay: 'Genießen Sie Ihren Aufenthalt!',
+    thankYou: (name: string) => `Danke, ${name}!`,
+    comeBack: 'Wir hoffen, Sie bald wiederzusehen!',
+    arrivesIn: (d: number) => `Ihr Aufenthalt beginnt in ${d} ${d === 1 ? 'Tag' : 'Tagen'}`,
+    stepRegistration: 'Registrierung',
+    stepPayment: 'Zahlung',
+    stepCheckIn: 'Check-in',
+    completeSteps: 'Registrierung und Zahlung abschließen für Check-in-Zugang',
+    lockCode: 'Türcode',
+    darkMode: 'Dunkelmodus',
+    lightMode: 'Hellmodus',
     footerLocation: 'Luhačovice, Tschechien',
     loading: 'Wird geladen...',
     notFound: 'Buchung nicht gefunden',
     notFoundDesc: 'Überprüfen Sie den Link oder wenden Sie sich an die Rezeption.',
     regError: 'Registrierungsfehler',
     perNight: '/Nacht', perDay: '/Tag', perHour: '/Stunde', perPerson: '/Person',
+    thankYouStay: 'Danke für Ihren Aufenthalt!',
+    bookAgain: 'Erneut buchen',
+    earlyBooking: '🎁 Frühbucher — 30% RABATT',
+    earlyBookingDesc: 'Buchen Sie jetzt mit 30% Rabatt. Mindestens 2 Nächte.',
+    discount: 'Rabatt',
+    selectAccommodation: 'Unterkunft wählen',
+    fromPrice: 'ab',
+    ourAccommodations: 'Unsere Unterkünfte',
   },
 
   cs: {
@@ -262,6 +351,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Příjmení *',
     dateOfBirth: 'Datum narození',
     residence: 'Místo bydliště',
+    nationality: 'Státní příslušnost *',
+    documentType: 'Typ dokladu',
+    documentNumber: 'Číslo dokladu',
+    selectDocument: 'Vyberte doklad…',
+    passport: 'Cestovní pas',
+    idCard: 'Občanský průkaz',
+    drivingLicense: 'Řidičský průkaz',
     addGuest: '+ Přidat hosta',
     save: 'Uložit',
     saving: 'Ukládání...',
@@ -283,12 +379,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Služba objednána!',
     orderError: 'Chyba objednávky',
     openMap: 'Otevřít mapu',
+    howToGetThere: '📍 Jak se dostat',
+    welcome: (name: string) => `Vítejte, ${name}!`,
+    enjoyStay: 'Užijte si pobyt!',
+    thankYou: (name: string) => `Děkujeme, ${name}!`,
+    comeBack: 'Doufáme, že se brzy vrátíte!',
+    arrivesIn: (d: number) => `Váš pobyt začíná za ${d} ${d === 1 ? 'den' : d < 5 ? 'dny' : 'dní'}`,
+    stepRegistration: 'Registrace',
+    stepPayment: 'Platba',
+    stepCheckIn: 'Check-in',
+    completeSteps: 'Dokončete registraci a platbu pro přístup k check-inu',
+    lockCode: 'Kód dveří',
+    darkMode: 'Tmavý režim',
+    lightMode: 'Světlý režim',
     footerLocation: 'Luhačovice, Česká republika',
     loading: 'Načítání...',
     notFound: 'Rezervace nenalezena',
     notFoundDesc: 'Zkontrolujte odkaz nebo kontaktujte recepci.',
     regError: 'Chyba registrace',
     perNight: '/noc', perDay: '/den', perHour: '/hod', perPerson: '/os',
+    thankYouStay: 'Děkujeme za pobyt!',
+    bookAgain: 'Rezervovat znovu',
+    earlyBooking: '🎁 Včasná rezervace — 30% SLEVA',
+    earlyBookingDesc: 'Rezervujte další pobyt se slevou 30%. Minimálně 2 noci.',
+    discount: 'sleva',
+    selectAccommodation: 'Vybrat ubytování',
+    fromPrice: 'od',
+    ourAccommodations: 'Naše ubytování',
   },
 
   uk: {
@@ -325,6 +442,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Прізвище *',
     dateOfBirth: 'Дата народження',
     residence: 'Місце проживання',
+    nationality: 'Громадянство *',
+    documentType: 'Тип документа',
+    documentNumber: 'Номер документа',
+    selectDocument: 'Оберіть документ…',
+    passport: 'Закордонний паспорт',
+    idCard: 'ID картка',
+    drivingLicense: 'Водійське посвідчення',
     addGuest: '+ Додати гостя',
     save: 'Зберегти',
     saving: 'Збереження...',
@@ -346,12 +470,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Послугу замовлено!',
     orderError: 'Помилка замовлення',
     openMap: 'Відкрити карту',
+    howToGetThere: '📍 Як дістатися',
+    welcome: (name: string) => `Вітаємо, ${name}!`,
+    enjoyStay: 'Насолоджуйтесь перебуванням!',
+    thankYou: (name: string) => `Дякуємо, ${name}!`,
+    comeBack: 'Сподіваємось побачити вас знову!',
+    arrivesIn: (d: number) => `Ваше перебування починається через ${d} ${d === 1 ? 'день' : d < 5 ? 'дні' : 'днів'}`,
+    stepRegistration: 'Реєстрація',
+    stepPayment: 'Оплата',
+    stepCheckIn: 'Заїзд',
+    completeSteps: 'Завершіть реєстрацію та оплату для отримання доступу',
+    lockCode: 'Код від дверей',
+    darkMode: 'Темна тема',
+    lightMode: 'Світла тема',
     footerLocation: 'Лугачовіце, Чеська Республіка',
     loading: 'Завантаження...',
     notFound: 'Бронювання не знайдено',
     notFoundDesc: 'Перевірте посилання або зверніться до адміністрації.',
     regError: 'Помилка реєстрації',
     perNight: '/ніч', perDay: '/день', perHour: '/год', perPerson: '/ос',
+    thankYouStay: 'Дякуємо за перебування!',
+    bookAgain: 'Забронювати знову',
+    earlyBooking: '🎁 Раннє бронювання — ЗНИЖКА 30%',
+    earlyBookingDesc: 'Забронюйте наступне перебування зі знижкою 30%. Мінімум 2 ночі.',
+    discount: 'знижка',
+    selectAccommodation: 'Обрати проживання',
+    fromPrice: 'від',
+    ourAccommodations: 'Наші варіанти проживання',
   },
 
   pl: {
@@ -388,6 +533,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Nazwisko *',
     dateOfBirth: 'Data urodzenia',
     residence: 'Miejsce zamieszkania',
+    nationality: 'Narodowość *',
+    documentType: 'Typ dokumentu',
+    documentNumber: 'Numer dokumentu',
+    selectDocument: 'Wybierz dokument…',
+    passport: 'Paszport',
+    idCard: 'Dowód osobisty',
+    drivingLicense: 'Prawo jazdy',
     addGuest: '+ Dodaj gościa',
     save: 'Zapisz',
     saving: 'Zapisywanie...',
@@ -409,12 +561,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Usługa zamówiona!',
     orderError: 'Błąd zamówienia',
     openMap: 'Otwórz mapę',
+    howToGetThere: '📍 Jak dojechać',
+    welcome: (name: string) => `Witamy, ${name}!`,
+    enjoyStay: 'Udanego pobytu!',
+    thankYou: (name: string) => `Dziękujemy, ${name}!`,
+    comeBack: 'Mamy nadzieję, że wkrótce wrócisz!',
+    arrivesIn: (d: number) => `Twój pobyt zaczyna się za ${d} ${d === 1 ? 'dzień' : 'dni'}`,
+    stepRegistration: 'Rejestracja',
+    stepPayment: 'Płatność',
+    stepCheckIn: 'Zameldowanie',
+    completeSteps: 'Dokończ rejestrację i płatność, aby uzyskać dostęp',
+    lockCode: 'Kod do drzwi',
+    darkMode: 'Tryb ciemny',
+    lightMode: 'Tryb jasny',
     footerLocation: 'Luhačovice, Czechy',
     loading: 'Ładowanie...',
     notFound: 'Rezerwacja nie znaleziona',
     notFoundDesc: 'Sprawdź link lub skontaktuj się z recepcją.',
     regError: 'Błąd rejestracji',
     perNight: '/noc', perDay: '/dzień', perHour: '/godz', perPerson: '/os',
+    thankYouStay: 'Dziękujemy za pobyt!',
+    bookAgain: 'Zarezerwuj ponownie',
+    earlyBooking: '🎁 Wczesna rezerwacja — 30% ZNIŻKI',
+    earlyBookingDesc: 'Zarezerwuj kolejny pobyt ze zniżką 30%. Minimum 2 noce.',
+    discount: 'zniżka',
+    selectAccommodation: 'Wybierz nocleg',
+    fromPrice: 'od',
+    ourAccommodations: 'Nasze noclegi',
   },
 
   nl: {
@@ -451,6 +624,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Achternaam *',
     dateOfBirth: 'Geboortedatum',
     residence: 'Woonplaats',
+    nationality: 'Nationaliteit *',
+    documentType: 'Documenttype',
+    documentNumber: 'Documentnummer',
+    selectDocument: 'Document kiezen…',
+    passport: 'Paspoort',
+    idCard: 'Identiteitskaart',
+    drivingLicense: 'Rijbewijs',
     addGuest: '+ Gast toevoegen',
     save: 'Opslaan',
     saving: 'Opslaan...',
@@ -472,12 +652,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Dienst besteld!',
     orderError: 'Bestelfout',
     openMap: 'Kaart openen',
+    howToGetThere: '📍 Routebeschrijving',
+    welcome: (name: string) => `Welkom, ${name}!`,
+    enjoyStay: 'Geniet van uw verblijf!',
+    thankYou: (name: string) => `Bedankt, ${name}!`,
+    comeBack: 'We hopen u snel weer te zien!',
+    arrivesIn: (d: number) => `Uw verblijf begint over ${d} ${d === 1 ? 'dag' : 'dagen'}`,
+    stepRegistration: 'Registratie',
+    stepPayment: 'Betaling',
+    stepCheckIn: 'Inchecken',
+    completeSteps: 'Voltooi registratie en betaling voor check-in toegang',
+    lockCode: 'Deurcode',
+    darkMode: 'Donker thema',
+    lightMode: 'Licht thema',
     footerLocation: 'Luhačovice, Tsjechië',
     loading: 'Laden...',
     notFound: 'Boeking niet gevonden',
     notFoundDesc: 'Controleer de link of neem contact op met de receptie.',
     regError: 'Registratiefout',
     perNight: '/nacht', perDay: '/dag', perHour: '/uur', perPerson: '/pers',
+    thankYouStay: 'Bedankt voor uw verblijf!',
+    bookAgain: 'Opnieuw boeken',
+    earlyBooking: '🎁 Vroegboeken — 30% KORTING',
+    earlyBookingDesc: 'Boek uw volgende verblijf met 30% korting. Minimaal 2 nachten.',
+    discount: 'korting',
+    selectAccommodation: 'Accommodatie kiezen',
+    fromPrice: 'vanaf',
+    ourAccommodations: 'Onze accommodaties',
   },
 
   fr: {
@@ -514,6 +715,13 @@ const translations: Record<Lang, Translations> = {
     lastName: 'Nom *',
     dateOfBirth: 'Date de naissance',
     residence: 'Lieu de résidence',
+    nationality: 'Nationalité *',
+    documentType: 'Type de document',
+    documentNumber: 'Numéro de document',
+    selectDocument: 'Choisir un document…',
+    passport: 'Passeport',
+    idCard: 'Carte d\'identité',
+    drivingLicense: 'Permis de conduire',
     addGuest: '+ Ajouter un hôte',
     save: 'Enregistrer',
     saving: 'Enregistrement...',
@@ -535,12 +743,33 @@ const translations: Record<Lang, Translations> = {
     serviceOrdered: 'Service commandé!',
     orderError: 'Erreur de commande',
     openMap: 'Ouvrir la carte',
+    howToGetThere: '📍 Itinéraire',
+    welcome: (name: string) => `Bienvenue, ${name} !`,
+    enjoyStay: 'Bon séjour !',
+    thankYou: (name: string) => `Merci, ${name} !`,
+    comeBack: 'Nous espérons vous revoir bientôt !',
+    arrivesIn: (d: number) => `Votre séjour commence dans ${d} ${d === 1 ? 'jour' : 'jours'}`,
+    stepRegistration: 'Inscription',
+    stepPayment: 'Paiement',
+    stepCheckIn: 'Arrivée',
+    completeSteps: "Terminez l'inscription et le paiement pour accéder au check-in",
+    lockCode: 'Code de porte',
+    darkMode: 'Mode sombre',
+    lightMode: 'Mode clair',
     footerLocation: 'Luhačovice, République tchèque',
     loading: 'Chargement...',
     notFound: 'Réservation introuvable',
     notFoundDesc: 'Vérifiez le lien ou contactez la réception.',
     regError: 'Erreur d\'inscription',
     perNight: '/nuit', perDay: '/jour', perHour: '/heure', perPerson: '/pers',
+    thankYouStay: 'Merci pour votre séjour !',
+    bookAgain: 'Réserver à nouveau',
+    earlyBooking: '🎁 Réservation anticipée — 30% DE RÉDUCTION',
+    earlyBookingDesc: 'Réservez votre prochain séjour avec 30% de réduction. Minimum 2 nuits.',
+    discount: 'réduction',
+    selectAccommodation: 'Choisir un hébergement',
+    fromPrice: 'à partir de',
+    ourAccommodations: 'Nos hébergements',
   },
 };
 

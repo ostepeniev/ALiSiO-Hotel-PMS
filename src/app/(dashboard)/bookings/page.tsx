@@ -299,6 +299,7 @@ export default function BookingsPage() {
   const METHOD_LABELS: Record<string, string> = {
     cash: '💵 Готівка', card: '💳 Картою',
     bank_transfer: '🏦 На рахунок', invoice: '📄 Фактура', online: '🌐 Онлайн',
+    booking_platform: '🏨 Платформа бронювання',
   };
   const TYPE_LABELS: Record<string, string> = {
     deposit: 'Передплата', full: 'Повна', partial: 'Часткова', refund: 'Повернення',

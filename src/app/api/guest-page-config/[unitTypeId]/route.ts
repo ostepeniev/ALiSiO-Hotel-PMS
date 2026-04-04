@@ -50,7 +50,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       const values: any[] = [];
 
       const fields = ['amenities', 'check_in_instructions', 'external_amenities', 'faq_items', 'rules',
-        'wifi_network', 'wifi_password', 'restaurant_name', 'restaurant_hours', 'restaurant_menu_url', 'useful_info'];
+        'wifi_network', 'wifi_password', 'restaurant_name', 'restaurant_hours', 'restaurant_menu_url', 'useful_info',
+        'lock_code', 'maps_url', 'territory_map_url'];
 
       for (const f of fields) {
         if (body[f] !== undefined) {
@@ -68,8 +69,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       // Insert
       db.prepare(`
         INSERT INTO guest_page_config (unit_type_id, amenities, check_in_instructions, external_amenities, faq_items, rules,
-          wifi_network, wifi_password, restaurant_name, restaurant_hours, restaurant_menu_url, useful_info)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          wifi_network, wifi_password, restaurant_name, restaurant_hours, restaurant_menu_url, useful_info,
+          lock_code, maps_url, territory_map_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         unitTypeId,
         typeof body.amenities === 'object' ? JSON.stringify(body.amenities) : body.amenities || '[]',
@@ -83,6 +85,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         body.restaurant_hours || '',
         body.restaurant_menu_url || null,
         typeof body.useful_info === 'object' ? JSON.stringify(body.useful_info) : body.useful_info || '[]',
+        body.lock_code || '4971#',
+        body.maps_url || 'https://maps.app.goo.gl/WH2CKhTydtDx9EBe7',
+        body.territory_map_url || null,
       );
     }
 

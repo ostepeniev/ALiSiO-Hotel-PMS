@@ -201,6 +201,14 @@ FROM reservations r
 JOIN guests g ON g.id = r.guest_id
 JOIN units u ON u.id = r.unit_id
 WHERE r.check_in = date('now') AND r.status IN ('confirmed', 'checked_in')
+
+-- Departures tomorrow (виїзди завтра):
+SELECT g.first_name || ' ' || g.last_name AS guest, u.name AS unit,
+       r.check_in, r.check_out, r.nights, r.total_price, r.payment_status
+FROM reservations r
+JOIN guests g ON g.id = r.guest_id
+JOIN units u ON u.id = r.unit_id
+WHERE r.check_out = date('now', '+1 day') AND r.status IN ('confirmed', 'checked_in')
 `;
 
 export const SYSTEM_PROMPT = `${SCHEMA_CONTEXT}

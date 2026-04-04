@@ -54,6 +54,7 @@ const METHOD_LABELS: Record<string, string> = {
   bank_transfer: '🏦 Переказ',
   invoice: '📄 Фактура',
   online: '🌐 Онлайн',
+  booking_platform: '🏨 Платформа бронювання',
 };
 
 export default function CashFlowPage() {

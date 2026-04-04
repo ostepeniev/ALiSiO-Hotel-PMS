@@ -38,6 +38,7 @@ const STATUS_MAP: Record<string, { label: string; badge: string }> = {
 
 const METHOD_LABELS: Record<string, string> = {
   cash: '💵 Готівка', card: '💳 Картою', bank_transfer: '🏦 На рахунок', invoice: '📄 Фактура',
+  booking_platform: '🏨 Платформа бронювання',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -260,7 +261,7 @@ export default function BookingViewModal({
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input className="form-input" type="number" placeholder="Сума CZK" style={{ flex: 1, fontSize: 13 }} value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
                     <select className="form-select" style={{ width: 140, fontSize: 13 }} value={payForm.method} onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}>
-                      <option value="cash">💵 Готівка</option><option value="card">💳 Картою</option><option value="bank_transfer">🏦 Рахунок</option><option value="invoice">📄 Фактура</option>
+                      <option value="cash">💵 Готівка</option><option value="card">💳 Картою</option><option value="bank_transfer">🏦 Рахунок</option><option value="invoice">📄 Фактура</option><option value="booking_platform">🏨 Платформа бронювання</option>
                     </select>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>

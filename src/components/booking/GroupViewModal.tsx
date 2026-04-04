@@ -24,6 +24,7 @@ const PAYMENT_MAP: Record<string, { label: string; color: string }> = {
 const METHOD_LABELS: Record<string, string> = {
   cash: '💵 Готівка', card: '💳 Картою',
   bank_transfer: '🏦 На рахунок', invoice: '📄 Фактура', online: '🌐 Онлайн',
+  booking_platform: '🏨 Платформа бронювання',
 };
 
 const TYPE_LABELS: Record<string, string> = {

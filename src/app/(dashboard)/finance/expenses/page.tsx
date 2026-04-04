@@ -55,6 +55,7 @@ const METHOD_LABELS: Record<string, string> = {
   card: '💳 Картка',
   bank_transfer: '🏦 Переказ',
   invoice: '📄 Фактура',
+  booking_platform: '🏨 Платформа бронювання',
 };
 
 export default function ExpensesPage() {
@@ -379,6 +380,7 @@ export default function ExpensesPage() {
                     <option value="card">💳 Картка</option>
                     <option value="bank_transfer">🏦 Переказ</option>
                     <option value="invoice">📄 Фактура</option>
+                    <option value="booking_platform">🏨 Платформа бронювання</option>
                   </select>
                 </div>
               </div>

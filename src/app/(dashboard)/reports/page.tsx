@@ -22,6 +22,7 @@ const METHOD_LABELS: Record<string, { label: string; icon: string; color: string
   bank_transfer: { label: 'На рахунок', icon: '🏦', color: '#f59e0b' },
   invoice: { label: 'Фактура', icon: '📄', color: '#a78bfa' },
   online: { label: 'Онлайн', icon: '🌐', color: '#60a5fa' },
+  booking_platform: { label: 'Платформа бронювання', icon: '🏨', color: '#f472b6' },
 };
 
 // ─── Date helpers ─────────────────────────────────────

@@ -594,6 +594,21 @@ function runMigrations(database: any) {
     )
   `);
 
+  // --- Migration: add document & nationality fields to reservation_guests ---
+  const rgCols = database.prepare("PRAGMA table_info(reservation_guests)").all().map((c: any) => c.name);
+  if (!rgCols.includes('nationality')) {
+    try { database.exec("ALTER TABLE reservation_guests ADD COLUMN nationality TEXT"); } catch { /* already exists */ }
+  }
+  if (!rgCols.includes('document_type')) {
+    try { database.exec("ALTER TABLE reservation_guests ADD COLUMN document_type TEXT"); } catch { /* already exists */ }
+  }
+  if (!rgCols.includes('document_number')) {
+    try { database.exec("ALTER TABLE reservation_guests ADD COLUMN document_number TEXT"); } catch { /* already exists */ }
+  }
+  if (!rgCols.includes('guest_id')) {
+    try { database.exec("ALTER TABLE reservation_guests ADD COLUMN guest_id TEXT REFERENCES guests(id)"); } catch { /* already exists */ }
+  }
+
   // --- Migration: create additional_services table ---
   const asExists = database.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='additional_services'"
@@ -767,6 +782,60 @@ function runMigrations(database: any) {
     }
     console.log('[DB] Created guest_page_config table with defaults for', utRows.length, 'unit types');
   }
+
+  // --- Migration: add lock_code, maps_url, territory_map_url to guest_page_config ---
+  const gpcCols = database.prepare("PRAGMA table_info(guest_page_config)").all().map((c: any) => c.name);
+  if (!gpcCols.includes('lock_code')) {
+    try { database.exec("ALTER TABLE guest_page_config ADD COLUMN lock_code TEXT DEFAULT '4971#'"); } catch { /* */ }
+  }
+  if (!gpcCols.includes('maps_url')) {
+    try { database.exec("ALTER TABLE guest_page_config ADD COLUMN maps_url TEXT DEFAULT 'https://maps.app.goo.gl/WH2CKhTydtDx9EBe7'"); } catch { /* */ }
+  }
+  if (!gpcCols.includes('territory_map_url')) {
+    try { database.exec("ALTER TABLE guest_page_config ADD COLUMN territory_map_url TEXT"); } catch { /* */ }
+  }
+
+  // --- Migration: add guest_page_expires_at to reservations ---
+  try {
+    const resCols = database.prepare("PRAGMA table_info(reservations)").all().map((c: any) => c.name);
+    if (!resCols.includes('guest_page_expires_at')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN guest_page_expires_at TEXT");
+      // Backfill: set expiry to check_out + 2 days for existing reservations
+      database.exec("UPDATE reservations SET guest_page_expires_at = datetime(check_out, '+2 days') WHERE guest_page_expires_at IS NULL AND guest_page_token IS NOT NULL");
+    }
+  } catch { /* */ }
+
+  // --- Migration: create early_bookings table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS early_bookings (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      guest_id TEXT REFERENCES guests(id),
+      guest_name TEXT NOT NULL,
+      guest_email TEXT,
+      guest_phone TEXT,
+      unit_type_id TEXT REFERENCES unit_types(id),
+      discount_percent INTEGER NOT NULL DEFAULT 30,
+      min_nights INTEGER NOT NULL DEFAULT 2,
+      base_price_at_booking REAL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'used', 'expired', 'cancelled')),
+      source_reservation_id TEXT REFERENCES reservations(id),
+      notes TEXT,
+      expires_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // --- Migration: create rate_limits table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      token TEXT NOT NULL,
+      action TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  // Clean old rate limit entries (older than 1 hour)
+  try { database.exec("DELETE FROM rate_limits WHERE created_at < datetime('now', '-1 hour')"); } catch { /* */ }
 
   // --- Migration: create ical_channels table ---
   database.exec(`

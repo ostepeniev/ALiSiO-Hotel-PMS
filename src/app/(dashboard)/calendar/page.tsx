@@ -172,6 +172,7 @@ export default function CalendarPage() {
   const METHOD_LABELS: Record<string, string> = {
     cash: '💵 Готівка', card: '💳 Картою',
     bank_transfer: '🏦 На рахунок', invoice: '📄 Фактура', online: '🌐 Онлайн',
+    booking_platform: '🏨 Платформа бронювання',
   };
   const TYPE_LABELS: Record<string, string> = {
     deposit: 'Передпл.', full: 'Повна', partial: 'Частк.', refund: 'Поверн.',
@@ -1055,6 +1056,7 @@ export default function CalendarPage() {
                               <option value="card">💳 Картою</option>
                               <option value="bank_transfer">🏦 На рахунок</option>
                               <option value="invoice">📄 Фактура</option>
+                              <option value="booking_platform">🏨 Платформа бронювання</option>
                             </select>
                           </div>
                           <div style={{ display: 'flex', gap: 8 }}>

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 // POST /api/guest/[token]/services — order additional services
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -16,6 +17,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!reservation) {
       return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
+    }
+
+    // Rate limiting: max 5 service orders per 10 minutes
+    const rl = checkRateLimit(token, 'service_order', 5, 10);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a few minutes.' }, { status: 429 });
     }
 
     const { services } = body;
