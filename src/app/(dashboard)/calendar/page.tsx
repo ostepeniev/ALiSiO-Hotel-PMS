@@ -4,10 +4,12 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
+import BookingViewModal from '@/components/booking/BookingViewModal';
 import {
   Search,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Tent,
   Building2,
   TreePine,
@@ -23,6 +25,9 @@ import {
   Check,
   Copy,
   ExternalLink,
+  ZoomIn,
+  ZoomOut,
+  CalendarDays,
 } from 'lucide-react';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -48,12 +53,18 @@ interface BookingRow {
 }
 
 // ─── Constants ────────────────────────────────────────────
-const DAY_W = 44;
-const ROW_H = 40;
-const GROUP_H = 32;
-const HEADER_H = 52;
-const AVAIL_H = 28;
-const LEFT_W = 190;
+const ZOOM_LEVELS = {
+  week:    { dayW: 72, totalDays: 42, label: 'Тиждень' },
+  month:   { dayW: 44, totalDays: 90, label: 'Місяць' },
+  quarter: { dayW: 24, totalDays: 180, label: 'Квартал' },
+} as const;
+type ZoomLevel = keyof typeof ZOOM_LEVELS;
+
+const ROW_H = 38;
+const GROUP_H = 30;
+const HEADER_H = 48;
+const AVAIL_H = 24;
+const LEFT_W = 180;
 
 const DAY_NAMES = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const MONTH_NAMES = [
@@ -111,7 +122,12 @@ function getDays(start: Date, count: number): Date[] {
   return arr;
 }
 
-function fmtDate(d: Date): string { return d.toISOString().split('T')[0]; }
+function fmtDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 function isToday(d: Date): boolean {
   const t = new Date();
   return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
@@ -134,6 +150,8 @@ export default function CalendarPage() {
   const [viewBooking, setViewBooking] = useState<BookingRow | null>(null);
   const [editBooking, setEditBooking] = useState<BookingRow | null>(null);
   const [calPayments, setCalPayments] = useState<any[]>([]);
+  const [calRegistrations, setCalRegistrations] = useState<any[]>([]);
+  const [calActivityLog, setCalActivityLog] = useState<any[]>([]);
   const [bookingSources, setBookingSources] = useState<any[]>([]);
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
@@ -143,6 +161,13 @@ export default function CalendarPage() {
   // Modals
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
+
+  // Zoom & Navigation
+  const [zoom, setZoom] = useState<ZoomLevel>('month');
+  const [navOffset, setNavOffset] = useState(0); // weeks offset from today
+
+  // Two-click date range selection
+  const [rangeStart, setRangeStart] = useState<{ unitId: string; date: string } | null>(null);
 
   // New booking form
   const [unitTypes, setUnitTypes] = useState<any[]>([]);
@@ -183,15 +208,17 @@ export default function CalendarPage() {
   const headerRef = useRef<HTMLDivElement>(null);
   const availRef = useRef<HTMLDivElement>(null);
 
-  // Timeline: 14 days before today → 120 days after = 134 total days
+  // Dynamic timeline based on zoom + navigation
+  const zoomCfg = ZOOM_LEVELS[zoom];
+  const DAY_W = zoomCfg.dayW;
+  const TOTAL_DAYS = zoomCfg.totalDays;
   const timelineStart = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 14);
+    d.setDate(d.getDate() - 14 + navOffset * 7);
     d.setHours(0, 0, 0, 0);
     return d;
-  }, []);
-  const TOTAL_DAYS = 134;
-  const days = useMemo(() => getDays(timelineStart, TOTAL_DAYS), [timelineStart]);
+  }, [navOffset]);
+  const days = useMemo(() => getDays(timelineStart, TOTAL_DAYS), [timelineStart, TOTAL_DAYS]);
   const todayIndex = useMemo(() => days.findIndex(d => isToday(d)), [days]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -229,6 +256,23 @@ export default function CalendarPage() {
       scrollRef.current.scrollLeft = Math.max(0, todayIndex * DAY_W - 200);
     }
   }, [loading, todayIndex]);
+
+  // ─── Keyboard shortcuts ──────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === 'Escape') {
+        setViewBooking(null); setEditBooking(null); setShowNewBooking(false); setShowGroupModal(false); setRangeStart(null);
+      }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); setNavOffset(p => p - 1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); setNavOffset(p => p + 1); }
+      if (e.key === 't' || e.key === 'T') scrollToToday();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+
 
   // ─── Sync scroll ──────
   const handleScroll = useCallback(() => {
@@ -320,13 +364,63 @@ export default function CalendarPage() {
     });
   }, [days, filteredBookings, filteredUnits]);
 
+  // ─── Occupancy rate per day (for heatmap) ──────
+  const occupancyRate = useMemo(() => {
+    if (filteredUnits.length === 0) return days.map(() => 0);
+    return days.map((_, i) => {
+      const free = freePerDay[i];
+      return 1 - (free / filteredUnits.length);
+    });
+  }, [days, freePerDay, filteredUnits]);
+
+
   // ─── Toggle group ──────
   const toggleGroup = (key: string) => setCollapsed(p => ({ ...p, [key]: !p[key] }));
 
+  // ─── Today alerts ──────
+  const todayAlerts = useMemo(() => {
+    const todayStr = fmtDate(new Date());
+    const checkIns = bookings.filter(b => b.check_in === todayStr && b.status !== 'cancelled');
+    const checkOuts = bookings.filter(b => b.check_out === todayStr && b.status !== 'cancelled');
+    const unpaid = bookings.filter(b => (b.payment_status === 'unpaid' || b.payment_status === 'partial') && b.status !== 'cancelled' && b.check_in >= todayStr);
+    return { checkIns, checkOuts, unpaid };
+  }, [bookings]);
+
   // ─── Scroll to today ──────
   const scrollToToday = () => {
-    if (scrollRef.current && todayIndex >= 0) {
-      scrollRef.current.scrollLeft = Math.max(0, todayIndex * DAY_W - 200);
+    setNavOffset(0);
+    setTimeout(() => {
+      if (scrollRef.current) {
+        const idx = days.findIndex(d => isToday(d));
+        if (idx >= 0) scrollRef.current.scrollLeft = Math.max(0, idx * DAY_W - 200);
+      }
+    }, 50);
+  };
+
+  // ─── Cell click handler (two-click range) ──────
+  const handleCellClick = (unitId: string, day: Date) => {
+    const dateStr = fmtDate(day);
+    const unit = units.find(u => u.id === unitId);
+    if (!rangeStart || rangeStart.unitId !== unitId) {
+      // First click — set start
+      setRangeStart({ unitId, date: dateStr });
+    } else {
+      // Second click — set end and open modal
+      let ci = rangeStart.date;
+      let co = dateStr;
+      if (co <= ci) { const tmp = ci; ci = co; co = tmp; }
+      // end date should be next day if same day
+      if (ci === co) {
+        const nd = new Date(day); nd.setDate(nd.getDate() + 1);
+        co = fmtDate(nd);
+      }
+      setRangeStart(null);
+      setForm(p => ({
+        ...p, unitId, checkIn: ci, checkOut: co,
+        category: unit?.category_type || p.category,
+        cityTaxAmount: recalcCityTax(p.adults, ci, co),
+      }));
+      setShowNewBooking(true);
     }
   };
 
@@ -341,9 +435,11 @@ export default function CalendarPage() {
 
   const openBookingDetails = async (bookingId: string) => {
     try {
-      const [bookRes, payRes] = await Promise.all([
+      const [bookRes, payRes, regRes, actRes] = await Promise.all([
         fetch(`/api/bookings/${bookingId}`),
         fetch(`/api/payments?reservation_id=${bookingId}`),
+        fetch(`/api/bookings/${bookingId}/registrations`),
+        fetch(`/api/bookings/${bookingId}/activity`),
       ]);
       if (bookRes.ok) {
         const data = await bookRes.json();
@@ -352,6 +448,10 @@ export default function CalendarPage() {
       }
       const payData = await payRes.json();
       if (Array.isArray(payData)) setCalPayments(payData);
+      const regData = await regRes.json().catch(() => []);
+      if (Array.isArray(regData)) setCalRegistrations(regData);
+      const actData = await actRes.json().catch(() => []);
+      if (Array.isArray(actData)) setCalActivityLog(actData);
     } catch (e) { console.error(e); }
   };
 
@@ -523,77 +623,85 @@ export default function CalendarPage() {
 
         {/* ─── Toolbar ───────────────────── */}
         <div style={{
-          flexShrink: 0, padding: '10px 16px',
+          flexShrink: 0, padding: '8px 12px',
           background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
           borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', borderBottom: 'none',
-          display: 'flex', flexDirection: 'column', gap: 8,
+          display: 'flex', flexDirection: 'column', gap: 6,
           overflow: 'hidden', boxSizing: 'border-box',
         }}>
-          {/* Row 1: Month + Today + Action Buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
-                {MONTH_NAMES[new Date().getMonth()]} {new Date().getFullYear()}
+          {/* Row 1: Nav + Month + Zoom + Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setNavOffset(p => p - 2)} title="−2 тижні" style={{ padding: '4px 6px' }}><ChevronLeft size={14} /><ChevronLeft size={14} style={{ marginLeft: -8 }} /></button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setNavOffset(p => p - 1)} title="−1 тиждень" style={{ padding: '4px 6px' }}><ChevronLeft size={14} /></button>
+              <button className="btn btn-secondary btn-sm" onClick={scrollToToday} style={{ fontSize: 11, padding: '4px 8px' }}>Сьогодні</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setNavOffset(p => p + 1)} title="+1 тиждень" style={{ padding: '4px 6px' }}><ChevronRight size={14} /></button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setNavOffset(p => p + 2)} title="+2 тижні" style={{ padding: '4px 6px' }}><ChevronRight size={14} /><ChevronRight size={14} style={{ marginLeft: -8 }} /></button>
+              <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', marginLeft: 8, whiteSpace: 'nowrap' }}>
+                {MONTH_NAMES[timelineStart.getMonth()]} – {MONTH_NAMES[days[days.length - 1]?.getMonth()]} {days[days.length - 1]?.getFullYear()}
               </span>
-              <button className="btn btn-secondary btn-sm" onClick={scrollToToday} style={{ fontSize: 12 }}>
-                Сьогодні
-              </button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => fetchData()} title="Оновити">
-                <RefreshCw size={14} />
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <Users size={14} /> Групове
-              </button>
-              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending', internalNotes: '' }); setShowNewBooking(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <Plus size={14} /> Нове бронювання
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {/* Zoom */}
+              <div style={{ display: 'flex', borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                {(Object.keys(ZOOM_LEVELS) as ZoomLevel[]).map(z => (
+                  <button key={z} onClick={() => setZoom(z)} style={{
+                    padding: '3px 8px', fontSize: 11, fontWeight: zoom === z ? 700 : 400, border: 'none', cursor: 'pointer',
+                    background: zoom === z ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                    color: zoom === z ? '#fff' : 'var(--text-secondary)',
+                  }}>{ZOOM_LEVELS[z].label}</button>
+                ))}
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => fetchData()} title="Оновити" style={{ padding: '4px 6px' }}><RefreshCw size={14} /></button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Users size={14} /> Групове</button>
+              <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending', internalNotes: '' }); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
             </div>
           </div>
 
-          {/* Row 2: Filters */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Row 2: Filters + Range indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <div style={{ position: 'relative' }}>
-              <Search size={14} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-              <input
-                className="form-input"
-                placeholder="Пошук юніта..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ fontSize: 12, padding: '6px 10px 6px 28px', width: 150 }}
-              />
+              <Search size={12} style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+              <input className="form-input" placeholder="Пошук..." value={search} onChange={e => setSearch(e.target.value)}
+                style={{ fontSize: 11, padding: '4px 8px 4px 22px', width: 120 }} />
             </div>
-
-            <select className="form-select" style={{ width: 130, fontSize: 12 }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-              <option value="">Всі категорії</option>
+            <select className="form-select" style={{ width: 100, fontSize: 11, padding: '4px 6px' }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+              <option value="">Категорії</option>
               <option value="glamping">Glamping</option>
               <option value="resort">Resort</option>
               <option value="camping">Camping</option>
             </select>
-
-            <select className="form-select" style={{ width: 130, fontSize: 12 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="">Всі статуси</option>
-              {Object.entries(STATUS_MAP).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
+            <select className="form-select" style={{ width: 110, fontSize: 11, padding: '4px 6px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="">Статуси</option>
+              {Object.entries(STATUS_MAP).map(([k, v]) => (<option key={k} value={k}>{v.label}</option>))}
             </select>
-
-            <select className="form-select" style={{ width: 150, fontSize: 12 }} value={cleaningFilter} onChange={e => setCleaningFilter(e.target.value)}>
-              <option value="">🧹 Прибирання: все</option>
+            <select className="form-select" style={{ width: 110, fontSize: 11, padding: '4px 6px' }} value={cleaningFilter} onChange={e => setCleaningFilter(e.target.value)}>
+              <option value="">🧹 Все</option>
               <option value="clean">✓ Чисто</option>
               <option value="dirty">✗ Брудно</option>
-              <option value="in_progress">⟳ Прибирається</option>
+              <option value="in_progress">⟳ Прибир.</option>
             </select>
-
-            <select className="form-select" style={{ width: 150, fontSize: 12 }} value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}>
-              <option value="">💰 Оплата: всі</option>
-              {Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => (
-                <option key={k} value={k}>{v.icon} {v.label}</option>
-              ))}
+            <select className="form-select" style={{ width: 110, fontSize: 11, padding: '4px 6px' }} value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}>
+              <option value="">💰 Все</option>
+              {Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => (<option key={k} value={k}>{v.icon} {v.label}</option>))}
             </select>
+            {rangeStart && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 11, color: 'var(--accent-primary)', fontWeight: 600 }}>
+                <CalendarDays size={12} /> Заїзд: {rangeStart.date} — оберіть виїзд
+                <button className="btn btn-ghost btn-sm" onClick={() => setRangeStart(null)} style={{ padding: '2px 6px', fontSize: 10 }}><X size={10} /> Скасувати</button>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* ─── Today Alerts Banner ─── */}
+        {!loading && (todayAlerts.checkIns.length > 0 || todayAlerts.checkOuts.length > 0 || todayAlerts.unpaid.length > 0) && (
+          <div style={{ display: 'flex', gap: 12, padding: '6px 12px', fontSize: 11, fontWeight: 600, flexWrap: 'wrap', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', margin: '0 0 4px 0' }}>
+            {todayAlerts.checkIns.length > 0 && <span style={{ color: 'var(--accent-success)' }}>✈ {todayAlerts.checkIns.length} заїздів сьогодні</span>}
+            {todayAlerts.checkOuts.length > 0 && <span style={{ color: 'var(--accent-primary)' }}>🚶 {todayAlerts.checkOuts.length} виїздів сьогодні</span>}
+            {todayAlerts.unpaid.length > 0 && <span style={{ color: 'var(--accent-warning)' }}>⚠ {todayAlerts.unpaid.length} неоплачених</span>}
+          </div>
+        )}
 
         {/* ─── Calendar Grid ───────────────── */}
         <div style={{
@@ -637,9 +745,9 @@ export default function CalendarPage() {
                         background: isTd ? 'rgba(96, 165, 250, 0.08)' : isWknd ? 'rgba(255,255,255,0.02)' : 'transparent',
                         position: 'relative',
                       }}>
-                        {showMonth && <div style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 600, position: 'absolute', top: 2 }}>{MONTH_NAMES[day.getMonth()].substring(0, 3)}</div>}
-                        <div style={{ fontWeight: isTd ? 800 : 600, color: isTd ? 'var(--accent-primary)' : 'var(--text-primary)', marginTop: showMonth ? 6 : 0 }}>{day.getDate()}</div>
-                        <div style={{ fontSize: 9, color: isWknd ? 'var(--accent-danger)' : 'var(--text-tertiary)' }}>{DAY_NAMES[day.getDay()]}</div>
+                        {showMonth && <div style={{ fontSize: 9, color: 'var(--accent-primary)', fontWeight: 700, position: 'absolute', top: 1, left: 2, background: 'var(--bg-secondary)', padding: '0 3px', borderRadius: 2, zIndex: 2, whiteSpace: 'nowrap' }}>{MONTH_NAMES[day.getMonth()].substring(0, 3)}</div>}
+                        <div style={{ fontWeight: isTd ? 800 : 600, color: isTd ? 'var(--accent-primary)' : 'var(--text-primary)', marginTop: showMonth ? 8 : 0, fontSize: zoom === 'quarter' ? 9 : 11 }}>{day.getDate()}</div>
+                        {zoom !== 'quarter' && <div style={{ fontSize: 9, color: isWknd ? 'var(--accent-danger)' : 'var(--text-tertiary)' }}>{DAY_NAMES[day.getDay()]}</div>}
                       </div>
                     );
                   })}
@@ -658,9 +766,13 @@ export default function CalendarPage() {
                         borderRight: '1px solid var(--border-primary)',
                         borderLeft: isTd ? '2px solid var(--accent-primary)' : 'none',
                         borderRightColor: isTd ? 'var(--accent-primary)' : 'var(--border-primary)',
-                        background: isTd ? 'rgba(96, 165, 250, 0.08)' : 'transparent',
+                        background: isTd ? 'rgba(96, 165, 250, 0.08)'
+                          : occupancyRate[i] >= 0.9 ? 'rgba(239,68,68,0.12)'
+                          : occupancyRate[i] >= 0.7 ? 'rgba(250,204,21,0.10)'
+                          : occupancyRate[i] >= 0.4 ? 'rgba(34,197,94,0.06)'
+                          : 'transparent',
                       }}>
-                        {Math.max(0, free)}
+                        {zoom !== 'quarter' ? Math.max(0, free) : (free <= 0 ? '×' : free)}
                       </div>
                     );
                   })}
@@ -753,27 +865,18 @@ export default function CalendarPage() {
                           {days.map((day, i) => {
                             const isTd = isToday(day);
                             const isWknd = isWeekend(day);
+                            const dateStr = fmtDate(day);
+                            const isRangeStart = rangeStart?.unitId === unit.id && rangeStart?.date === dateStr;
                             return (
                               <div key={i} style={{
                                 width: DAY_W, minWidth: DAY_W, height: ROW_H,
                                 borderRight: '1px solid var(--border-primary)',
                                 borderLeft: isTd ? '2px solid var(--accent-primary)' : 'none',
                                 borderRightColor: isTd ? 'var(--accent-primary)' : 'var(--border-primary)',
-                                background: isTd ? 'rgba(96, 165, 250, 0.06)' : isWknd ? 'rgba(255,255,255,0.015)' : 'transparent',
+                                background: isRangeStart ? 'rgba(96,165,250,0.25)' : isTd ? 'rgba(96, 165, 250, 0.06)' : isWknd ? 'rgba(255,255,255,0.015)' : 'transparent',
                                 cursor: 'pointer',
                               }}
-                              onClick={() => {
-                                const ds = day.toISOString().split('T')[0];
-                                const nextDay = new Date(day); nextDay.setDate(nextDay.getDate() + 1);
-                                const de = nextDay.toISOString().split('T')[0];
-                                setForm(p => ({
-                                  ...p,
-                                  unitId: unit.id, checkIn: ds, checkOut: de,
-                                  category: unit.category_type,
-                                  cityTaxAmount: recalcCityTax(p.adults, ds, de),
-                                }));
-                                setShowNewBooking(true);
-                              }}
+                              onClick={() => handleCellClick(unit.id, day)}
                               />
                             );
                           })}
@@ -883,396 +986,71 @@ export default function CalendarPage() {
         );
       })()}
 
-      {/* ─── View Booking Modal (same as Bookings page) ───────── */}
+      {/* ─── View Booking Modal (shared component) ───────── */}
       {viewBooking && (
-        <div className="modal-overlay" onClick={() => setViewBooking(null)}>
-          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Бронювання</h3>
-              <button className="modal-close" onClick={() => setViewBooking(null)}><X size={18} /></button>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Гість</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{viewBooking.first_name} {viewBooking.last_name}</div>
-                    {viewBooking.guest_email && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{viewBooking.guest_email}</div>}
-                    {viewBooking.guest_phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{viewBooking.guest_phone}</div>}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 4 }}>Розміщення</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{viewBooking.unit_name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                      <span className={`badge ${STATUS_MAP[viewBooking.status]?.badge}`}>{STATUS_MAP[viewBooking.status]?.label}</span>{' '}
-                      <span className="badge badge-info">{viewBooking.category_name}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center', padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Заїзд</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{viewBooking.check_in}</div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                    <ArrowRight size={16} style={{ color: 'var(--text-tertiary)' }} />
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent-primary)' }}>{viewBooking.nights} н.</div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Виїзд</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{viewBooking.check_out}</div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                  <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Гостей</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{viewBooking.adults} дор.{viewBooking.children > 0 && ` + ${viewBooking.children} діт.`}</div>
-                  </div>
-                  <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Джерело</div>
-                    <div style={{ marginTop: 4 }}><span className="badge" style={{ background: (sourceMap[viewBooking.source]?.color || '#6c7086') + '22', color: sourceMap[viewBooking.source]?.color || '#6c7086' }}>{sourceMap[viewBooking.source]?.label || viewBooking.source}</span></div>
-                  </div>
-                  <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Тариф</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-primary)', marginTop: 4 }}>{(viewBooking.total_price || 0).toLocaleString()} CZK</div>
-                    {((viewBooking as any).commission_amount || 0) > 0 && (
-                      <div style={{ marginTop: 6, fontSize: 12 }}>
-                        <div style={{ color: '#f59e0b', fontWeight: 600 }}>Комісія: {((viewBooking as any).commission_amount || 0).toLocaleString()} CZK</div>
-                        <div style={{ color: '#22c55e', fontWeight: 600 }}>Чиста ставка: {((viewBooking.total_price || 0) - ((viewBooking as any).commission_amount || 0)).toLocaleString()} CZK</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* 🏛️ City Tax */}
-                {(() => {
-                  const taxAmt = (viewBooking as any).city_tax_amount || 0;
-                  const taxIncl = !!(viewBooking as any).city_tax_included;
-                  const taxPaid = (viewBooking as any).city_tax_paid || 'pending';
-                  const tsMap: Record<string, { label: string; color: string; icon: string }> = {
-                    pending: { label: 'Очікує', color: '#f59e0b', icon: '⏳' },
-                    paid: { label: 'Оплачено', color: '#22c55e', icon: '✅' },
-                    exempt: { label: 'Звільнено', color: '#6c7086', icon: '🚫' },
-                  };
-                  const ts = tsMap[taxPaid] || tsMap.pending;
-                  return (
-                    <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>🏛️ Туристичний збір</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, marginTop: 4 }}>{taxAmt.toLocaleString()} CZK</div>
-                        {taxIncl && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Включено у вартість</div>}
-                      </div>
-                      <span className="badge" style={{ background: ts.color + '22', color: ts.color, fontSize: 12 }}>{ts.icon} {ts.label}</span>
-                    </div>
-                  );
-                })()}
-
-                {/* 💰 Payment Section */}
-                {(() => {
-                  const total = viewBooking.total_price || 0;
-                  const paid = calPayments.filter((p: any) => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
-                  const remaining = Math.max(0, total - paid);
-                  const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-                  const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
-                  return (
-                    <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-primary)' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, fontWeight: 700 }}>💰 Оплата</div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Всього</div>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-primary)' }}>{total.toLocaleString()} CZK</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(total)} EUR</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Оплачено</div>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{paid.toLocaleString()} CZK</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(paid)} EUR</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Залишок</div>
-                          <div style={{ fontSize: 16, fontWeight: 700, color: remaining > 0 ? '#ef4444' : '#22c55e' }}>{remaining.toLocaleString()} CZK</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>≈ {toEur(remaining)} EUR</div>
-                        </div>
-                      </div>
-
-                      {/* Progress bar */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                        <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-full)', height: 8, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: barColor, borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: barColor, minWidth: 36 }}>{pct}%</span>
-                      </div>
-
-                      {/* Transactions */}
-                      {calPayments.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6 }}>Транзакції</div>
-                          {calPayments.map((p: any) => (
-                            <div key={p.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
-                              borderBottom: '1px solid var(--border-primary)', fontSize: 12,
-                            }}>
-                              <span style={{ color: 'var(--text-tertiary)', minWidth: 70 }}>{p.paid_at || '—'}</span>
-                              <span style={{ fontWeight: 700, color: p.type === 'refund' ? '#ef4444' : '#22c55e', minWidth: 80 }}>
-                                {p.type === 'refund' ? '-' : '+'}{p.amount.toLocaleString()} CZK
-                              </span>
-                              <span style={{ color: 'var(--text-secondary)' }}>{METHOD_LABELS[p.method] || p.method}</span>
-                              <span style={{ color: 'var(--text-tertiary)' }}>{TYPE_LABELS[p.type] || p.type}</span>
-                              {p.notes && <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.notes}</span>}
-                              <button
-                                style={{ background: 'none', border: 'none', color: 'var(--accent-danger)', cursor: 'pointer', padding: 2, marginLeft: 'auto', flexShrink: 0 }}
-                                title="Видалити"
-                                onClick={async () => {
-                                  if (!confirm('Видалити транзакцію?')) return;
-                                  await fetch(`/api/payments/${p.id}`, { method: 'DELETE' });
-                                  fetchCalPayments(viewBooking.id);
-                                  fetchData();
-                                  showToast('Транзакцію видалено');
-                                }}
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Add payment form */}
-                      {!showPayForm ? (
-                        <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => setShowPayForm(true)}>
-                          <Plus size={14} /> Додати платіж
-                        </button>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <input className="form-input" type="number" placeholder="Сума CZK" style={{ flex: 1, fontSize: 13 }}
-                              value={payForm.amount} onChange={e => setPayForm(p => ({ ...p, amount: e.target.value }))} />
-                            <select className="form-select" style={{ width: 140, fontSize: 13 }} value={payForm.method}
-                              onChange={e => setPayForm(p => ({ ...p, method: e.target.value }))}>
-                              <option value="cash">💵 Готівка</option>
-                              <option value="card">💳 Картою</option>
-                              <option value="bank_transfer">🏦 На рахунок</option>
-                              <option value="invoice">📄 Фактура</option>
-                              <option value="booking_platform">🏨 Платформа бронювання</option>
-                            </select>
-                          </div>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <select className="form-select" style={{ flex: 1, fontSize: 13 }} value={payForm.type}
-                              onChange={e => setPayForm(p => ({ ...p, type: e.target.value }))}>
-                              <option value="deposit">Передплата</option>
-                              <option value="partial">Часткова</option>
-                              <option value="full">Повна оплата</option>
-                              <option value="refund">Повернення</option>
-                            </select>
-                            <input className="form-input" placeholder="Примітка" style={{ flex: 2, fontSize: 13 }}
-                              value={payForm.notes} onChange={e => setPayForm(p => ({ ...p, notes: e.target.value }))} />
-                          </div>
-                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                            <button className="btn btn-sm btn-ghost" onClick={() => setShowPayForm(false)}>Скасувати</button>
-                            <button className="btn btn-sm btn-primary" disabled={!payForm.amount || Number(payForm.amount) <= 0}
-                              onClick={async () => {
-                                await fetch('/api/payments', {
-                                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    reservation_id: viewBooking.id, amount: Number(payForm.amount),
-                                    method: payForm.method, type: payForm.type, notes: payForm.notes || undefined,
-                                  }),
-                                });
-                                setPayForm({ amount: '', method: 'cash', type: 'partial', notes: '' });
-                                setShowPayForm(false);
-                                fetchCalPayments(viewBooking.id);
-                                fetchData();
-                                showToast('Платіж додано!');
-                              }}
-                            >
-                              <Save size={12} /> Зберегти
-                            </button>
-                          </div>
-
-                          {/* Quick fill: remaining amount */}
-                          {remaining > 0 && (
-                            <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, alignSelf: 'flex-start' }}
-                              onClick={() => setPayForm(p => ({ ...p, amount: String(remaining), type: remaining === total ? 'full' : 'partial' }))}>
-                              Заповнити залишок: {remaining.toLocaleString()} CZK
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {/* payment_requested toggle */}
-                      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <button
-                          className={`btn btn-sm ${viewBooking.payment_status === 'payment_requested' ? 'btn-primary' : 'btn-ghost'}`}
-                          style={{ fontSize: 11 }}
-                          onClick={async () => {
-                            const newSt = viewBooking.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested';
-                            await fetch(`/api/bookings/${viewBooking.id}`, {
-                              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ payment_status: newSt }),
-                            });
-                            setViewBooking({ ...viewBooking, payment_status: newSt });
-                            fetchData();
-                            showToast(newSt === 'payment_requested' ? 'Запит на оплату надіслано' : 'Запит скасовано');
-                          }}
-                        >
-                          ✉ Запит на оплату
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 8 }}>Змінити статус</div>
-                  <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                    {(['confirmed', 'checked_in', 'checked_out', 'cancelled'] as const).map(st => (
-                      <button key={st} className={`btn btn-sm ${viewBooking.status === st ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => changeStatus(viewBooking.id, st)}>
-                        {STATUS_MAP[st].label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 📝 Notes */}
-            {(viewBooking as any).internal_notes && (
-              <div style={{ padding: 12, background: 'rgba(250,204,21,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(250,204,21,0.2)' }}>
-                <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>📝 Примітки</div>
-                <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{(viewBooking as any).internal_notes}</div>
-              </div>
-            )}
-
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setViewBooking(null)}>Закрити</button>
-              {(viewBooking as any).guest_page_token && (
-                <>
-                  <button className="btn btn-secondary" title="Скопіювати посилання" onClick={() => {
-                    const url = `${window.location.origin}/guest/${(viewBooking as any).guest_page_token}`;
-                    navigator.clipboard.writeText(url).then(() => showToast('Посилання скопійовано!'));
-                  }}>
-                    <Copy size={14} /> Скопіювати
-                  </button>
-                  <button className="btn btn-secondary" style={{ color: 'var(--accent-primary)' }} onClick={() => window.open(`/guest/${(viewBooking as any).guest_page_token}`, '_blank')}>
-                    <ExternalLink size={14} /> Гостьова сторінка
-                  </button>
-                </>
-              )}
-              <button className="btn btn-primary" onClick={() => openEditBooking(viewBooking)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Edit3 size={14} /> Редагувати
-              </button>
-            </div>
-          </div>
-        </div>
+        <BookingViewModal
+          booking={viewBooking}
+          payments={calPayments}
+          registrations={calRegistrations}
+          activityLog={calActivityLog}
+          sourceMap={sourceMap}
+          onClose={() => setViewBooking(null)}
+          onEdit={() => openEditBooking(viewBooking)}
+          onChangeStatus={(id, st) => changeStatus(id, st)}
+          onFetchPayments={(id) => fetchCalPayments(id)}
+          onFetchBookings={() => fetchData()}
+          onFetchRegistrations={async (id) => {
+            const res = await fetch(`/api/bookings/${id}/registrations`);
+            const data = await res.json().catch(() => []);
+            if (Array.isArray(data)) setCalRegistrations(data);
+          }}
+          showToast={showToast}
+          setBooking={(b) => setViewBooking(b)}
+        />
       )}
 
-      {/* ─── Edit Booking Modal ───────── */}
+      {/* ─── Edit Booking Modal (compact) ───────── */}
       {editBooking && (
         <div className="modal-overlay" onClick={() => setEditBooking(null)}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Редагувати бронювання</h3>
-              <button className="modal-close" onClick={() => setEditBooking(null)}><X size={18} /></button>
+            <div className="modal-header" style={{ padding: '10px 16px' }}>
+              <h3 className="modal-title" style={{ fontSize: 15 }}>Редагувати бронювання</h3>
+              <button className="modal-close" onClick={() => setEditBooking(null)}><X size={16} /></button>
             </div>
-            <div className="modal-body">
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Ім&apos;я *</label><input className="form-input" value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Прізвище *</label><input className="form-input" value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} /></div>
+            <div className="modal-body" style={{ padding: '12px 16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Дор.</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => setForm(p => ({ ...p, adults: Number(e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Діт.</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
               </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Телефон</label><input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Юніт</label><select className="form-select" value={form.unitId} onChange={e => setForm(p => ({ ...p, unitId: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{unitsForType.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Джерело</label><select className="form-select" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{bookingSources.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Статус</label><select className="form-select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Оплата</label><select className="form-select" value={form.paymentStatus} onChange={e => setForm(p => ({ ...p, paymentStatus: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
               </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value }))} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ім&apos;я *</label><input className="form-input" value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Прізвище *</label><input className="form-input" value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Email</label><input className="form-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Телефон</label><input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
               </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Дорослих</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => setForm(p => ({ ...p, adults: Number(e.target.value) }))} /></div>
-                <div className="form-group"><label className="form-label">Дітей</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">Юніт</label>
-                  <select className="form-select" value={form.unitId} onChange={e => setForm(p => ({ ...p, unitId: e.target.value }))}>
-                    {unitsForType.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.code})</option>)}
-                  </select>
+              <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 8, marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>💰 Фінанси</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px' }}>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ціна CZK</label><input className="form-input" type="number" placeholder="0" value={form.totalPrice} onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Комісія{getSourceCommissionPct(form.source) > 0 && ` ${getSourceCommissionPct(form.source)}%`}</label><input className="form-input" type="number" placeholder="0" value={form.commissionAmount} onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>🏛️ Збір</label><input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount} onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Збір ст.</label><select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}><option value="pending">⏳</option><option value="paid">✅</option><option value="exempt">🚫</option></select></div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Джерело</label>
-                  <select className="form-select" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))}>
-                    {bookingSources.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}
-                  </select>
-                </div>
+                <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}><input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} /> Вкл. у вартість</label>
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">Статус</label>
-                  <select className="form-select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
-                    {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Оплата</label>
-                  <select className="form-select" value={form.paymentStatus} onChange={e => setForm(p => ({ ...p, paymentStatus: e.target.value }))}>
-                    {Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-              </div>
-              {/* 💰 Фінанси */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>💰 Фінанси</div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Вартість (CZK)</label>
-                    <input className="form-input" type="number" placeholder="0" value={form.totalPrice}
-                      onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Комісія (CZK){getSourceCommissionPct(form.source) > 0 && <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 4 }}>{getSourceCommissionPct(form.source)}%</span>}</label>
-                    <input className="form-input" type="number" placeholder="0" value={form.commissionAmount}
-                      onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} />
-                  </div>
-                </div>
-              </div>
-              {/* 🏛️ Тур. збір */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>🏛️ Туристичний збір</div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Сума (CZK)</label>
-                    <input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount}
-                      onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Статус</label>
-                    <select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))}>
-                      <option value="pending">⏳ Очікує</option>
-                      <option value="paid">✅ Оплачено</option>
-                      <option value="exempt">🚫 Звільнено</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 }}>
-                  <input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
-                  <span>Включено у вартість</span>
-                </div>
-              </div>
+              <textarea className="form-input" placeholder="Примітки..." value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px', minHeight: 36, resize: 'vertical', width: '100%' }} />
             </div>
-              {/* 📝 Примітки */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📝 Примітки</div>
-                <textarea className="form-input" placeholder="Внутрішні примітки..."
-                  value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))}
-                  style={{ minHeight: 50, resize: 'vertical' }} />
-              </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setEditBooking(null)}>Скасувати</button>
-              <button className="btn btn-primary" onClick={handleSaveEdit} disabled={saving}>
+            <div className="modal-footer" style={{ padding: '8px 16px' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setEditBooking(null)}>Скасувати</button>
+              <button className="btn btn-primary btn-sm" onClick={handleSaveEdit} disabled={saving}>
                 {saving ? <Loader2 size={14} className="animate-pulse" /> : <Save size={14} />} Зберегти
               </button>
             </div>
@@ -1280,112 +1058,68 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* ─── New Booking Modal ───────── */}
+
+
+      {/* ─── New Booking Modal (compact) ───────── */}
       {showNewBooking && (
-        <div className="modal-overlay" onClick={() => setShowNewBooking(false)}>
+        <div className="modal-overlay" onClick={() => { setShowNewBooking(false); setRangeStart(null); }}>
           <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Нове бронювання</h3>
-              <button className="modal-close" onClick={() => setShowNewBooking(false)}><X size={18} /></button>
+            <div className="modal-header" style={{ padding: '10px 16px' }}>
+              <h3 className="modal-title" style={{ fontSize: 15 }}>Нове бронювання</h3>
+              <button className="modal-close" onClick={() => { setShowNewBooking(false); setRangeStart(null); }}><X size={16} /></button>
             </div>
-            <div className="modal-body">
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Ім&apos;я *</label><input className="form-input" value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Прізвище *</label><input className="form-input" value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} /></div>
+            <div className="modal-body" style={{ padding: '12px 16px' }}>
+              {/* Section: Stay */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value, cityTaxAmount: recalcCityTax(p.adults, e.target.value, p.checkOut) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value, cityTaxAmount: recalcCityTax(p.adults, p.checkIn, e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Дор.</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => { const a = Number(e.target.value); setForm(p => ({ ...p, adults: a, cityTaxAmount: recalcCityTax(a, p.checkIn, p.checkOut) })); }} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Діт.</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
               </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Телефон</label><input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
+              {form.checkIn && form.checkOut && <div style={{ fontSize: 11, color: 'var(--accent-primary)', fontWeight: 600, marginBottom: 8 }}>📅 {calcNightsLocal(form.checkIn, form.checkOut)} ночей</div>}
+
+              {/* Section: Unit */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Категорія</label><select className="form-select" value={form.category} onChange={e => { const cat = e.target.value; const uts = unitTypes.filter((ut: any) => ut.category_type === cat); setForm(p => ({ ...p, category: cat, unitTypeId: uts[0]?.id || '', unitId: '' })); }} style={{ fontSize: 12, padding: '5px 6px' }}><option value="glamping">Glamping</option><option value="resort">Resort</option><option value="camping">Camping</option></select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Тип</label><select className="form-select" value={form.unitTypeId} onChange={e => setForm(p => ({ ...p, unitTypeId: e.target.value, unitId: '' }))} style={{ fontSize: 12, padding: '5px 6px' }}>{unitTypesForCategory.map((ut: any) => <option key={ut.id} value={ut.id}>{ut.name}</option>)}</select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Юніт</label><select className="form-select" value={form.unitId} onChange={e => setForm(p => ({ ...p, unitId: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}><option value="">Авто</option>{unitsForType.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Джерело</label><select className="form-select" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{bookingSources.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></div>
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">Категорія</label>
-                  <select className="form-select" value={form.category} onChange={e => { const cat = e.target.value; const uts = unitTypes.filter((ut: any) => ut.category_type === cat); setForm(p => ({ ...p, category: cat, unitTypeId: uts[0]?.id || '', unitId: '' })); }}>
-                    <option value="glamping">Glamping</option>
-                    <option value="resort">Resort</option>
-                    <option value="camping">Camping</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Тип юніта</label>
-                  <select className="form-select" value={form.unitTypeId} onChange={e => setForm(p => ({ ...p, unitTypeId: e.target.value, unitId: '' }))}>
-                    {unitTypesForCategory.map((ut: any) => <option key={ut.id} value={ut.id}>{ut.name}</option>)}
-                  </select>
-                </div>
+
+              {/* Section: Guest */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px', marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ім&apos;я *</label><input className="form-input" value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Прізвище *</label><input className="form-input" value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Email</label><input className="form-input" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Телефон</label><input className="form-input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">Юніт</label>
-                  <select className="form-select" value={form.unitId} onChange={e => setForm(p => ({ ...p, unitId: e.target.value }))}>
-                    <option value="">Автовибір</option>
-                    {unitsForType.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.code})</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Джерело</label>
-                  <select className="form-select" value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))}>
-                    {bookingSources.map((s: any) => <option key={s.code} value={s.code}>{s.name}</option>)}
-                  </select>
+
+              {/* Section: Finance */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 8, marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>💰 Фінанси</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px' }}>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Ціна CZK</label><input className="form-input" type="number" placeholder="0" value={form.totalPrice} onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Комісія{getSourceCommissionPct(form.source) > 0 && ` ${getSourceCommissionPct(form.source)}%`}</label><input className="form-input" type="number" placeholder="0" value={form.commissionAmount} onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Статус</label><select className="form-select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Оплата</label><select className="form-select" value={form.paymentStatus} onChange={e => setForm(p => ({ ...p, paymentStatus: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}>{Object.entries(PAYMENT_STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
                 </div>
               </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Заїзд *</label><input className="form-input" type="date" value={form.checkIn} onChange={e => setForm(p => ({ ...p, checkIn: e.target.value, cityTaxAmount: recalcCityTax(p.adults, e.target.value, p.checkOut) }))} /></div>
-                <div className="form-group"><label className="form-label">Виїзд *</label><input className="form-input" type="date" value={form.checkOut} onChange={e => setForm(p => ({ ...p, checkOut: e.target.value, cityTaxAmount: recalcCityTax(p.adults, p.checkIn, e.target.value) }))} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Дорослих</label><input className="form-input" type="number" min={1} value={form.adults} onChange={e => { const a = Number(e.target.value); setForm(p => ({ ...p, adults: a, cityTaxAmount: recalcCityTax(a, p.checkIn, p.checkOut) })); }} /></div>
-                <div className="form-group"><label className="form-label">Дітей</label><input className="form-input" type="number" min={0} value={form.children} onChange={e => setForm(p => ({ ...p, children: Number(e.target.value) }))} /></div>
-              </div>
-              {/* 💰 Фінанси */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>💰 Фінанси</div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Вартість (CZK)</label>
-                    <input className="form-input" type="number" placeholder="0" value={form.totalPrice}
-                      onChange={e => { const p = e.target.value; setForm(f => ({ ...f, totalPrice: p, commissionAmount: recalcCommission(p, f.source) })); }} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Комісія (CZK){getSourceCommissionPct(form.source) > 0 && <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginLeft: 4 }}>{getSourceCommissionPct(form.source)}%</span>}</label>
-                    <input className="form-input" type="number" placeholder="0" value={form.commissionAmount}
-                      onChange={e => setForm(p => ({ ...p, commissionAmount: e.target.value }))} />
+
+              {/* Section: Tax + Notes (compact row) */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '6px 8px' }}>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>🏛️ Збір CZK</label><input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount} onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }} /></div>
+                  <div><label style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>Збір статус</label><select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px' }}><option value="pending">⏳ Очікує</option><option value="paid">✅ Оплачено</option><option value="exempt">🚫 Звільнено</option></select></div>
+                  <div style={{ gridColumn: '3 / -1', display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+                    <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}><input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} /> Вкл. у вартість</label>
                   </div>
                 </div>
-              </div>
-              {/* 🏛️ Тур. збір */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>🏛️ Туристичний збір</div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Сума (CZK)</label>
-                    <input className="form-input" type="number" placeholder="0" value={form.cityTaxAmount}
-                      onChange={e => setForm(p => ({ ...p, cityTaxAmount: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Статус</label>
-                    <select className="form-select" value={form.cityTaxPaid} onChange={e => setForm(p => ({ ...p, cityTaxPaid: e.target.value }))}>
-                      <option value="pending">⏳ Очікує</option>
-                      <option value="paid">✅ Оплачено</option>
-                      <option value="exempt">🚫 Звільнено</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12 }}>
-                  <input type="checkbox" checked={form.cityTaxIncluded} onChange={e => setForm(p => ({ ...p, cityTaxIncluded: e.target.checked }))} />
-                  <span>Включено у вартість</span>
-                </div>
-              </div>
-              {/* 📝 Примітки */}
-              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 8, paddingTop: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>📝 Примітки</div>
-                <textarea className="form-input" placeholder="Внутрішні примітки..."
-                  value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))}
-                  style={{ minHeight: 50, resize: 'vertical' }} />
+                <textarea className="form-input" placeholder="Примітки..." value={form.internalNotes} onChange={e => setForm(p => ({ ...p, internalNotes: e.target.value }))} style={{ fontSize: 12, padding: '5px 6px', minHeight: 36, resize: 'vertical', marginTop: 6, width: '100%' }} />
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowNewBooking(false)}>Скасувати</button>
-              <button className="btn btn-primary" onClick={handleCreateBooking} disabled={saving}>
+            <div className="modal-footer" style={{ padding: '8px 16px' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setShowNewBooking(false); setRangeStart(null); }}>Скасувати</button>
+              <button className="btn btn-primary btn-sm" onClick={handleCreateBooking} disabled={saving}>
                 {saving ? <Loader2 size={14} className="animate-pulse" /> : <Plus size={14} />} Створити
               </button>
             </div>
@@ -1405,6 +1139,22 @@ export default function CalendarPage() {
       <button className="floating-btn" onClick={scrollToToday}>
         Сьогодні
       </button>
+
+      {/* ─── Mobile responsive styles ─── */}
+      <style>{`
+        @media (max-width: 768px) {
+          .cal-toolbar-row1 { flex-wrap: wrap !important; gap: 4px !important; }
+          .cal-toolbar-row1 > div { flex-wrap: wrap !important; }
+          .cal-toolbar-row1 button { font-size: 10px !important; padding: 3px 6px !important; }
+          .floating-btn { display: flex !important; position: fixed; bottom: 20px; right: 20px; z-index: 100;
+            background: var(--accent-primary); color: #fff; border: none; border-radius: 50px;
+            padding: 10px 20px; font-weight: 700; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            cursor: pointer; align-items: center; gap: 6px; }
+        }
+        @media (min-width: 769px) {
+          .floating-btn { display: none !important; }
+        }
+      `}</style>
     </>
   );
 }
