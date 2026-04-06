@@ -142,7 +142,7 @@ export default function CalendarPage() {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('resort');
   const [statusFilter, setStatusFilter] = useState('');
   const [cleaningFilter, setCleaningFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
@@ -172,6 +172,7 @@ export default function CalendarPage() {
   // New booking form
   const [unitTypes, setUnitTypes] = useState<any[]>([]);
   const [allUnits, setAllUnits] = useState<any[]>([]);
+  const [priceMap, setPriceMap] = useState<Record<string, Record<string, number>>>({});
   const [form, setForm] = useState({
     category: 'glamping', unitTypeId: '', unitId: '', source: 'direct',
     checkIn: '', checkOut: '', adults: 2, children: 0,
@@ -248,12 +249,34 @@ export default function CalendarPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Fetch prices for visible range
+  const fetchPrices = useCallback(async () => {
+    try {
+      const startStr = fmtDate(days[0]);
+      const endStr = fmtDate(days[days.length - 1]);
+      const res = await fetch(`/api/pricing/bulk?startDate=${startStr}&endDate=${endStr}`);
+      if (res.ok) {
+        const data = await res.json();
+        // data is array of { unit_type_id, date, effective_price }
+        const map: Record<string, Record<string, number>> = {};
+        if (Array.isArray(data)) {
+          for (const row of data) {
+            if (!map[row.unit_type_id]) map[row.unit_type_id] = {};
+            map[row.unit_type_id][row.date] = row.effective_price || row.base_price || 0;
+          }
+        }
+        setPriceMap(map);
+      }
+    } catch (e) { console.error('Price fetch error:', e); }
+  }, [days]);
 
-  // ─── Scroll to today on mount ──────
+  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { if (days.length > 0) fetchPrices(); }, [days, fetchPrices]);
+
+  // ─── Scroll to today on mount (today = ~2nd column) ──────
   useEffect(() => {
     if (!loading && scrollRef.current && todayIndex >= 0) {
-      scrollRef.current.scrollLeft = Math.max(0, todayIndex * DAY_W - 200);
+      scrollRef.current.scrollLeft = Math.max(0, todayIndex * DAY_W - DAY_W);
     }
   }, [loading, todayIndex]);
 
@@ -352,7 +375,10 @@ export default function CalendarPage() {
     if (co <= start || ci > end) return null;
     const startIdx = Math.max(0, Math.round((ci.getTime() - start.getTime()) / 86400000));
     const endIdx = Math.min(days.length, Math.round((co.getTime() - start.getTime()) / 86400000));
-    return { left: startIdx * DAY_W + 2, width: (endIdx - startIdx) * DAY_W - 4 };
+    // Airbnb-style offset: bar starts 40% into check-in cell, extends 40% into check-out cell
+    // For 2-night stay (4→6): left at 4.4*W, right at 6.4*W → width = 2*DAY_W
+    const OFFSET = Math.round(DAY_W * 0.4);
+    return { left: startIdx * DAY_W + OFFSET, width: (endIdx - startIdx) * DAY_W };
   }, [days]);
 
   // ─── Count free units per day ──────
@@ -392,7 +418,7 @@ export default function CalendarPage() {
     setTimeout(() => {
       if (scrollRef.current) {
         const idx = days.findIndex(d => isToday(d));
-        if (idx >= 0) scrollRef.current.scrollLeft = Math.max(0, idx * DAY_W - 200);
+        if (idx >= 0) scrollRef.current.scrollLeft = Math.max(0, idx * DAY_W - DAY_W);
       }
     }, 50);
   };
@@ -660,17 +686,17 @@ export default function CalendarPage() {
 
           {/* Row 2: Filters + Range indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={12} style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-              <input className="form-input" placeholder="Пошук..." value={search} onChange={e => setSearch(e.target.value)}
-                style={{ fontSize: 11, padding: '4px 8px 4px 22px', width: 120 }} />
-            </div>
             <select className="form-select" style={{ width: 100, fontSize: 11, padding: '4px 6px' }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
               <option value="">Категорії</option>
               <option value="glamping">Glamping</option>
               <option value="resort">Resort</option>
               <option value="camping">Camping</option>
             </select>
+            <div style={{ position: 'relative' }}>
+              <Search size={12} style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+              <input className="form-input" placeholder="Пошук..." value={search} onChange={e => setSearch(e.target.value)}
+                style={{ fontSize: 11, padding: '4px 8px 4px 22px', width: 120 }} />
+            </div>
             <select className="form-select" style={{ width: 110, fontSize: 11, padding: '4px 6px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="">Статуси</option>
               {Object.entries(STATUS_MAP).map(([k, v]) => (<option key={k} value={k}>{v.label}</option>))}
@@ -679,7 +705,7 @@ export default function CalendarPage() {
               <option value="">🧹 Все</option>
               <option value="clean">✓ Чисто</option>
               <option value="dirty">✗ Брудно</option>
-              <option value="in_progress">⟳ Прибир.</option>
+              <option value="in_progress">⟳ Прибір.</option>
             </select>
             <select className="form-select" style={{ width: 110, fontSize: 11, padding: '4px 6px' }} value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}>
               <option value="">💰 Все</option>
@@ -875,9 +901,20 @@ export default function CalendarPage() {
                                 borderRightColor: isTd ? 'var(--accent-primary)' : 'var(--border-primary)',
                                 background: isRangeStart ? 'rgba(96,165,250,0.25)' : isTd ? 'rgba(96, 165, 250, 0.06)' : isWknd ? 'rgba(255,255,255,0.015)' : 'transparent',
                                 cursor: 'pointer',
+                                display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                                paddingBottom: 2,
                               }}
                               onClick={() => handleCellClick(unit.id, day)}
-                              />
+                              >
+                                {/* Show nightly price if no booking occupies this cell */}
+                                {(() => {
+                                  const hasBooking = unitBookings.some(bk => dateStr >= bk.check_in && dateStr < bk.check_out);
+                                  if (hasBooking) return null;
+                                  const price = priceMap[unit.unit_type_id]?.[dateStr];
+                                  if (!price) return null;
+                                  return <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontWeight: 500, opacity: 0.7 }}>{price}</span>;
+                                })()}
+                              </div>
                             );
                           })}
 

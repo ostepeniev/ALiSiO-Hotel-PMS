@@ -2,6 +2,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 
+// GET /api/pricing/bulk?startDate=X&endDate=Y
+// Returns all price_calendar rows for the date range (all unit types)
+export async function GET(request: NextRequest) {
+  try {
+    const db = getDb();
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    if (!startDate || !endDate) {
+      return NextResponse.json({ error: 'startDate and endDate required' }, { status: 400 });
+    }
+
+    const rows = db.prepare(`
+      SELECT unit_type_id, date, base_price, weekend_price,
+        CASE
+          WHEN (CAST(strftime('%w', date) AS INTEGER) IN (0, 5, 6)) AND weekend_price IS NOT NULL
+          THEN weekend_price
+          ELSE base_price
+        END as effective_price
+      FROM price_calendar
+      WHERE date >= ? AND date <= ?
+      ORDER BY unit_type_id, date
+    `).all(startDate, endDate);
+
+    return NextResponse.json(rows);
+  } catch (error: any) {
+    console.error('GET /api/pricing/bulk error:', error?.message || error);
+    return NextResponse.json({ error: 'Failed to fetch pricing' }, { status: 500 });
+  }
+}
+
 // PUT /api/pricing/bulk — bulk set prices for a date range
 // Body: {
 //   unitTypeId, dateFrom, dateTo,

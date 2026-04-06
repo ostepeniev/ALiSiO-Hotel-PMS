@@ -899,6 +899,159 @@ function runMigrations(database: any) {
   }
 
   // ═══════════════════════════════════════════════════════
+  // BOOKING SERVICE v2 TABLES
+  // ═══════════════════════════════════════════════════════
+
+  // --- Migration: add gender column to guests ---
+  try {
+    const guestsCols = database.prepare("PRAGMA table_info(guests)").all().map((c: any) => c.name);
+    if (!guestsCols.includes('gender')) {
+      database.exec("ALTER TABLE guests ADD COLUMN gender TEXT CHECK (gender IN ('female', 'male', 'other'))");
+      console.log('[DB] Added gender column to guests');
+    }
+  } catch (e: any) {
+    console.log('[DB] gender migration note:', e.message);
+  }
+
+  // --- Migration: extend additional_services with service_type, duration, photo ---
+  try {
+    const asCols = database.prepare("PRAGMA table_info(additional_services)").all().map((c: any) => c.name);
+    if (!asCols.includes('service_type')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN service_type TEXT DEFAULT 'simple'");
+      // simple | slot_booking | menu_selection | per_day
+    }
+    if (!asCols.includes('duration_minutes')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN duration_minutes INTEGER");
+    }
+    if (!asCols.includes('photo_url')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN photo_url TEXT");
+    }
+    if (!asCols.includes('min_quantity')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN min_quantity INTEGER DEFAULT 0");
+    }
+    if (!asCols.includes('max_quantity')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN max_quantity INTEGER DEFAULT 10");
+    }
+    if (!asCols.includes('options_schema')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN options_schema TEXT");
+    }
+    if (!asCols.includes('name_cs')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN name_cs TEXT");
+    }
+    if (!asCols.includes('name_de')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN name_de TEXT");
+    }
+    // Update existing services with correct types
+    database.exec("UPDATE additional_services SET service_type = 'slot_booking', duration_minutes = 60 WHERE id = 'svc_sauna'");
+    database.exec("UPDATE additional_services SET service_type = 'slot_booking', duration_minutes = 60 WHERE id = 'svc_pool'");
+    database.exec("UPDATE additional_services SET service_type = 'menu_selection' WHERE id = 'svc_breakfast'");
+    // Update sauna price to 600 CZK/hour as specified
+    database.exec("UPDATE additional_services SET price = 600, unit_label = 'за годину', name_cs = 'Sauna', name_de = 'Sauna' WHERE id = 'svc_sauna'");
+    database.exec("UPDATE additional_services SET name_cs = 'Studená lázeň', name_de = 'Kalttauchbecken' WHERE id = 'svc_pool'");
+    database.exec("UPDATE additional_services SET name_cs = 'Snídaně', name_de = 'Frühstück' WHERE id = 'svc_breakfast'");
+    console.log('[DB] Extended additional_services with service_type columns');
+  } catch (e: any) {
+    console.log('[DB] additional_services extension note:', e.message);
+  }
+
+  // --- Migration: create service_time_slots table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS service_time_slots (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      service_id TEXT NOT NULL REFERENCES additional_services(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      max_capacity INTEGER NOT NULL DEFAULT 1,
+      booked_count INTEGER NOT NULL DEFAULT 0,
+      is_available INTEGER NOT NULL DEFAULT 1,
+      reservation_id TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      booking_session_id TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(service_id, date, start_time)
+    )
+  `);
+
+  // --- Migration: create menu_items table ---
+  const miExists = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='menu_items'"
+  ).get();
+  if (!miExists) {
+    database.exec(`
+      CREATE TABLE menu_items (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        service_id TEXT NOT NULL REFERENCES additional_services(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        name_en TEXT,
+        name_cs TEXT,
+        name_de TEXT,
+        description TEXT,
+        weight_grams INTEGER,
+        price REAL NOT NULL DEFAULT 0,
+        photo_url TEXT,
+        is_available INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    // Seed 3 breakfast menu items
+    const insMI = database.prepare(
+      'INSERT INTO menu_items (id, service_id, name, name_en, name_cs, name_de, description, weight_grams, price, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    insMI.run('mi_breakfast_1', 'svc_breakfast', 'Класичний сніданок', 'Classic Breakfast', 'Klasická snídaně', 'Klassisches Frühstück',
+      'Яєчня, тости, масло, джем, свіжі овочі, кава/чай', 400, 250, 1);
+    insMI.run('mi_breakfast_2', 'svc_breakfast', 'Млинці з ягодами', 'Pancakes with Berries', 'Lívanečky s ovocem', 'Pfannkuchen mit Beeren',
+      'Пухкі млинці з сезонними ягодами, медом та сметаною', 350, 280, 2);
+    insMI.run('mi_breakfast_3', 'svc_breakfast', 'Гранола боул', 'Granola Bowl', 'Granola mísa', 'Granola Schüssel',
+      'Домашня гранола з йогуртом, фруктами та медом', 300, 220, 3);
+    console.log('[DB] Created menu_items table with 3 breakfast items');
+  }
+
+  // --- Migration: create booking_service_orders table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS booking_service_orders (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      reservation_id TEXT REFERENCES reservations(id) ON DELETE CASCADE,
+      service_id TEXT NOT NULL REFERENCES additional_services(id) ON DELETE CASCADE,
+      menu_item_id TEXT REFERENCES menu_items(id) ON DELETE SET NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      service_date TEXT,
+      time_slot_id TEXT REFERENCES service_time_slots(id) ON DELETE SET NULL,
+      options_json TEXT,
+      unit_price REAL NOT NULL DEFAULT 0,
+      total_price REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'cancelled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // --- Migration: create sauna_addons table for broom etc ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS service_addons (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      service_id TEXT NOT NULL REFERENCES additional_services(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      name_en TEXT,
+      name_cs TEXT,
+      name_de TEXT,
+      price REAL NOT NULL DEFAULT 0,
+      icon TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  // Seed sauna addon: broom (віник)
+  try {
+    const broomExists = database.prepare("SELECT id FROM service_addons WHERE id = 'addon_broom'").get();
+    if (!broomExists) {
+      database.prepare(
+        'INSERT INTO service_addons (id, service_id, name, name_en, name_cs, name_de, price, icon, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run('addon_broom', 'svc_sauna', 'Віник', 'Broom', 'Metla', 'Besen', 300, '🧹', 1);
+      console.log('[DB] Seeded sauna addon: broom (300 CZK)');
+    }
+  } catch { /* already exists */ }
+
+  // ═══════════════════════════════════════════════════════
   // FINANCE MODULE TABLES
   // ═══════════════════════════════════════════════════════
 

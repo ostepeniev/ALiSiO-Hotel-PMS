@@ -20,61 +20,93 @@ export const BOOKING_LANG_FLAGS: Record<BookingLang, string> = {
 export interface BookingTranslations {
   // Header
   brandName: string;
-  bookingTitle: string;
-  // Steps
-  step1Title: string;
-  step1Desc: string;
-  step2Title: string;
-  step2Desc: string;
-  step3Title: string;
-  step3Desc: string;
+  // Steps (5-step flow)
+  step1: string; // Твій вибір
+  step2: string; // Будинок
+  step3: string; // Особисті дані
+  step4: string; // Сервіси
+  step5: string; // Оплата
   // Step 1 - Dates
-  selectDates: string;
+  enterStayData: string;
+  fillRequired: string;
+  location: string;
+  dates: string;
   checkIn: string;
   checkOut: string;
+  duration: string;
   nights: string;
+  nightsWord: (n: number) => string;
   adults: string;
   children: string;
   selectCheckIn: string;
   selectCheckOut: string;
-  minNights: string;
+  // Step 2 - Houses
+  houseName: string;
+  guests: string;
+  guestsExtra: string;
+  area: string;
+  addHouse: string;
+  selectedHouse: string;
+  noAvailability: string;
+  noAvailabilityDesc: string;
+  perNight: string;
+  totalFor: string;
+  maxGuests: string;
+  beds: string;
+  bedsDouble: string;
+  bedsSingle: string;
+  stubPricing: string;
+  unavailableDates: string;
+  // Step 3 - Personal Info
+  enterPersonalInfo: string;
+  firstName: string;
+  lastName: string;
+  gender: string;
+  genderFemale: string;
+  genderMale: string;
+  genderOther: string;
+  phone: string;
+  email: string;
   // Promo & Certificate
   promoCode: string;
   certificateCode: string;
   apply: string;
   promoApplied: string;
   promoInvalid: string;
-  // Step 2 - Houses
-  availableHouses: string;
-  noAvailability: string;
-  noAvailabilityDesc: string;
-  perNight: string;
-  totalFor: string;
-  nightsWord: (n: number) => string;
-  maxGuests: string;
-  beds: string;
-  bedsDouble: string;
-  bedsSingle: string;
-  select: string;
-  selected: string;
-  stubPricing: string;
-  available: string;
-  // Step 3 - Guest info
-  guestInfo: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  bookingSummary: string;
-  house: string;
-  dates: string;
+  // Summary / Sidebar
+  yourChoice: string;
+  yourHouse: string;
+  housePlaceholder: string;
   price: string;
   discount: string;
   total: string;
+  including: string;
+  // Step 4 - Services
+  additionalServices: string;
+  selectServices: string;
+  saunaTitle: string;
+  saunaDesc: string;
+  saunaDate: string;
+  saunaTime: string;
+  saunaHours: string;
+  saunaMinHours: string;
+  saunaBroom: string;
+  saunaPersons: string;
+  saunaPerHour: string;
+  saunaAddToBooking: string;
+  saunaSlotBooked: string;
+  breakfastTitle: string;
+  breakfastDesc: string;
+  breakfastQuantity: string;
+  breakfastAddToBooking: string;
+  breakfastPerPerson: string;
+  serviceTotal: string;
+  servicesSkip: string;
+  servicesEmpty: string;
+  // Step 5 - Confirmation
   confirmBooking: string;
   processing: string;
   agreeTerms: string;
-  // Success
   bookingSuccess: string;
   bookingSuccessDesc: string;
   bookingId: string;
@@ -93,57 +125,89 @@ export interface BookingTranslations {
   noUnitsLeft: string;
   // Footer
   poweredBy: string;
+  // Booking details (mobile)
+  bookingDetails: string;
 }
 
 const translations: Record<BookingLang, BookingTranslations> = {
   uk: {
-    brandName: 'ALiSiO Glamping',
-    bookingTitle: 'Бронювання',
-    step1Title: 'Дати та гості',
-    step1Desc: 'Оберіть дати заїзду та виїзду',
-    step2Title: 'Оберіть будиночок',
-    step2Desc: 'Перегляньте доступні будиночки',
-    step3Title: 'Ваші дані',
-    step3Desc: 'Заповніть контактні дані',
-    selectDates: 'Оберіть дати',
+    brandName: 'QA Glamping',
+    step1: 'Твій вибір',
+    step2: 'Будинок',
+    step3: 'Особиста інформація',
+    step4: 'Сервіси',
+    step5: 'Оплата',
+    enterStayData: 'Введіть дані для проживання',
+    fillRequired: "Заповни, будь ласка, обов'язкові поля (обов'язкові поля помічені символом *).",
+    location: 'Локація',
+    dates: 'Дати',
     checkIn: 'Заїзд',
     checkOut: 'Виїзд',
+    duration: 'Тривалість',
     nights: 'Ночей',
+    nightsWord: (n) => n === 1 ? 'доба' : n < 5 ? 'доби' : 'діб',
     adults: 'Дорослі',
     children: 'Діти',
     selectCheckIn: 'Оберіть дату заїзду',
     selectCheckOut: 'Оберіть дату виїзду',
-    minNights: 'Мінімум 1 ніч',
+    houseName: 'Будинок',
+    guests: 'гостей',
+    guestsExtra: '+1',
+    area: 'м²',
+    addHouse: 'Додати будинок',
+    selectedHouse: '✓ Обрано',
+    noAvailability: 'Немає доступних будиночків',
+    noAvailabilityDesc: 'На обрані дати всі будиночки зайняті. Спробуйте інші дати.',
+    perNight: '/ніч',
+    totalFor: 'Усього за',
+    maxGuests: 'Макс. гостей',
+    beds: 'Ліжка',
+    bedsDouble: 'двоспальних',
+    bedsSingle: 'односпальних',
+    stubPricing: 'Орієнтовна ціна',
+    unavailableDates: 'На деякі з вибраних дат цей номер будинку зайнятий, можете перевірити доступність у календарі.',
+    enterPersonalInfo: 'Введіть особисту інформацію',
+    firstName: "Ім'я",
+    lastName: 'Прізвище',
+    gender: 'Стать',
+    genderFemale: 'Жіноча',
+    genderMale: 'Чоловіча',
+    genderOther: 'Інше',
+    phone: 'Номер телефону',
+    email: 'Email',
     promoCode: 'Промокод',
     certificateCode: 'Код сертифікату',
     apply: 'Застосувати',
     promoApplied: 'Промокод застосовано!',
     promoInvalid: 'Промокод недійсний',
-    availableHouses: 'Доступні будиночки',
-    noAvailability: 'Немає доступних будиночків',
-    noAvailabilityDesc: 'На обрані дати всі будиночки зайняті. Спробуйте інші дати.',
-    perNight: '/ніч',
-    totalFor: 'Усього за',
-    nightsWord: (n) => n === 1 ? 'ніч' : n < 5 ? 'ночі' : 'ночей',
-    maxGuests: 'Макс. гостей',
-    beds: 'Ліжка',
-    bedsDouble: 'двоспальних',
-    bedsSingle: 'односпальних',
-    select: 'Обрати',
-    selected: '✓ Обрано',
-    stubPricing: 'Орієнтовна ціна',
-    available: 'вільних',
-    guestInfo: 'Контактні дані',
-    firstName: "Ім'я",
-    lastName: 'Прізвище',
-    email: 'Електронна пошта',
-    phone: 'Телефон',
-    bookingSummary: 'Ваше бронювання',
-    house: 'Будиночок',
-    dates: 'Дати',
+    yourChoice: 'Твій вибір',
+    yourHouse: 'Твій будинок',
+    housePlaceholder: 'Тут буде вся інформація про обраний тобою будинок, кількість гостей та додаткові послуги.',
     price: 'Вартість',
     discount: 'Знижка',
     total: 'До сплати',
+    including: 'Враховуючи сервіси',
+    additionalServices: 'Додаткові послуги',
+    selectServices: 'Оберіть додаткові послуги для вашого відпочинку',
+    saunaTitle: 'Сауна',
+    saunaDesc: 'Фінська сауна з дровами. Мінімальне бронювання — 2 години.',
+    saunaDate: 'Оберіть дату',
+    saunaTime: 'Час початку',
+    saunaHours: 'Кількість годин',
+    saunaMinHours: 'Мінімум 2 години',
+    saunaBroom: 'Віник для сауни',
+    saunaPersons: 'Кількість осіб',
+    saunaPerHour: 'Kč/год',
+    saunaAddToBooking: 'Додати сауну',
+    saunaSlotBooked: 'Цей часовий слот вже зайнятий',
+    breakfastTitle: 'Сніданок',
+    breakfastDesc: 'Оберіть сніданок на кожний день проживання',
+    breakfastQuantity: 'Кількість',
+    breakfastAddToBooking: 'Додати сніданок',
+    breakfastPerPerson: 'на людину',
+    serviceTotal: 'Разом за послуги',
+    servicesSkip: 'Пропустити',
+    servicesEmpty: 'Ви можете додати послуги пізніше у гостьовому порталі',
     confirmBooking: 'Підтвердити бронювання',
     processing: 'Обробка...',
     agreeTerms: 'Натискаючи «Підтвердити», ви погоджуєтесь з умовами бронювання',
@@ -159,57 +223,88 @@ const translations: Record<BookingLang, BookingTranslations> = {
     today: 'Сьогодні',
     errorOccurred: 'Виникла помилка',
     tryAgain: 'Спробувати ще раз',
-    noUnitsLeft: 'На жаль, вільних будиночків цього типу не залишилось',
+    noUnitsLeft: 'На жаль, вільних будиночків не залишилось',
     poweredBy: 'ALiSiO PMS',
+    bookingDetails: 'Деталі бронювання',
   },
   en: {
-    brandName: 'ALiSiO Glamping',
-    bookingTitle: 'Booking',
-    step1Title: 'Dates & Guests',
-    step1Desc: 'Select check-in and check-out dates',
-    step2Title: 'Choose a House',
-    step2Desc: 'Browse available glamping houses',
-    step3Title: 'Your Details',
-    step3Desc: 'Fill in your contact information',
-    selectDates: 'Select dates',
+    brandName: 'QA Glamping',
+    step1: 'Your Choice',
+    step2: 'House',
+    step3: 'Personal Info',
+    step4: 'Services',
+    step5: 'Payment',
+    enterStayData: 'Enter your stay details',
+    fillRequired: 'Please fill in required fields (required fields are marked with *).',
+    location: 'Location',
+    dates: 'Dates',
     checkIn: 'Check-in',
     checkOut: 'Check-out',
+    duration: 'Duration',
     nights: 'Nights',
+    nightsWord: (n) => n === 1 ? 'night' : 'nights',
     adults: 'Adults',
     children: 'Children',
     selectCheckIn: 'Select check-in date',
     selectCheckOut: 'Select check-out date',
-    minNights: 'Minimum 1 night',
+    houseName: 'House',
+    guests: 'guests',
+    guestsExtra: '+1',
+    area: 'm²',
+    addHouse: 'Add house',
+    selectedHouse: '✓ Selected',
+    noAvailability: 'No houses available',
+    noAvailabilityDesc: 'All houses are booked for the selected dates. Try different dates.',
+    perNight: '/night',
+    totalFor: 'Total for',
+    maxGuests: 'Max guests',
+    beds: 'Beds',
+    bedsDouble: 'double',
+    bedsSingle: 'single',
+    stubPricing: 'Estimated price',
+    unavailableDates: 'This house is booked for some of the selected dates. You can check availability in the calendar.',
+    enterPersonalInfo: 'Enter personal information',
+    firstName: 'First name',
+    lastName: 'Last name',
+    gender: 'Gender',
+    genderFemale: 'Female',
+    genderMale: 'Male',
+    genderOther: 'Other',
+    phone: 'Phone number',
+    email: 'Email',
     promoCode: 'Promo code',
     certificateCode: 'Certificate code',
     apply: 'Apply',
     promoApplied: 'Promo code applied!',
     promoInvalid: 'Invalid promo code',
-    availableHouses: 'Available Houses',
-    noAvailability: 'No houses available',
-    noAvailabilityDesc: 'All houses are booked for the selected dates. Try different dates.',
-    perNight: '/night',
-    totalFor: 'Total for',
-    nightsWord: (n) => n === 1 ? 'night' : 'nights',
-    maxGuests: 'Max guests',
-    beds: 'Beds',
-    bedsDouble: 'double',
-    bedsSingle: 'single',
-    select: 'Select',
-    selected: '✓ Selected',
-    stubPricing: 'Estimated price',
-    available: 'available',
-    guestInfo: 'Guest Information',
-    firstName: 'First name',
-    lastName: 'Last name',
-    email: 'Email',
-    phone: 'Phone',
-    bookingSummary: 'Your Booking',
-    house: 'House',
-    dates: 'Dates',
+    yourChoice: 'Your choice',
+    yourHouse: 'Your house',
+    housePlaceholder: 'All information about your selected house, number of guests and additional services will appear here.',
     price: 'Price',
     discount: 'Discount',
     total: 'Total',
+    including: 'Including services',
+    additionalServices: 'Additional Services',
+    selectServices: 'Select additional services for your stay',
+    saunaTitle: 'Sauna',
+    saunaDesc: 'Finnish wood-fired sauna. Minimum booking — 2 hours.',
+    saunaDate: 'Select date',
+    saunaTime: 'Start time',
+    saunaHours: 'Number of hours',
+    saunaMinHours: 'Minimum 2 hours',
+    saunaBroom: 'Sauna broom',
+    saunaPersons: 'Number of persons',
+    saunaPerHour: 'CZK/hr',
+    saunaAddToBooking: 'Add sauna',
+    saunaSlotBooked: 'This time slot is already booked',
+    breakfastTitle: 'Breakfast',
+    breakfastDesc: 'Choose breakfast for each day of your stay',
+    breakfastQuantity: 'Quantity',
+    breakfastAddToBooking: 'Add breakfast',
+    breakfastPerPerson: 'per person',
+    serviceTotal: 'Services total',
+    servicesSkip: 'Skip',
+    servicesEmpty: 'You can add services later in the guest portal',
     confirmBooking: 'Confirm Booking',
     processing: 'Processing...',
     agreeTerms: 'By clicking "Confirm", you agree to the booking terms',
@@ -225,57 +320,88 @@ const translations: Record<BookingLang, BookingTranslations> = {
     today: 'Today',
     errorOccurred: 'An error occurred',
     tryAgain: 'Try again',
-    noUnitsLeft: 'Sorry, no units of this type are available',
+    noUnitsLeft: 'Sorry, no units are available',
     poweredBy: 'ALiSiO PMS',
+    bookingDetails: 'Booking details',
   },
   cs: {
-    brandName: 'ALiSiO Glamping',
-    bookingTitle: 'Rezervace',
-    step1Title: 'Termín a hosté',
-    step1Desc: 'Vyberte datum příjezdu a odjezdu',
-    step2Title: 'Vyberte domek',
-    step2Desc: 'Prohlédněte si dostupné domky',
-    step3Title: 'Vaše údaje',
-    step3Desc: 'Vyplňte kontaktní údaje',
-    selectDates: 'Vyberte termín',
+    brandName: 'QA Glamping',
+    step1: 'Váš výběr',
+    step2: 'Domek',
+    step3: 'Osobní údaje',
+    step4: 'Služby',
+    step5: 'Platba',
+    enterStayData: 'Zadejte údaje o pobytu',
+    fillRequired: 'Prosím vyplňte povinná pole (povinná pole jsou označena *).',
+    location: 'Lokalita',
+    dates: 'Termín',
     checkIn: 'Příjezd',
     checkOut: 'Odjezd',
+    duration: 'Délka',
     nights: 'Nocí',
+    nightsWord: (n) => n === 1 ? 'noc' : n < 5 ? 'noci' : 'nocí',
     adults: 'Dospělí',
     children: 'Děti',
     selectCheckIn: 'Vyberte datum příjezdu',
     selectCheckOut: 'Vyberte datum odjezdu',
-    minNights: 'Minimálně 1 noc',
+    houseName: 'Domek',
+    guests: 'hostů',
+    guestsExtra: '+1',
+    area: 'm²',
+    addHouse: 'Přidat domek',
+    selectedHouse: '✓ Vybráno',
+    noAvailability: 'Žádné dostupné domky',
+    noAvailabilityDesc: 'Na vybrané datumy jsou všechny domky obsazeny. Zkuste jiné datumy.',
+    perNight: '/noc',
+    totalFor: 'Celkem za',
+    maxGuests: 'Max. hostů',
+    beds: 'Lůžka',
+    bedsDouble: 'dvoulůžek',
+    bedsSingle: 'jednolůžek',
+    stubPricing: 'Orientační cena',
+    unavailableDates: 'Na některé z vybraných datumů je tento domek obsazen. Dostupnost můžete zkontrolovat v kalendáři.',
+    enterPersonalInfo: 'Zadejte osobní údaje',
+    firstName: 'Jméno',
+    lastName: 'Příjmení',
+    gender: 'Pohlaví',
+    genderFemale: 'Žena',
+    genderMale: 'Muž',
+    genderOther: 'Jiné',
+    phone: 'Telefonní číslo',
+    email: 'E-mail',
     promoCode: 'Slevový kód',
     certificateCode: 'Kód certifikátu',
     apply: 'Použít',
     promoApplied: 'Slevový kód uplatněn!',
     promoInvalid: 'Neplatný slevový kód',
-    availableHouses: 'Dostupné domky',
-    noAvailability: 'Žádné dostupné domky',
-    noAvailabilityDesc: 'Na vybrané datumy jsou všechny domky obsazeny. Zkuste jiné datumy.',
-    perNight: '/noc',
-    totalFor: 'Celkem za',
-    nightsWord: (n) => n === 1 ? 'noc' : n < 5 ? 'noci' : 'nocí',
-    maxGuests: 'Max. hostů',
-    beds: 'Lůžka',
-    bedsDouble: 'dvoulůžek',
-    bedsSingle: 'jednolůžek',
-    select: 'Vybrat',
-    selected: '✓ Vybráno',
-    stubPricing: 'Orientační cena',
-    available: 'volných',
-    guestInfo: 'Kontaktní údaje',
-    firstName: 'Jméno',
-    lastName: 'Příjmení',
-    email: 'E-mail',
-    phone: 'Telefon',
-    bookingSummary: 'Vaše rezervace',
-    house: 'Domek',
-    dates: 'Termín',
+    yourChoice: 'Váš výběr',
+    yourHouse: 'Váš domek',
+    housePlaceholder: 'Zde se zobrazí informace o vybraném domku, počtu hostů a doplňkových službách.',
     price: 'Cena',
     discount: 'Sleva',
     total: 'Celkem',
+    including: 'Včetně služeb',
+    additionalServices: 'Doplňkové služby',
+    selectServices: 'Vyberte doplňkové služby pro váš pobyt',
+    saunaTitle: 'Sauna',
+    saunaDesc: 'Finská sauna na dřevo. Minimální rezervace — 2 hodiny.',
+    saunaDate: 'Vyberte datum',
+    saunaTime: 'Čas začátku',
+    saunaHours: 'Počet hodin',
+    saunaMinHours: 'Minimálně 2 hodiny',
+    saunaBroom: 'Saunová metla',
+    saunaPersons: 'Počet osob',
+    saunaPerHour: 'Kč/hod',
+    saunaAddToBooking: 'Přidat saunu',
+    saunaSlotBooked: 'Tento časový slot je již obsazen',
+    breakfastTitle: 'Snídaně',
+    breakfastDesc: 'Vyberte snídani na každý den pobytu',
+    breakfastQuantity: 'Množství',
+    breakfastAddToBooking: 'Přidat snídani',
+    breakfastPerPerson: 'na osobu',
+    serviceTotal: 'Služby celkem',
+    servicesSkip: 'Přeskočit',
+    servicesEmpty: 'Služby můžete přidat později na hostovském portálu',
     confirmBooking: 'Potvrdit rezervaci',
     processing: 'Zpracování...',
     agreeTerms: 'Kliknutím na „Potvrdit" souhlasíte s podmínkami rezervace',
@@ -291,57 +417,88 @@ const translations: Record<BookingLang, BookingTranslations> = {
     today: 'Dnes',
     errorOccurred: 'Nastala chyba',
     tryAgain: 'Zkusit znovu',
-    noUnitsLeft: 'Omlouváme se, žádné volné domky tohoto typu nejsou k dispozici',
+    noUnitsLeft: 'Omlouváme se, žádné volné domky nejsou k dispozici',
     poweredBy: 'ALiSiO PMS',
+    bookingDetails: 'Detaily rezervace',
   },
   de: {
-    brandName: 'ALiSiO Glamping',
-    bookingTitle: 'Buchung',
-    step1Title: 'Termine & Gäste',
-    step1Desc: 'Wählen Sie An- und Abreisedatum',
-    step2Title: 'Haus wählen',
-    step2Desc: 'Verfügbare Glamping-Häuser ansehen',
-    step3Title: 'Ihre Daten',
-    step3Desc: 'Kontaktdaten eingeben',
-    selectDates: 'Termine wählen',
+    brandName: 'QA Glamping',
+    step1: 'Ihre Wahl',
+    step2: 'Haus',
+    step3: 'Persönliche Daten',
+    step4: 'Services',
+    step5: 'Zahlung',
+    enterStayData: 'Geben Sie die Aufenthaltsdaten ein',
+    fillRequired: 'Bitte füllen Sie die Pflichtfelder aus (Pflichtfelder sind mit * gekennzeichnet).',
+    location: 'Standort',
+    dates: 'Termine',
     checkIn: 'Anreise',
     checkOut: 'Abreise',
+    duration: 'Dauer',
     nights: 'Nächte',
+    nightsWord: (n) => n === 1 ? 'Nacht' : 'Nächte',
     adults: 'Erwachsene',
     children: 'Kinder',
     selectCheckIn: 'Anreisedatum wählen',
     selectCheckOut: 'Abreisedatum wählen',
-    minNights: 'Mindestens 1 Nacht',
+    houseName: 'Haus',
+    guests: 'Gäste',
+    guestsExtra: '+1',
+    area: 'm²',
+    addHouse: 'Haus hinzufügen',
+    selectedHouse: '✓ Gewählt',
+    noAvailability: 'Keine Häuser verfügbar',
+    noAvailabilityDesc: 'Alle Häuser sind für die gewählten Daten ausgebucht. Versuchen Sie andere Termine.',
+    perNight: '/Nacht',
+    totalFor: 'Gesamt für',
+    maxGuests: 'Max. Gäste',
+    beds: 'Betten',
+    bedsDouble: 'Doppel',
+    bedsSingle: 'Einzel',
+    stubPricing: 'Geschätzter Preis',
+    unavailableDates: 'An einigen der ausgewählten Daten ist dieses Haus belegt. Die Verfügbarkeit können Sie im Kalender prüfen.',
+    enterPersonalInfo: 'Persönliche Daten eingeben',
+    firstName: 'Vorname',
+    lastName: 'Nachname',
+    gender: 'Geschlecht',
+    genderFemale: 'Weiblich',
+    genderMale: 'Männlich',
+    genderOther: 'Andere',
+    phone: 'Telefonnummer',
+    email: 'E-Mail',
     promoCode: 'Aktionscode',
     certificateCode: 'Gutscheincode',
     apply: 'Anwenden',
     promoApplied: 'Aktionscode angewendet!',
     promoInvalid: 'Ungültiger Aktionscode',
-    availableHouses: 'Verfügbare Häuser',
-    noAvailability: 'Keine Häuser verfügbar',
-    noAvailabilityDesc: 'Alle Häuser sind für die gewählten Daten ausgebucht. Versuchen Sie andere Termine.',
-    perNight: '/Nacht',
-    totalFor: 'Gesamt für',
-    nightsWord: (n) => n === 1 ? 'Nacht' : 'Nächte',
-    maxGuests: 'Max. Gäste',
-    beds: 'Betten',
-    bedsDouble: 'Doppel',
-    bedsSingle: 'Einzel',
-    select: 'Wählen',
-    selected: '✓ Gewählt',
-    stubPricing: 'Geschätzter Preis',
-    available: 'verfügbar',
-    guestInfo: 'Kontaktdaten',
-    firstName: 'Vorname',
-    lastName: 'Nachname',
-    email: 'E-Mail',
-    phone: 'Telefon',
-    bookingSummary: 'Ihre Buchung',
-    house: 'Haus',
-    dates: 'Termine',
+    yourChoice: 'Ihre Wahl',
+    yourHouse: 'Ihr Haus',
+    housePlaceholder: 'Hier werden alle Informationen zu Ihrem ausgewählten Haus, Gästezahl und Zusatzleistungen angezeigt.',
     price: 'Preis',
     discount: 'Rabatt',
     total: 'Gesamt',
+    including: 'Einschließlich Dienstleistungen',
+    additionalServices: 'Zusätzliche Dienstleistungen',
+    selectServices: 'Wählen Sie zusätzliche Dienstleistungen für Ihren Aufenthalt',
+    saunaTitle: 'Sauna',
+    saunaDesc: 'Finnische Holzsauna. Mindestbuchung — 2 Stunden.',
+    saunaDate: 'Datum wählen',
+    saunaTime: 'Startzeit',
+    saunaHours: 'Stundenanzahl',
+    saunaMinHours: 'Mindestens 2 Stunden',
+    saunaBroom: 'Saunabesen',
+    saunaPersons: 'Personenanzahl',
+    saunaPerHour: 'CZK/Std',
+    saunaAddToBooking: 'Sauna hinzufügen',
+    saunaSlotBooked: 'Dieser Zeitslot ist bereits gebucht',
+    breakfastTitle: 'Frühstück',
+    breakfastDesc: 'Wählen Sie das Frühstück für jeden Tag Ihres Aufenthalts',
+    breakfastQuantity: 'Menge',
+    breakfastAddToBooking: 'Frühstück hinzufügen',
+    breakfastPerPerson: 'pro Person',
+    serviceTotal: 'Dienstleistungen gesamt',
+    servicesSkip: 'Überspringen',
+    servicesEmpty: 'Sie können Dienstleistungen später im Gästeportal hinzufügen',
     confirmBooking: 'Buchung bestätigen',
     processing: 'Verarbeitung...',
     agreeTerms: 'Mit Klick auf „Bestätigen" stimmen Sie den Buchungsbedingungen zu',
@@ -357,8 +514,9 @@ const translations: Record<BookingLang, BookingTranslations> = {
     today: 'Heute',
     errorOccurred: 'Ein Fehler ist aufgetreten',
     tryAgain: 'Erneut versuchen',
-    noUnitsLeft: 'Leider sind keine Häuser dieses Typs verfügbar',
+    noUnitsLeft: 'Leider sind keine Häuser verfügbar',
     poweredBy: 'ALiSiO PMS',
+    bookingDetails: 'Buchungsdetails',
   },
 };
 
