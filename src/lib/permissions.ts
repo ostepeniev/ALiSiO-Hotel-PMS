@@ -16,6 +16,7 @@ export const ALL_PERMISSIONS = [
   'nav:documents',
   'nav:finance',
   'nav:settings',
+  'nav:crm',
   // Features
   'manage_users',
   'manage_pricing',
@@ -27,6 +28,7 @@ export const ALL_PERMISSIONS = [
   'manage_documents',
   'manage_expenses',
   'view_finance',
+  'manage_crm',
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
@@ -44,6 +46,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: { key: Permission;
       { key: 'nav:guests', label: 'Гості' },
       { key: 'nav:documents', label: 'Документи' },
       { key: 'nav:finance', label: 'Фінанси' },
+      { key: 'nav:crm', label: 'CRM' },
       { key: 'nav:settings', label: 'Налаштування' },
     ],
   },
@@ -60,6 +63,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: { key: Permission;
       { key: 'manage_documents', label: 'Керування документами' },
       { key: 'manage_expenses', label: 'Керування витратами' },
       { key: 'view_finance', label: 'Перегляд фінансів' },
+      { key: 'manage_crm', label: 'Керування CRM' },
     ],
   },
 ];
@@ -70,14 +74,14 @@ export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
   director: [...ALL_PERMISSIONS],
   manager: [
     'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:pricing',
-    'nav:reports', 'nav:guests', 'nav:documents', 'nav:finance',
+    'nav:reports', 'nav:guests', 'nav:documents', 'nav:finance', 'nav:crm',
     'manage_bookings', 'manage_guests', 'manage_pricing',
     'view_reports', 'manage_payments', 'manage_documents',
-    'manage_expenses', 'view_finance',
+    'manage_expenses', 'view_finance', 'manage_crm',
   ],
   receptionist: [
-    'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:guests',
-    'manage_bookings', 'manage_guests',
+    'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:guests', 'nav:crm',
+    'manage_bookings', 'manage_guests', 'manage_crm',
   ],
   housekeeper: [
     'nav:dashboard',
@@ -167,4 +171,8 @@ export const NAV_PERMISSION_MAP: Record<string, Permission> = {
   '/settings/properties': 'nav:settings',
   '/settings/units': 'nav:settings',
   '/settings/users': 'manage_users',
+  '/crm': 'nav:crm',
+  '/crm/inbox': 'nav:crm',
+  '/crm/leads': 'nav:crm',
+  '/crm/settings': 'nav:crm',
 };

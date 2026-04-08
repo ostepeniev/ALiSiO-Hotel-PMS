@@ -1606,6 +1606,225 @@ function runMigrations(database: any) {
   try {
     database.exec("ALTER TABLE guests ADD COLUMN nationality TEXT");
   } catch { /* column already exists */ }
+
+  // ═══════════════════════════════════════════════════════
+  // CRM MODULE
+  // ═══════════════════════════════════════════════════════
+
+  // --- Migration: create crm_channels table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_channels (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      channel_type TEXT NOT NULL CHECK (channel_type IN (
+        'whatsapp', 'email', 'phone', 'guest_page', 'telegram',
+        'booking_com', 'airbnb', 'web_form', 'manual'
+      )),
+      name TEXT NOT NULL,
+      config_json TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      is_default_outbound INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_channels_org ON crm_channels(organization_id)');
+
+  // Seed default channels
+  try {
+    const chExists = database.prepare("SELECT id FROM crm_channels WHERE id = 'ch_manual'").get();
+    if (!chExists) {
+      const orgRow = database.prepare("SELECT id FROM organizations LIMIT 1").get() as any;
+      if (orgRow) {
+        const insCh = database.prepare('INSERT INTO crm_channels (id, organization_id, channel_type, name, is_default_outbound) VALUES (?, ?, ?, ?, ?)');
+        insCh.run('ch_manual', orgRow.id, 'manual', 'Вручну', 0);
+        insCh.run('ch_phone', orgRow.id, 'phone', 'Телефон', 0);
+        insCh.run('ch_whatsapp', orgRow.id, 'whatsapp', 'WhatsApp', 1);
+        insCh.run('ch_email_main', orgRow.id, 'email', 'Email (основний)', 0);
+        insCh.run('ch_guest_page', orgRow.id, 'guest_page', 'Guest Page', 0);
+        insCh.run('ch_telegram', orgRow.id, 'telegram', 'Telegram Bot', 0);
+        insCh.run('ch_booking_com', orgRow.id, 'booking_com', 'Booking.com', 0);
+        insCh.run('ch_airbnb', orgRow.id, 'airbnb', 'Airbnb', 0);
+        insCh.run('ch_web_form', orgRow.id, 'web_form', 'Форми з сайтів', 0);
+        console.log('[DB] Created crm_channels with 9 default channels');
+      }
+    }
+  } catch (e: any) {
+    console.log('[DB] crm_channels seed note:', e.message);
+  }
+
+  // --- Migration: create crm_leads table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_leads (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      guest_id TEXT REFERENCES guests(id),
+      channel_id TEXT REFERENCES crm_channels(id),
+      first_name TEXT NOT NULL,
+      last_name TEXT,
+      email TEXT,
+      phone TEXT,
+      whatsapp TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      external_booking_id TEXT,
+      stage TEXT NOT NULL DEFAULT 'new' CHECK (stage IN (
+        'new', 'inquiry', 'info_needed', 'quote_sent', 'negotiation',
+        'deposit_paid', 'booked', 'pre_stay', 'check_in', 'in_stay',
+        'check_out', 'post_stay', 'lost', 'spam'
+      )),
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+      assigned_to TEXT REFERENCES app_users(id),
+      reservation_id TEXT REFERENCES reservations(id),
+      guest_page_token TEXT,
+      check_in_date TEXT,
+      check_out_date TEXT,
+      adults INTEGER NOT NULL DEFAULT 0,
+      children INTEGER NOT NULL DEFAULT 0,
+      unit_type_preference TEXT,
+      estimated_value REAL NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      camping_children_json TEXT,
+      camping_vehicle_type TEXT,
+      camping_tent_type TEXT,
+      camping_electricity INTEGER NOT NULL DEFAULT 0,
+      camping_pets_json TEXT,
+      tags TEXT,
+      notes TEXT,
+      last_message_at TEXT,
+      last_message_preview TEXT,
+      unread_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_org ON crm_leads(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_stage ON crm_leads(stage)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_guest ON crm_leads(guest_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_reservation ON crm_leads(reservation_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_last_msg ON crm_leads(last_message_at)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_email ON crm_leads(email)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_phone ON crm_leads(phone)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_external ON crm_leads(external_booking_id)');
+
+  // --- Migration: create crm_conversations table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_conversations (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      lead_id TEXT NOT NULL REFERENCES crm_leads(id) ON DELETE CASCADE,
+      guest_id TEXT REFERENCES guests(id),
+      reservation_id TEXT REFERENCES reservations(id),
+      subject TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'resolved', 'archived')),
+      last_message_at TEXT,
+      last_channel TEXT,
+      unread_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_conv_lead ON crm_conversations(lead_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_conv_status ON crm_conversations(status)');
+
+  // --- Migration: create crm_messages table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_messages (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      conversation_id TEXT NOT NULL REFERENCES crm_conversations(id) ON DELETE CASCADE,
+      channel_type TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+      sender_type TEXT NOT NULL CHECK (sender_type IN ('guest', 'staff', 'ai', 'system')),
+      sender_id TEXT,
+      sender_name TEXT,
+      content TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text', 'image', 'file', 'template', 'system')),
+      metadata_json TEXT,
+      external_id TEXT,
+      is_ai_generated INTEGER NOT NULL DEFAULT 0,
+      ai_approved INTEGER NOT NULL DEFAULT 1,
+      read_at TEXT,
+      delivered_at TEXT,
+      status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('draft', 'queued', 'sent', 'delivered', 'read', 'failed')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_msg_conv ON crm_messages(conversation_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_msg_created ON crm_messages(created_at)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_msg_channel ON crm_messages(channel_type)');
+
+  // --- Migration: create crm_prompt_configs table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_prompt_configs (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      stage TEXT,
+      trigger_type TEXT NOT NULL DEFAULT 'manual' CHECK (trigger_type IN ('manual', 'auto', 'stage_change')),
+      system_prompt TEXT NOT NULL,
+      context_instructions TEXT,
+      variables TEXT,
+      temperature REAL NOT NULL DEFAULT 0.7,
+      model TEXT NOT NULL DEFAULT 'gpt-4o',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_prompts_org ON crm_prompt_configs(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_prompts_stage ON crm_prompt_configs(stage)');
+
+  // --- Migration: create crm_stage_history table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_stage_history (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      lead_id TEXT NOT NULL REFERENCES crm_leads(id) ON DELETE CASCADE,
+      from_stage TEXT,
+      to_stage TEXT NOT NULL,
+      changed_by TEXT REFERENCES app_users(id),
+      trigger TEXT NOT NULL DEFAULT 'manual',
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_stage_lead ON crm_stage_history(lead_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_stage_created ON crm_stage_history(created_at)');
+
+  // --- Migration: create crm_ai_training table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_ai_training (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      conversation_id TEXT REFERENCES crm_conversations(id),
+      guest_message TEXT NOT NULL,
+      guest_language TEXT,
+      lead_stage TEXT,
+      guest_context_json TEXT,
+      ai_draft TEXT NOT NULL,
+      final_response TEXT,
+      was_approved INTEGER NOT NULL DEFAULT 0,
+      was_edited INTEGER NOT NULL DEFAULT 0,
+      edit_reason TEXT,
+      rating INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_training_approved ON crm_ai_training(was_approved)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_training_stage ON crm_ai_training(lead_stage)');
+
+  // --- Migration: create crm_automation_rules table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_automation_rules (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      trigger_stage TEXT,
+      trigger_condition TEXT,
+      action_type TEXT NOT NULL CHECK (action_type IN ('send_message', 'change_stage', 'notify_admin', 'send_tg')),
+      action_config TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_auto_org ON crm_automation_rules(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_crm_auto_stage ON crm_automation_rules(trigger_stage)');
 }
 
 // Generate a random 12-char token for guest pages

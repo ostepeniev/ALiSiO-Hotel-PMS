@@ -24,6 +24,9 @@ import {
   ClipboardList,
   Upload,
   Clock,
+  MessageSquare,
+  GitBranch,
+  UserPlus,
 } from 'lucide-react';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 import { NAV_PERMISSION_MAP, ROLE_LABELS, ROLE_COLORS, hasPermission } from '@/lib/permissions';
@@ -53,6 +56,15 @@ const navigation: NavSection[] = [
       { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard size={20} />, permission: 'nav:dashboard' },
       { label: 'Календар', href: '/calendar', icon: <CalendarDays size={20} />, permission: 'nav:calendar' },
       { label: 'Бронювання', href: '/bookings', icon: <BookOpen size={20} />, permission: 'nav:bookings' },
+    ],
+  },
+  {
+    title: 'CRM',
+    items: [
+      { label: 'Inbox', href: '/crm/inbox', icon: <MessageSquare size={20} />, permission: 'nav:crm' },
+      { label: 'Pipeline', href: '/crm', icon: <GitBranch size={20} />, permission: 'nav:crm' },
+      { label: 'Ліди', href: '/crm/leads', icon: <UserPlus size={20} />, permission: 'nav:crm' },
+      { label: 'Налаштування', href: '/crm/settings', icon: <Settings size={20} />, permission: 'nav:crm' },
     ],
   },
   {

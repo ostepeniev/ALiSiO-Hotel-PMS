@@ -35,6 +35,9 @@ yarn-error.log*
 /data/*.db-shm
 /data/*.db-wal
 /data/uploads/
+*.db
+*.db-shm
+*.db-wal
 
 # backups
 /backups/
