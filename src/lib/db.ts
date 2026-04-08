@@ -1051,6 +1051,55 @@ function runMigrations(database: any) {
     }
   } catch { /* already exists */ }
 
+  // --- Migration: add extra_person_charge, pet_allowed, pet_charge to unit_types ---
+  try {
+    const utCols = (database.prepare("PRAGMA table_info(unit_types)").all() as any[]).map(c => c.name);
+    if (!utCols.includes('extra_person_charge')) {
+      database.exec("ALTER TABLE unit_types ADD COLUMN extra_person_charge INTEGER NOT NULL DEFAULT 1000");
+      console.log('[DB] Added extra_person_charge to unit_types (default 1000 CZK)');
+    }
+    if (!utCols.includes('pet_allowed')) {
+      database.exec("ALTER TABLE unit_types ADD COLUMN pet_allowed INTEGER NOT NULL DEFAULT 1");
+      console.log('[DB] Added pet_allowed to unit_types');
+    }
+    if (!utCols.includes('pet_charge')) {
+      database.exec("ALTER TABLE unit_types ADD COLUMN pet_charge INTEGER NOT NULL DEFAULT 400");
+      console.log('[DB] Added pet_charge to unit_types (default 400 CZK)');
+    }
+  } catch (e: any) {
+    console.log('[DB] unit_types extension note:', e.message);
+  }
+
+  // --- Migration: seed new services (tub, late checkout, early checkin) ---
+  try {
+    const propRow2 = database.prepare("SELECT id FROM properties LIMIT 1").get() as any;
+    if (propRow2) {
+      const tubExists = database.prepare("SELECT id FROM additional_services WHERE id = 'svc_tub'").get();
+      if (!tubExists) {
+        database.prepare(
+          'INSERT INTO additional_services (id, property_id, name, name_en, name_cs, name_de, description, price, unit_label, icon, category, available_for, sort_order, service_type, duration_minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run('svc_tub', propRow2.id, 'Чан', 'Hot Tub', 'Káď', 'Badefass', 'Дерев\'яний чан під відкритим небом. Мінімальне бронювання — 2 години.', 600, 'за годину', '🛁', 'wellness', 'all', 3, 'slot_booking', 60);
+        console.log('[DB] Seeded service: svc_tub (600 CZK/hr)');
+      }
+      const lateExists = database.prepare("SELECT id FROM additional_services WHERE id = 'svc_late_checkout'").get();
+      if (!lateExists) {
+        database.prepare(
+          'INSERT INTO additional_services (id, property_id, name, name_en, name_cs, name_de, description, price, unit_label, icon, category, available_for, sort_order, service_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run('svc_late_checkout', propRow2.id, 'Пізнє виселення', 'Late Checkout', 'Pozdní odhlášení', 'Später Check-out', 'Виселення до 14:00 замість 11:00', 500, 'разово', '🕐', 'other', 'all', 10, 'toggle');
+        console.log('[DB] Seeded service: svc_late_checkout (500 CZK)');
+      }
+      const earlyExists = database.prepare("SELECT id FROM additional_services WHERE id = 'svc_early_checkin'").get();
+      if (!earlyExists) {
+        database.prepare(
+          'INSERT INTO additional_services (id, property_id, name, name_en, name_cs, name_de, description, price, unit_label, icon, category, available_for, sort_order, service_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run('svc_early_checkin', propRow2.id, 'Раннє заселення', 'Early Check-in', 'Brzký příjezd', 'Früher Check-in', 'Заселення з 12:00 замість 15:00', 500, 'разово', '🕛', 'other', 'all', 11, 'toggle');
+        console.log('[DB] Seeded service: svc_early_checkin (500 CZK)');
+      }
+    }
+  } catch (e: any) {
+    console.log('[DB] New services seed note:', e.message);
+  }
+
   // ═══════════════════════════════════════════════════════
   // FINANCE MODULE TABLES
   // ═══════════════════════════════════════════════════════

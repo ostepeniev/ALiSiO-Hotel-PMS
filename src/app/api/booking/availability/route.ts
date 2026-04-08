@@ -53,10 +53,13 @@ export async function GET(request: NextRequest) {
              ut.description as type_description,
              ut.max_adults, ut.max_children, ut.max_occupancy,
              ut.base_occupancy, ut.beds_single, ut.beds_double, ut.beds_sofa,
-             c.name as category_name, c.type as category_type
+             ut.extra_person_charge, ut.pet_allowed, ut.pet_charge,
+             c.name as category_name, c.type as category_type,
+             gpc.amenities as gpc_amenities
       FROM units u
       JOIN unit_types ut ON u.unit_type_id = ut.id
       JOIN categories c ON u.category_id = c.id
+      LEFT JOIN guest_page_config gpc ON gpc.unit_type_id = ut.id
       WHERE c.type = 'glamping' AND u.is_active = 1 AND u.room_status = 'available'
       ORDER BY u.sort_order, u.name
     `).all() as any[];
@@ -150,6 +153,10 @@ export async function GET(request: NextRequest) {
         totalPrice,
         breakdown,
         currency: 'CZK',
+        extraPersonCharge: unit.extra_person_charge || 1000,
+        petAllowed: unit.pet_allowed !== 0,
+        petCharge: unit.pet_charge || 400,
+        amenities: (() => { try { return JSON.parse(unit.gpc_amenities || '[]'); } catch { return []; } })(),
       });
     }
 

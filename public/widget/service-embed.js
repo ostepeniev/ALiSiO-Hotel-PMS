@@ -1,0 +1,645 @@
+/**
+ * ALiSiO PMS — Service Booking Widget (Sauna / Tub / Breakfast)
+ * Usage:
+ *   <div id="alisio-service-widget"></div>
+ *   <script src="https://your-pms.com/widget/service-embed.js"
+ *     data-service="sauna"
+ *     data-lang="uk"
+ *     data-color="#e61e4d"
+ *   ></script>
+ *
+ * Supported data-service: sauna, tub, breakfast
+ */
+(function() {
+  'use strict';
+
+  // ─── Config from script tag ───
+  var scriptTag = document.currentScript || (function() {
+    // Dynamic injection: find the most recently added script with data-service
+    var scripts = document.querySelectorAll('script[data-service]');
+    return scripts.length > 0 ? scripts[scripts.length - 1] : null;
+  })();
+  var API_BASE = scriptTag ? (scriptTag.getAttribute('data-api') || scriptTag.src.replace(/\/widget\/service-embed\.js.*$/, '')) : '';
+  var SERVICE_TYPE = scriptTag ? (scriptTag.getAttribute('data-service') || 'sauna') : 'sauna';
+  var LANG = scriptTag ? (scriptTag.getAttribute('data-lang') || 'en') : 'en';
+  var ACCENT = scriptTag ? (scriptTag.getAttribute('data-color') || '#1a1a2e') : '#1a1a2e';
+  var RESERVATION_ID = scriptTag ? (scriptTag.getAttribute('data-reservation') || '') : '';
+
+  // Service ID mapping
+  var SERVICE_IDS = { sauna: 'svc_sauna', tub: 'svc_pool', breakfast: 'svc_breakfast' };
+  var serviceId = SERVICE_IDS[SERVICE_TYPE] || 'svc_sauna';
+
+  // ─── i18n ───
+  var T = {
+    en: {
+      sauna: 'Sauna', tub: 'Hot Tub', breakfast: 'Breakfast',
+      saunaDesc: 'Finnish sauna with firewood. Minimum booking — 2 hours.',
+      tubDesc: 'Outdoor hot tub with forest views. Minimum — 2 hours.',
+      breakfastDesc: 'Fresh morning breakfast delivered to your cabin.',
+      selectDate: 'Select date', selectTime: 'Start time', duration: 'Duration',
+      hours: 'hours', hour: 'hour', perHour: '/hour',
+      broom: 'Sauna broom', broomDesc: 'Traditional birch broom',
+      addToBooking: 'Book Now', cancel: 'Cancel', close: 'Close',
+      total: 'Total', booked: 'Booked', available: 'Available',
+      quantity: 'Quantity', addItem: 'Add', order: 'Order Breakfast',
+      success: 'Booking confirmed!', successMsg: 'Your service has been booked successfully.',
+      errorOccurred: 'An error occurred', loading: 'Loading...',
+      minHours: 'min. 2 hours', persons: 'Persons', name: 'Your name', phone: 'Phone',
+      noSlots: 'No available slots', slotBooked: 'This slot is taken',
+      mon:'Mo',tue:'Tu',wed:'We',thu:'Th',fri:'Fr',sat:'Sa',sun:'Su',
+      months:['January','February','March','April','May','June','July','August','September','October','November','December'],
+    },
+    uk: {
+      sauna: 'Сауна', tub: 'Купіль', breakfast: 'Сніданок',
+      saunaDesc: 'Фінська сауна з дровами. Мінімальне бронювання — 2 години.',
+      tubDesc: 'Купіль просто неба з видом на ліс. Мінімум — 2 години.',
+      breakfastDesc: 'Свіжий ранковий сніданок з доставкою до будиночка.',
+      selectDate: 'Оберіть дату', selectTime: 'Час початку', duration: 'Тривалість',
+      hours: 'годин', hour: 'година', perHour: '/год',
+      broom: 'Вінік для сауни', broomDesc: 'Традиційний березовий вінік',
+      addToBooking: 'Забронювати', cancel: 'Скасувати', close: 'Закрити',
+      total: 'Разом', booked: 'Зайнято', available: 'Вільно',
+      quantity: 'Кількість', addItem: 'Додати', order: 'Замовити сніданок',
+      success: 'Бронювання підтверджено!', successMsg: 'Вашу послугу успішно заброньовано.',
+      errorOccurred: 'Виникла помилка', loading: 'Завантаження...',
+      minHours: 'мін. 2 години', persons: 'Кількість осіб', name: 'Ваше ім\'я', phone: 'Телефон',
+      noSlots: 'Немає вільних слотів', slotBooked: 'Цей слот зайнятий',
+      mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Нд',
+      months:['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
+    },
+    cs: {
+      sauna: 'Sauna', tub: 'Kádě', breakfast: 'Snídaně',
+      saunaDesc: 'Finská sauna na dřevo. Minimální rezervace — 2 hodiny.',
+      tubDesc: 'Venkovní kádě s výhledem do lesa. Minimálně 2 hodiny.',
+      breakfastDesc: 'Čerstvá ranní snídaně doručená k chatce.',
+      selectDate: 'Vyberte datum', selectTime: 'Čas začátku', duration: 'Doba trvání',
+      hours: 'hodin', hour: 'hodina', perHour: '/hod',
+      broom: 'Saunový metlík', broomDesc: 'Tradiční březový metlík',
+      addToBooking: 'Rezervovat', cancel: 'Zrušit', close: 'Zavřít',
+      total: 'Celkem', booked: 'Obsazeno', available: 'Volno',
+      quantity: 'Množství', addItem: 'Přidat', order: 'Objednat snídaně',
+      success: 'Rezervace potvrzena!', successMsg: 'Vaše služba byla úspěšně zarezervována.',
+      errorOccurred: 'Došlo k chybě', loading: 'Načítání...',
+      minHours: 'min. 2 hodiny', persons: 'Osoby', name: 'Vaše jméno', phone: 'Telefon',
+      noSlots: 'Žádné volné sloty', slotBooked: 'Tento slot je obsazen',
+      mon:'Po',tue:'Út',wed:'St',thu:'Čt',fri:'Pá',sat:'So',sun:'Ne',
+      months:['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
+    },
+    de: {
+      sauna: 'Sauna', tub: 'Badezuber', breakfast: 'Frühstück',
+      saunaDesc: 'Finnische Holzsauna. Mindestbuchung — 2 Stunden.',
+      tubDesc: 'Badezuber im Freien mit Waldblick. Mindestens 2 Stunden.',
+      breakfastDesc: 'Frisches Frühstück direkt zur Hütte geliefert.',
+      selectDate: 'Datum wählen', selectTime: 'Startzeit', duration: 'Dauer',
+      hours: 'Stunden', hour: 'Stunde', perHour: '/Std',
+      broom: 'Saunabesen', broomDesc: 'Traditioneller Birkenbesen',
+      addToBooking: 'Jetzt buchen', cancel: 'Abbrechen', close: 'Schließen',
+      total: 'Gesamt', booked: 'Belegt', available: 'Verfügbar',
+      quantity: 'Menge', addItem: 'Hinzufügen', order: 'Frühstück bestellen',
+      success: 'Buchung bestätigt!', successMsg: 'Ihr Service wurde erfolgreich gebucht.',
+      errorOccurred: 'Ein Fehler ist aufgetreten', loading: 'Laden...',
+      minHours: 'min. 2 Stunden', persons: 'Personen', name: 'Ihr Name', phone: 'Telefon',
+      noSlots: 'Keine freien Slots', slotBooked: 'Dieser Slot ist belegt',
+      mon:'Mo',tue:'Di',wed:'Mi',thu:'Do',fri:'Fr',sat:'Sa',sun:'So',
+      months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
+    }
+  };
+  var t = T[LANG] || T.en;
+
+  // ─── State ───
+  var state = {
+    view: 'card', // card | form | success
+    loading: false, error: null,
+    // Slot services (sauna, tub)
+    date: null, startHour: 14, hours: 2, brooms: 0,
+    price: 600, broomPrice: 300, addons: [],
+    bookedSlots: [],
+    // Breakfast
+    menuItems: [], itemQty: {},
+    // Guest (for standalone, no reservation)
+    guestName: '', guestPhone: '',
+    // Calendar
+    calOpen: false, calMonthOffset: 0,
+  };
+
+  // ─── DOM ───
+  var CONTAINER_ID = (scriptTag && scriptTag.getAttribute('data-container')) || window.__ALISIO_SERVICE_CONTAINER || 'alisio-service-widget';
+  // Reset global override after use
+  if (window.__ALISIO_SERVICE_CONTAINER) { delete window.__ALISIO_SERVICE_CONTAINER; }
+  var container = document.getElementById(CONTAINER_ID);
+  if (!container) return;
+  var shadow = container.attachShadow({ mode: 'open' });
+
+  // Inject CSS
+  var style = document.createElement('style');
+  style.textContent = buildCSS();
+  shadow.appendChild(style);
+
+  var root = document.createElement('div');
+  root.className = 'asw-root';
+  shadow.appendChild(root);
+
+  // ─── Helpers ───
+  function fmtPrice(n) { return new Intl.NumberFormat('cs-CZ').format(n); }
+  function fmtDate(d) { return d.toISOString().split('T')[0]; }
+  function parseDate(s) { return new Date(s + 'T00:00:00'); }
+  function fmtDisplay(s) {
+    var d = parseDate(s);
+    return String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear();
+  }
+  function getDaysInMonth(y, m) { return new Date(y, m+1, 0).getDate(); }
+  function getFirstDayMon(y, m) { var d = new Date(y, m, 1).getDay(); return d === 0 ? 6 : d - 1; }
+
+  function isSlotBooked(hour) {
+    var slotStart = String(hour).padStart(2, '0') + ':00';
+    return state.bookedSlots.some(function(s) { return s.start_time === slotStart && s.date === state.date; });
+  }
+
+  function getSlotTotal() {
+    return state.price * state.hours + state.broomPrice * state.brooms;
+  }
+
+  function getBreakfastTotal() {
+    var tot = 0;
+    state.menuItems.forEach(function(item) {
+      tot += (item.price || 0) * (state.itemQty[item.id] || 0);
+    });
+    return tot;
+  }
+
+  // ─── API ───
+  async function loadServiceData() {
+    state.loading = true; render();
+    try {
+      var today = new Date(); today.setHours(0,0,0,0);
+      var checkIn = fmtDate(today);
+      var futureDate = new Date(today); futureDate.setDate(futureDate.getDate() + 30);
+      var checkOut = fmtDate(futureDate);
+
+      var url = API_BASE + '/api/booking/services?serviceId=' + serviceId + '&checkIn=' + checkIn + '&checkOut=' + checkOut;
+      var res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to load');
+      var data = await res.json();
+
+      state.price = data.price || 600;
+      state.bookedSlots = data.bookedSlots || [];
+      state.addons = data.addons || [];
+      if (state.addons.length > 0) state.broomPrice = state.addons[0].price || 300;
+
+      // For breakfast
+      if (data.menuItems) {
+        state.menuItems = data.menuItems;
+        state.menuItems.forEach(function(item) {
+          if (!state.itemQty[item.id]) state.itemQty[item.id] = 0;
+        });
+      }
+
+      if (!state.date) state.date = checkIn;
+    } catch(e) { state.error = t.errorOccurred; console.error('ASW:', e); }
+    state.loading = false; render();
+  }
+
+  async function submitSlotBooking() {
+    if (!state.date) return;
+    state.loading = true; state.error = null; render();
+    try {
+      var body = {
+        action: 'book-slots',
+        serviceId: serviceId,
+        date: state.date,
+        startHour: state.startHour,
+        hours: state.hours,
+        persons: 1,
+      };
+      if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
+      if (SERVICE_TYPE === 'sauna' && state.brooms > 0) {
+        body.addons = [{ id: 'addon_broom', quantity: state.brooms }];
+      }
+
+      var res = await fetch(API_BASE + '/api/booking/services', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+      state.view = 'success';
+    } catch(e) { state.error = e.message || t.errorOccurred; }
+    state.loading = false; render();
+  }
+
+  async function submitBreakfastOrder() {
+    state.loading = true; state.error = null; render();
+    try {
+      var items = [];
+      Object.keys(state.itemQty).forEach(function(id) {
+        if (state.itemQty[id] > 0) items.push({ menuItemId: id, quantity: state.itemQty[id] });
+      });
+      if (items.length === 0) { state.error = 'Select at least one item'; state.loading = false; render(); return; }
+
+      var body = { action: 'book-breakfast', items: items };
+      if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
+
+      var res = await fetch(API_BASE + '/api/booking/services', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+      state.view = 'success';
+    } catch(e) { state.error = e.message || t.errorOccurred; }
+    state.loading = false; render();
+  }
+
+  // ─── Calendar ───
+  function onCalDayClick(dateStr) {
+    var d = parseDate(dateStr), today = new Date(); today.setHours(0,0,0,0);
+    if (d < today) return;
+    state.date = dateStr;
+    state.calOpen = false;
+    render();
+  }
+
+  // ─── Render ───
+  function render() {
+    var h = '';
+    if (state.view === 'success') {
+      h = renderSuccess();
+    } else if (SERVICE_TYPE === 'breakfast') {
+      h = renderBreakfast();
+    } else {
+      h = renderSlotService();
+    }
+    root.innerHTML = h;
+    bindEvents();
+  }
+
+  function renderSlotService() {
+    var isS = SERVICE_TYPE === 'sauna';
+    var icon = isS ? '🔥' : '🛁';
+    var title = isS ? t.sauna : t.tub;
+    var desc = isS ? t.saunaDesc : t.tubDesc;
+    var total = getSlotTotal();
+    var h = '';
+
+    h += '<div class="asw-card">';
+
+    // Header
+    h += '<div class="asw-header">';
+    h += '<div class="asw-icon">' + icon + '</div>';
+    h += '<div><div class="asw-title">' + title + '</div>';
+    h += '<div class="asw-desc">' + desc + '</div></div>';
+    h += '</div>';
+
+    // Price badge
+    h += '<div class="asw-price-badge">';
+    h += '<span class="asw-price-amount">Kč ' + fmtPrice(state.price) + '</span>';
+    h += '<span class="asw-price-unit">' + t.perHour + '</span>';
+    h += '</div>';
+
+    if (state.loading) {
+      h += '<div class="asw-loading"><div class="asw-spinner"></div></div>';
+      h += '</div>';
+      return h;
+    }
+
+    if (state.error) {
+      h += '<div class="asw-error">' + state.error + '</div>';
+    }
+
+    // Date selector
+    h += '<div class="asw-field-group">';
+    h += '<label class="asw-label">' + t.selectDate + '</label>';
+    h += '<button class="asw-date-btn" id="asw-date-btn">';
+    h += state.date ? fmtDisplay(state.date) : '—';
+    h += ' <span class="asw-chevron">▼</span></button>';
+    h += '</div>';
+
+    // Calendar popup
+    if (state.calOpen) {
+      h += renderMiniCalendar();
+    }
+
+    // Time slots
+    h += '<div class="asw-field-group">';
+    h += '<label class="asw-label">' + t.selectTime + '</label>';
+    h += '<div class="asw-time-grid">';
+    for (var hr = 10; hr <= 20; hr++) {
+      var booked = isSlotBooked(hr);
+      var selected = hr >= state.startHour && hr < state.startHour + state.hours;
+      var cls = 'asw-time-slot';
+      if (booked) cls += ' asw-booked';
+      if (selected) cls += ' asw-selected';
+      h += '<button class="' + cls + '" data-hour="' + hr + '"' + (booked ? ' disabled title="' + t.slotBooked + '"' : '') + '>';
+      h += String(hr).padStart(2,'0') + ':00';
+      h += '</button>';
+    }
+    h += '</div></div>';
+
+    // Duration
+    h += '<div class="asw-field-group">';
+    h += '<label class="asw-label">' + t.duration + ' <span class="asw-hint">(' + t.minHours + ')</span></label>';
+    h += '<div class="asw-counter">';
+    h += '<button class="asw-counter-btn" id="asw-hours-minus"' + (state.hours <= 2 ? ' disabled' : '') + '>−</button>';
+    h += '<span class="asw-counter-val">' + state.hours + ' ' + (state.hours === 1 ? t.hour : t.hours) + '</span>';
+    h += '<button class="asw-counter-btn" id="asw-hours-plus"' + (state.hours >= 8 ? ' disabled' : '') + '>+</button>';
+    h += '</div></div>';
+
+    // Broom addon (sauna only)
+    if (isS && state.addons.length > 0) {
+      h += '<div class="asw-field-group">';
+      h += '<label class="asw-label">🌿 ' + t.broom + ' <span class="asw-hint">' + fmtPrice(state.broomPrice) + ' Kč</span></label>';
+      h += '<div class="asw-counter">';
+      h += '<button class="asw-counter-btn" id="asw-broom-minus"' + (state.brooms <= 0 ? ' disabled' : '') + '>−</button>';
+      h += '<span class="asw-counter-val">' + state.brooms + '</span>';
+      h += '<button class="asw-counter-btn" id="asw-broom-plus"' + (state.brooms >= 5 ? ' disabled' : '') + '>+</button>';
+      h += '</div></div>';
+    }
+
+    // Divider + Total
+    h += '<div class="asw-divider"></div>';
+    h += '<div class="asw-total-row">';
+    h += '<span class="asw-total-label">' + t.total + '</span>';
+    h += '<span class="asw-total-amount">Kč ' + fmtPrice(total) + '</span>';
+    h += '</div>';
+
+    // Book button
+    h += '<button class="asw-book-btn" id="asw-submit">' + t.addToBooking + '</button>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderBreakfast() {
+    var total = getBreakfastTotal();
+    var h = '';
+
+    h += '<div class="asw-card">';
+    h += '<div class="asw-header">';
+    h += '<div class="asw-icon">🍳</div>';
+    h += '<div><div class="asw-title">' + t.breakfast + '</div>';
+    h += '<div class="asw-desc">' + t.breakfastDesc + '</div></div>';
+    h += '</div>';
+
+    if (state.loading) {
+      h += '<div class="asw-loading"><div class="asw-spinner"></div></div>';
+      h += '</div>';
+      return h;
+    }
+
+    if (state.error) {
+      h += '<div class="asw-error">' + state.error + '</div>';
+    }
+
+    // Menu items
+    if (state.menuItems.length === 0) {
+      h += '<div class="asw-empty">No menu items available</div>';
+    } else {
+      h += '<div class="asw-menu-grid">';
+      state.menuItems.forEach(function(item) {
+        var qty = state.itemQty[item.id] || 0;
+        var nameKey = 'name' + LANG.charAt(0).toUpperCase() + LANG.slice(1);
+        var displayName = item[nameKey] || item.name;
+
+        h += '<div class="asw-menu-item">';
+        if (item.photoUrl) {
+          h += '<div class="asw-menu-photo" style="background-image:url(' + item.photoUrl + ')"></div>';
+        } else {
+          h += '<div class="asw-menu-photo asw-menu-photo-placeholder">🍽️</div>';
+        }
+        h += '<div class="asw-menu-info">';
+        h += '<div class="asw-menu-name">' + escHtml(displayName) + '</div>';
+        if (item.description) h += '<div class="asw-menu-desc">' + escHtml(item.description) + '</div>';
+        if (item.weightGrams) h += '<div class="asw-menu-weight">' + item.weightGrams + 'g</div>';
+        h += '<div class="asw-menu-price">' + fmtPrice(item.price) + ' Kč</div>';
+        h += '</div>';
+        h += '<div class="asw-menu-qty">';
+        h += '<button class="asw-counter-btn" data-item-minus="' + item.id + '"' + (qty <= 0 ? ' disabled' : '') + '>−</button>';
+        h += '<span class="asw-counter-val">' + qty + '</span>';
+        h += '<button class="asw-counter-btn" data-item-plus="' + item.id + '">+</button>';
+        h += '</div>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
+
+    // Divider + Total
+    h += '<div class="asw-divider"></div>';
+    h += '<div class="asw-total-row">';
+    h += '<span class="asw-total-label">' + t.total + '</span>';
+    h += '<span class="asw-total-amount">Kč ' + fmtPrice(total) + '</span>';
+    h += '</div>';
+
+    h += '<button class="asw-book-btn" id="asw-submit"' + (total <= 0 ? ' disabled' : '') + '>' + t.order + '</button>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderSuccess() {
+    var h = '<div class="asw-card asw-success-card">';
+    h += '<div class="asw-success-icon">✅</div>';
+    h += '<div class="asw-success-title">' + t.success + '</div>';
+    h += '<div class="asw-success-msg">' + t.successMsg + '</div>';
+    h += '<button class="asw-book-btn asw-outline-btn" id="asw-close">' + t.close + '</button>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderMiniCalendar() {
+    var today = new Date(); today.setHours(0,0,0,0);
+    var base = new Date(today.getFullYear(), today.getMonth() + state.calMonthOffset, 1);
+    var y = base.getFullYear(), m = base.getMonth();
+
+    var h = '<div class="asw-cal-overlay" id="asw-cal-overlay">';
+    h += '<div class="asw-cal-popup">';
+    h += '<div class="asw-cal-header">';
+    h += '<button class="asw-cal-nav" id="asw-cal-prev"' + (state.calMonthOffset <= 0 ? ' disabled' : '') + '>‹</button>';
+    h += '<span class="asw-cal-title">' + t.months[m] + ' ' + y + '</span>';
+    h += '<button class="asw-cal-nav" id="asw-cal-next">›</button>';
+    h += '</div>';
+
+    h += '<div class="asw-cal-weekdays">';
+    [t.mon,t.tue,t.wed,t.thu,t.fri,t.sat,t.sun].forEach(function(wd) { h += '<div>' + wd + '</div>'; });
+    h += '</div>';
+
+    h += '<div class="asw-cal-grid">';
+    var firstDay = getFirstDayMon(y, m);
+    for (var i = 0; i < firstDay; i++) h += '<div class="asw-cal-day"></div>';
+    var dim = getDaysInMonth(y, m);
+    for (var d = 1; d <= dim; d++) {
+      var ds = y + '-' + String(m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+      var dObj = parseDate(ds);
+      var isPast = dObj < today;
+      var cls = 'asw-cal-day';
+      if (isPast) cls += ' asw-past';
+      if (ds === state.date) cls += ' asw-cal-selected';
+      h += '<button class="' + cls + '" data-cal-date="' + ds + '"' + (isPast ? ' disabled' : '') + '>' + d + '</button>';
+    }
+    h += '</div></div></div>';
+    return h;
+  }
+
+  function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  // ─── Events ───
+  function bindEvents() {
+    bindClick('asw-date-btn', function() { state.calOpen = !state.calOpen; render(); });
+    bindClick('asw-cal-overlay', function(e) { if (e.target.id === 'asw-cal-overlay') { state.calOpen = false; render(); } });
+    bindClick('asw-cal-prev', function() { state.calMonthOffset = Math.max(0, state.calMonthOffset - 1); render(); });
+    bindClick('asw-cal-next', function() { state.calMonthOffset++; render(); });
+
+    // Calendar day clicks
+    root.querySelectorAll('[data-cal-date]').forEach(function(btn) {
+      btn.addEventListener('click', function() { onCalDayClick(btn.getAttribute('data-cal-date')); });
+    });
+
+    // Time slot clicks
+    root.querySelectorAll('.asw-time-slot[data-hour]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        state.startHour = parseInt(btn.getAttribute('data-hour'));
+        render();
+      });
+    });
+
+    // Hour counters
+    bindClick('asw-hours-minus', function() { state.hours = Math.max(2, state.hours - 1); render(); });
+    bindClick('asw-hours-plus', function() { state.hours = Math.min(8, state.hours + 1); render(); });
+
+    // Broom counters
+    bindClick('asw-broom-minus', function() { state.brooms = Math.max(0, state.brooms - 1); render(); });
+    bindClick('asw-broom-plus', function() { state.brooms = Math.min(5, state.brooms + 1); render(); });
+
+    // Menu item counters
+    root.querySelectorAll('[data-item-plus]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = btn.getAttribute('data-item-plus');
+        state.itemQty[id] = (state.itemQty[id] || 0) + 1; render();
+      });
+    });
+    root.querySelectorAll('[data-item-minus]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = btn.getAttribute('data-item-minus');
+        state.itemQty[id] = Math.max(0, (state.itemQty[id] || 0) - 1); render();
+      });
+    });
+
+    // Submit
+    bindClick('asw-submit', function() {
+      if (SERVICE_TYPE === 'breakfast') submitBreakfastOrder();
+      else submitSlotBooking();
+    });
+
+    // Close success
+    bindClick('asw-close', function() {
+      state.view = 'card'; state.error = null;
+      state.hours = 2; state.brooms = 0;
+      state.itemQty = {};
+      state.menuItems.forEach(function(item) { state.itemQty[item.id] = 0; });
+      render();
+    });
+  }
+
+  function bindClick(id, fn) {
+    var el = root.querySelector('#' + id);
+    if (el) el.addEventListener('click', fn);
+  }
+
+  // ─── CSS ───
+  function buildCSS() {
+    return [
+      ':host{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--accent:' + ACCENT + ';--bg:#fff;--bg2:#f8f9fa;--text:#1a1a2e;--text2:#6b7280;--border:#e5e7eb;--radius:12px}',
+      '.asw-root{max-width:420px;margin:0 auto}',
+
+      // Card
+      '.asw-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:24px;box-shadow:0 4px 24px rgba(0,0,0,.06)}',
+      '.asw-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:16px}',
+      '.asw-icon{font-size:36px;line-height:1}',
+      '.asw-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:2px}',
+      '.asw-desc{font-size:13px;color:var(--text2);line-height:1.4}',
+
+      // Price badge
+      '.asw-price-badge{display:inline-flex;align-items:baseline;gap:4px;background:var(--bg2);padding:6px 14px;border-radius:8px;margin-bottom:18px}',
+      '.asw-price-amount{font-size:22px;font-weight:800;color:var(--text)}',
+      '.asw-price-unit{font-size:13px;color:var(--text2)}',
+
+      // Fields
+      '.asw-field-group{margin-bottom:16px}',
+      '.asw-label{display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px}',
+      '.asw-hint{font-weight:400;color:var(--text2);font-size:12px}',
+
+      // Date button
+      '.asw-date-btn{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:14px;color:var(--text);cursor:pointer;text-align:left;display:flex;justify-content:space-between;align-items:center}',
+      '.asw-date-btn:hover{border-color:var(--accent)}',
+      '.asw-chevron{font-size:10px;color:var(--text2)}',
+
+      // Time grid
+      '.asw-time-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}',
+      '.asw-time-slot{padding:8px 4px;border:1px solid var(--border);border-radius:6px;background:var(--bg);font-size:13px;font-weight:500;color:var(--text);cursor:pointer;text-align:center;transition:all .15s}',
+      '.asw-time-slot:hover:not(:disabled){border-color:var(--accent);background:#f0f0ff}',
+      '.asw-time-slot.asw-selected{background:var(--accent);color:#fff;border-color:var(--accent)}',
+      '.asw-time-slot.asw-booked{background:#fee2e2;color:#991b1b;border-color:#fca5a5;cursor:not-allowed;text-decoration:line-through}',
+
+      // Counter
+      '.asw-counter{display:flex;align-items:center;gap:12px}',
+      '.asw-counter-btn{width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:var(--bg);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}',
+      '.asw-counter-btn:hover:not(:disabled){border-color:var(--accent);background:#f0f0ff}',
+      '.asw-counter-btn:disabled{opacity:.3;cursor:not-allowed}',
+      '.asw-counter-val{font-size:15px;font-weight:600;color:var(--text);min-width:56px;text-align:center}',
+
+      // Divider + total
+      '.asw-divider{height:1px;background:var(--border);margin:18px 0}',
+      '.asw-total-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}',
+      '.asw-total-label{font-size:15px;font-weight:600;color:var(--text)}',
+      '.asw-total-amount{font-size:22px;font-weight:800;color:var(--text)}',
+
+      // Book button
+      '.asw-book-btn{width:100%;padding:14px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.3px}',
+      '.asw-book-btn:hover:not(:disabled){opacity:.9;transform:translateY(-1px)}',
+      '.asw-book-btn:disabled{opacity:.4;cursor:not-allowed}',
+      '.asw-outline-btn{background:transparent;color:var(--accent);border:2px solid var(--accent)}',
+
+      // Error
+      '.asw-error{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}',
+
+      // Loading
+      '.asw-loading{display:flex;justify-content:center;padding:40px 0}',
+      '.asw-spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:asw-spin .7s linear infinite}',
+      '@keyframes asw-spin{to{transform:rotate(360deg)}}',
+
+      // Success
+      '.asw-success-card{text-align:center;padding:40px 24px}',
+      '.asw-success-icon{font-size:48px;margin-bottom:12px}',
+      '.asw-success-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px}',
+      '.asw-success-msg{font-size:14px;color:var(--text2);margin-bottom:24px}',
+
+      // Menu (breakfast)
+      '.asw-menu-grid{display:flex;flex-direction:column;gap:12px}',
+      '.asw-menu-item{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg)}',
+      '.asw-menu-photo{width:60px;height:60px;border-radius:8px;background-size:cover;background-position:center;flex-shrink:0}',
+      '.asw-menu-photo-placeholder{display:flex;align-items:center;justify-content:center;background:var(--bg2);font-size:24px}',
+      '.asw-menu-info{flex:1;min-width:0}',
+      '.asw-menu-name{font-size:14px;font-weight:600;color:var(--text)}',
+      '.asw-menu-desc{font-size:12px;color:var(--text2);margin-top:2px}',
+      '.asw-menu-weight{font-size:11px;color:var(--text2)}',
+      '.asw-menu-price{font-size:14px;font-weight:700;color:var(--text);margin-top:2px}',
+      '.asw-menu-qty{display:flex;align-items:center;gap:8px;flex-shrink:0}',
+      '.asw-menu-qty .asw-counter-btn{width:30px;height:30px;font-size:15px}',
+      '.asw-menu-qty .asw-counter-val{min-width:24px;font-size:14px}',
+
+      // Calendar overlay
+      '.asw-cal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center}',
+      '.asw-cal-popup{background:var(--bg);border-radius:16px;padding:20px;max-width:340px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2)}',
+      '.asw-cal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}',
+      '.asw-cal-nav{width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}',
+      '.asw-cal-nav:disabled{opacity:.3;cursor:not-allowed}',
+      '.asw-cal-title{font-size:15px;font-weight:700;color:var(--text)}',
+      '.asw-cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px}',
+      '.asw-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}',
+      '.asw-cal-day{width:100%;aspect-ratio:1;border:none;background:transparent;font-size:13px;color:var(--text);cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center}',
+      '.asw-cal-day:hover:not(:disabled){background:var(--bg2)}',
+      '.asw-cal-day.asw-past{color:#d1d5db;cursor:not-allowed}',
+      '.asw-cal-day.asw-cal-selected{background:var(--accent);color:#fff;font-weight:700}',
+
+      '.asw-empty{padding:24px;text-align:center;color:var(--text2);font-size:14px}',
+    ].join('\n');
+  }
+
+  // ─── Init ───
+  loadServiceData();
+})();

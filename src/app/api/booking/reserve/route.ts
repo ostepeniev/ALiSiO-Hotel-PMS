@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
     const {
       unitId, checkIn, checkOut,
       adults = 2, children = 0,
+      hasPet = false,
       firstName, lastName, email, phone,
       gender,
       promoCode, certificateCode,
@@ -116,6 +117,25 @@ export async function POST(request: NextRequest) {
       }
       totalPrice += dayPrice;
       current.setDate(current.getDate() + 1);
+    }
+
+    // Extra person charge (per extra adult per night)
+    let extraPersonTotal = 0;
+    const unitTypeInfo = db.prepare(
+      'SELECT base_occupancy, extra_person_charge, pet_allowed, pet_charge FROM unit_types WHERE id = ?'
+    ).get(unit.unit_type_id) as any;
+    if (unitTypeInfo) {
+      const baseOcc = unitTypeInfo.base_occupancy || 2;
+      const extraGuests = Math.max(0, adults - baseOcc);
+      extraPersonTotal = extraGuests * (unitTypeInfo.extra_person_charge || 0) * nights;
+      totalPrice += extraPersonTotal;
+    }
+
+    // Pet cleaning charge (one-time)
+    let petChargeTotal = 0;
+    if (hasPet && unitTypeInfo?.pet_charge) {
+      petChargeTotal = unitTypeInfo.pet_charge;
+      totalPrice += petChargeTotal;
     }
 
     // Apply promo code discount (only if table exists)

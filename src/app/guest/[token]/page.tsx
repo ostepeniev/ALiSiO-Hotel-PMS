@@ -107,6 +107,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const [selectedService, setSelectedService] = useState<any>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [orderingService, setOrderingService] = useState<string | null>(null);
+  const [widgetService, setWidgetService] = useState<'sauna' | 'tub' | 'breakfast' | null>(null);
+  const widgetContainerRef = useRef<HTMLDivElement>(null);
 
   // Registration state
   const [showReg, setShowReg] = useState(false);
@@ -242,6 +244,45 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   useEffect(() => {
     if (sheet === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMsgs, sheet]);
+
+  // ─── Service widget injection ─────────────────
+  useEffect(() => {
+    if (!widgetService || !widgetContainerRef.current) return;
+    const container = widgetContainerRef.current;
+    container.innerHTML = '';
+
+    const widgetId = 'alisio-service-widget-popup';
+    const widgetDiv = document.createElement('div');
+    widgetDiv.id = widgetId;
+    container.appendChild(widgetDiv);
+
+    // Use a unique nonce so the IIFE can find the right script tag
+    const nonce = 'asw-' + Date.now();
+    const script = document.createElement('script');
+    script.src = '/widget/service-embed.js';
+    script.setAttribute('data-service', widgetService);
+    script.setAttribute('data-lang', lang);
+    script.setAttribute('data-color', '#1a1a2e');
+    script.setAttribute('data-container', widgetId);
+    script.setAttribute('data-nonce', nonce);
+    if (r?.id) script.setAttribute('data-reservation', r.id);
+    container.appendChild(script);
+
+    return () => { container.innerHTML = ''; };
+  }, [widgetService, lang, r?.id]);
+
+  // Helper: detect if a service should open as widget popup
+  const getWidgetType = useCallback((svc: any): 'sauna' | 'tub' | 'breakfast' | null => {
+    if (!svc) return null;
+    // Primary: use service_type + name matching
+    const name = ((svc.name || '') + ' ' + (svc.name_en || '') + ' ' + (svc.id || '')).toLowerCase();
+    if (name.includes('саун') || name.includes('sauna')) return 'sauna';
+    if (name.includes('купіль') || name.includes('чан') || name.includes('tub') || name.includes('pool') || name.includes('plunge') || name.includes('kád') || name.includes('lázeň')) return 'tub';
+    if (name.includes('сніданок') || name.includes('сніданк') || name.includes('breakfast') || name.includes('snídaně') || name.includes('frühstück')) return 'breakfast';
+    // Fallback: use service_type
+    if (svc.service_type === 'menu_selection') return 'breakfast';
+    return null;
+  }, []);
 
   // ─── LOADING / ERROR ──────────────────────────
   if (loading) return (
@@ -380,11 +421,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <ListRow icon="📍" label={t.howToGetHere} onClick={() => setSheet('directions')} last />
               </>}
               {phase === 'during' && <>
-                {data.services?.slice(0, 3).map((svc: any, i: number) => (
-                  <ListRow key={svc.id} icon={svc.icon || '✨'} label={svc.name_en && lang !== 'uk' ? svc.name_en : translateContent(svc.name, lang)}
-                    onClick={() => { setSelectedService(svc); setSheet('service'); }}
-                    last={i === Math.min(2, (data.services?.length || 1) - 1)} />
-                ))}
+                {data.services?.slice(0, 3).map((svc: any, i: number) => {
+                  const wType = getWidgetType(svc);
+                  return (
+                    <ListRow key={svc.id} icon={svc.icon || '✨'} label={svc.name_en && lang !== 'uk' ? svc.name_en : translateContent(svc.name, lang)}
+                      onClick={() => {
+                        if (wType) { setWidgetService(wType); }
+                        else { setSelectedService(svc); setSheet('service'); }
+                      }}
+                      last={i === Math.min(2, (data.services?.length || 1) - 1)} />
+                  );
+                })}
               </>}
               {phase === 'checkout' && <>
                 <ListRow icon="☐" label={t.closeWindows} chevron={false} />
@@ -470,9 +517,13 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
           {data.services?.map((svc: any) => {
             const isOrdered = data.orderedServices?.some((o: any) => o.service_id === svc.id);
+            const wType = getWidgetType(svc);
             return (
               <button key={svc.id} className="gp-service-card"
-                onClick={() => { setSelectedService(svc); setSheet('service'); }}>
+                onClick={() => {
+                  if (wType) { setWidgetService(wType); }
+                  else { setSelectedService(svc); setSheet('service'); }
+                }}>
                 <div className="gp-service-emoji">{svc.icon || '✨'}</div>
                 <div className="gp-service-info">
                   <div className="gp-service-name">
@@ -600,7 +651,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         </div>
       </BottomSheet>
 
-      {/* Service detail */}
+      {/* Service detail (simple services) */}
       <BottomSheet open={sheet === 'service' && !!selectedService} onClose={() => { setSheet(null); setSelectedService(null); }}
         title={selectedService ? (selectedService.name_en && lang !== 'uk' ? selectedService.name_en : translateContent(selectedService.name || '', lang)) : ''}>
         {selectedService && (
@@ -623,6 +674,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             )}
           </>
         )}
+      </BottomSheet>
+
+      {/* Service widget popup (sauna / tub / breakfast) */}
+      <BottomSheet open={!!widgetService} onClose={() => setWidgetService(null)}
+        title={widgetService === 'sauna' ? '🔥 ' + (lang === 'uk' ? 'Сауна' : 'Sauna')
+             : widgetService === 'tub'  ? '🛁 ' + (lang === 'uk' ? 'Купіль' : 'Hot Tub')
+             : '🍳 ' + (lang === 'uk' ? 'Сніданок' : 'Breakfast')}>
+        <div ref={widgetContainerRef} style={{ minHeight: 200 }} />
       </BottomSheet>
 
       {/* Chat */}

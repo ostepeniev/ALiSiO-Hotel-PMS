@@ -264,6 +264,44 @@ export async function POST(request: NextRequest) {
         items: orderDetails,
         totalPrice,
       }, { status: 201, headers: CORS_HEADERS });
+    } else if (action === 'book-toggle') {
+      // Toggle services: late checkout, early checkin
+      const { serviceId, reservationId } = body;
+
+      if (!serviceId || !reservationId) {
+        return NextResponse.json({ error: 'serviceId and reservationId required' }, { status: 400, headers: CORS_HEADERS });
+      }
+
+      const service = db.prepare('SELECT * FROM additional_services WHERE id = ?').get(serviceId) as any;
+      if (!service) {
+        return NextResponse.json({ error: 'Service not found' }, { status: 404, headers: CORS_HEADERS });
+      }
+
+      const existingTables = new Set(
+        (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+          .map(t => t.name)
+      );
+
+      if (existingTables.has('booking_service_orders')) {
+        // Check if already booked
+        const existing = db.prepare(
+          'SELECT id FROM booking_service_orders WHERE reservation_id = ? AND service_id = ?'
+        ).get(reservationId, serviceId) as any;
+
+        if (!existing) {
+          const orderId = `bso_${Date.now()}_${serviceId}`;
+          db.prepare(`
+            INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, unit_price, total_price, status)
+            VALUES (?, ?, ?, 1, ?, ?, 'confirmed')
+          `).run(orderId, reservationId, serviceId, service.price, service.price);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        serviceId,
+        price: service.price,
+      }, { status: 201, headers: CORS_HEADERS });
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400, headers: CORS_HEADERS });

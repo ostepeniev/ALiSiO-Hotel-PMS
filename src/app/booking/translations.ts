@@ -103,6 +103,16 @@ export interface BookingTranslations {
   serviceTotal: string;
   servicesSkip: string;
   servicesEmpty: string;
+  wantButton: string;
+  bookService: string;
+  closePopup: string;
+  selectTime: string;
+  slotBooked: string;
+  myDishes: string;
+  breakfastInfo: string;
+  editService: string;
+  removeService: string;
+  totalLabel: string;
   // Step 5 - Confirmation
   confirmBooking: string;
   processing: string;
@@ -127,6 +137,27 @@ export interface BookingTranslations {
   poweredBy: string;
   // Booking details (mobile)
   bookingDetails: string;
+  // Step 2 — House Card
+  petFriendly: string;
+  petFriendlyDesc: string;
+  petCheckbox: string;
+  petPresence: string;
+  extraPersonCharge: string;
+  adultsCount: string;
+  childrenCount: string;
+  closeCard: string;
+  bookHouse: string;
+  multiHouseInfo: string;
+  amenitiesTitle: string;
+  // Step 4 — New services
+  tubTitle: string;
+  tubDesc: string;
+  tubPerHour: string;
+  tubAddToBooking: string;
+  lateCheckoutTitle: string;
+  lateCheckoutDesc: string;
+  earlyCheckinTitle: string;
+  earlyCheckinDesc: string;
 }
 
 const translations: Record<BookingLang, BookingTranslations> = {
@@ -208,6 +239,16 @@ const translations: Record<BookingLang, BookingTranslations> = {
     serviceTotal: 'Разом за послуги',
     servicesSkip: 'Пропустити',
     servicesEmpty: 'Ви можете додати послуги пізніше у гостьовому порталі',
+    wantButton: 'Хочу',
+    bookService: 'Забронювати',
+    closePopup: 'Закрити',
+    selectTime: 'Оберіть час',
+    slotBooked: 'Зайнято',
+    myDishes: 'Мої страви',
+    breakfastInfo: 'Це твій сніданок на наступний день після заселення.',
+    editService: 'Редагувати',
+    removeService: 'Видалити сервіс',
+    totalLabel: 'Всього',
     confirmBooking: 'Підтвердити бронювання',
     processing: 'Обробка...',
     agreeTerms: 'Натискаючи «Підтвердити», ви погоджуєтесь з умовами бронювання',
@@ -226,6 +267,27 @@ const translations: Record<BookingLang, BookingTranslations> = {
     noUnitsLeft: 'На жаль, вільних будиночків не залишилось',
     poweredBy: 'ALiSiO PMS',
     bookingDetails: 'Деталі бронювання',
+    // Step 2 — House Card
+    petFriendly: '🐾 Ми pet-friendly!',
+    petFriendlyDesc: 'Ми завжди раді вашим пухнастим друзям. Додаткове прибирання за пухнастиком.',
+    petCheckbox: 'Я візьму тваринку з собою',
+    petPresence: 'Наявність тварин',
+    extraPersonCharge: 'за додаткового гостя/ніч',
+    adultsCount: 'Дорослих',
+    childrenCount: 'Дітей',
+    closeCard: 'Закрити',
+    bookHouse: 'Забронювати',
+    multiHouseInfo: 'Щоб забронювати кілька будинків — зробіть окремі бронювання для кожного.',
+    amenitiesTitle: 'Зручності',
+    // Step 4 — New services
+    tubTitle: 'Чан',
+    tubDesc: 'Дерев\'яний чан під відкритим небом. Мінімальне бронювання — 2 години.',
+    tubPerHour: '/Kč/год',
+    tubAddToBooking: 'Додати чан',
+    lateCheckoutTitle: 'Пізнє виселення',
+    lateCheckoutDesc: 'Виселення до 14:00 замість 11:00',
+    earlyCheckinTitle: 'Раннє заселення',
+    earlyCheckinDesc: 'Заселення з 12:00 замість 15:00',
   },
   en: {
     brandName: 'QA Glamping',
@@ -305,6 +367,16 @@ const translations: Record<BookingLang, BookingTranslations> = {
     serviceTotal: 'Services total',
     servicesSkip: 'Skip',
     servicesEmpty: 'You can add services later in the guest portal',
+    wantButton: 'I want',
+    bookService: 'Book',
+    closePopup: 'Close',
+    selectTime: 'Select time',
+    slotBooked: 'Booked',
+    myDishes: 'My dishes',
+    breakfastInfo: 'This is your breakfast for the next day after check-in.',
+    editService: 'Edit',
+    removeService: 'Remove service',
+    totalLabel: 'Total',
     confirmBooking: 'Confirm Booking',
     processing: 'Processing...',
     agreeTerms: 'By clicking "Confirm", you agree to the booking terms',
@@ -323,6 +395,25 @@ const translations: Record<BookingLang, BookingTranslations> = {
     noUnitsLeft: 'Sorry, no units are available',
     poweredBy: 'ALiSiO PMS',
     bookingDetails: 'Booking details',
+    petFriendly: '🐾 We are pet-friendly!',
+    petFriendlyDesc: 'We always welcome your furry friends. Extra cleaning fee applies.',
+    petCheckbox: 'I\'ll bring a pet',
+    petPresence: 'Pets',
+    extraPersonCharge: 'per extra guest/night',
+    adultsCount: 'Adults',
+    childrenCount: 'Children',
+    closeCard: 'Close',
+    bookHouse: 'Book',
+    multiHouseInfo: 'To book multiple houses — make a separate booking for each.',
+    amenitiesTitle: 'Amenities',
+    tubTitle: 'Hot Tub',
+    tubDesc: 'Wooden hot tub outdoors. Minimum booking — 2 hours.',
+    tubPerHour: '/CZK/hr',
+    tubAddToBooking: 'Add tub',
+    lateCheckoutTitle: 'Late Checkout',
+    lateCheckoutDesc: 'Checkout until 14:00 instead of 11:00',
+    earlyCheckinTitle: 'Early Check-in',
+    earlyCheckinDesc: 'Check-in from 12:00 instead of 15:00',
   },
   cs: {
     brandName: 'QA Glamping',
@@ -402,6 +493,16 @@ const translations: Record<BookingLang, BookingTranslations> = {
     serviceTotal: 'Služby celkem',
     servicesSkip: 'Přeskočit',
     servicesEmpty: 'Služby můžete přidat později na hostovském portálu',
+    wantButton: 'Chci',
+    bookService: 'Rezervovat',
+    closePopup: 'Zavřít',
+    selectTime: 'Vyberte čas',
+    slotBooked: 'Obsazeno',
+    myDishes: 'Mé pokrmy',
+    breakfastInfo: 'Toto je vaše snídaně na další den po příjezdu.',
+    editService: 'Upravit',
+    removeService: 'Odebrat službu',
+    totalLabel: 'Celkem',
     confirmBooking: 'Potvrdit rezervaci',
     processing: 'Zpracování...',
     agreeTerms: 'Kliknutím na „Potvrdit" souhlasíte s podmínkami rezervace',
@@ -420,6 +521,25 @@ const translations: Record<BookingLang, BookingTranslations> = {
     noUnitsLeft: 'Omlouváme se, žádné volné domky nejsou k dispozici',
     poweredBy: 'ALiSiO PMS',
     bookingDetails: 'Detaily rezervace',
+    petFriendly: '🐾 Jsme pet-friendly!',
+    petFriendlyDesc: 'Vaši chlupatí přátelé jsou vítáni. Účtuje se příplatek za úklid.',
+    petCheckbox: 'Vezmu si mazlíčka',
+    petPresence: 'Zvířata',
+    extraPersonCharge: 'za dalšího hosta/noc',
+    adultsCount: 'Dospělí',
+    childrenCount: 'Děti',
+    closeCard: 'Zavřít',
+    bookHouse: 'Rezervovat',
+    multiHouseInfo: 'Chcete-li rezervovat více domků — proveďte samostatnou rezervaci pro každý.',
+    amenitiesTitle: 'Vybavení',
+    tubTitle: 'Káď',
+    tubDesc: 'Dřevěná káď venku. Minimální rezervace — 2 hodiny.',
+    tubPerHour: '/Kč/hod',
+    tubAddToBooking: 'Přidat káď',
+    lateCheckoutTitle: 'Pozdní odhlášení',
+    lateCheckoutDesc: 'Odhlášení do 14:00 místo 11:00',
+    earlyCheckinTitle: 'Brzký příjezd',
+    earlyCheckinDesc: 'Příjezd od 12:00 místo 15:00',
   },
   de: {
     brandName: 'QA Glamping',
@@ -499,6 +619,16 @@ const translations: Record<BookingLang, BookingTranslations> = {
     serviceTotal: 'Dienstleistungen gesamt',
     servicesSkip: 'Überspringen',
     servicesEmpty: 'Sie können Dienstleistungen später im Gästeportal hinzufügen',
+    wantButton: 'Ich möchte',
+    bookService: 'Buchen',
+    closePopup: 'Schließen',
+    selectTime: 'Zeit wählen',
+    slotBooked: 'Gebucht',
+    myDishes: 'Meine Gerichte',
+    breakfastInfo: 'Dies ist Ihr Frühstück für den nächsten Tag nach dem Check-in.',
+    editService: 'Bearbeiten',
+    removeService: 'Service entfernen',
+    totalLabel: 'Gesamt',
     confirmBooking: 'Buchung bestätigen',
     processing: 'Verarbeitung...',
     agreeTerms: 'Mit Klick auf „Bestätigen" stimmen Sie den Buchungsbedingungen zu',
@@ -517,6 +647,25 @@ const translations: Record<BookingLang, BookingTranslations> = {
     noUnitsLeft: 'Leider sind keine Häuser verfügbar',
     poweredBy: 'ALiSiO PMS',
     bookingDetails: 'Buchungsdetails',
+    petFriendly: '🐾 Wir sind tierfreundlich!',
+    petFriendlyDesc: 'Ihre pelzigen Freunde sind willkommen. Reinigungszuschlag wird berechnet.',
+    petCheckbox: 'Ich bringe ein Haustier mit',
+    petPresence: 'Haustiere',
+    extraPersonCharge: 'pro Zusatzgast/Nacht',
+    adultsCount: 'Erwachsene',
+    childrenCount: 'Kinder',
+    closeCard: 'Schließen',
+    bookHouse: 'Buchen',
+    multiHouseInfo: 'Um mehrere Häuser zu buchen — führen Sie für jedes eine separate Buchung durch.',
+    amenitiesTitle: 'Ausstattung',
+    tubTitle: 'Badefass',
+    tubDesc: 'Holz-Badefass im Freien. Mindestbuchung — 2 Stunden.',
+    tubPerHour: '/Kč/Std',
+    tubAddToBooking: 'Badefass hinzufügen',
+    lateCheckoutTitle: 'Später Check-out',
+    lateCheckoutDesc: 'Check-out bis 14:00 statt 11:00',
+    earlyCheckinTitle: 'Früher Check-in',
+    earlyCheckinDesc: 'Check-in ab 12:00 statt 15:00',
   },
 };
 
