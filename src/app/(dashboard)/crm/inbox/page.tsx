@@ -119,6 +119,7 @@ interface LeadFull {
   camping_electricity: number;
   assigned_name: string | null;
   reservation_status: string | null;
+  reservation_id: string | null;
   payment_status: string | null;
   reservation_total: number | null;
   stageHistory: StageHistoryItem[];
@@ -316,6 +317,36 @@ function LeadDetailPanel({ leadId, onClose, onStageChanged }: {
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, padding: '8px 10px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>{lead.notes}</div>
           </div>
         )}
+
+        {/* Booking Action */}
+        <div className="inbox-detail-section">
+          <div className="inbox-detail-section-title"><Calendar size={12} /> Бронювання</div>
+          {lead.reservation_id ? (
+            <a href={`/bookings?highlight=${lead.reservation_id}`}
+              className="btn btn-sm" style={{ width: '100%', justifyContent: 'center', gap: 6, background: 'var(--accent-success)', color: '#fff', fontWeight: 600 }}>
+              <ExternalLink size={13} /> Відкрити бронювання
+            </a>
+          ) : (
+            <button className="btn btn-sm" style={{ width: '100%', justifyContent: 'center', gap: 6, background: 'var(--accent-primary)', color: '#fff', fontWeight: 600 }}
+              onClick={() => {
+                const params = new URLSearchParams();
+                params.set('new', '1');
+                params.set('firstName', lead.first_name);
+                if (lead.last_name) params.set('lastName', lead.last_name);
+                if (lead.email) params.set('email', lead.email);
+                if (lead.phone) params.set('phone', lead.phone);
+                if (lead.check_in_date) params.set('checkIn', lead.check_in_date);
+                if (lead.check_out_date) params.set('checkOut', lead.check_out_date);
+                if (lead.adults > 0) params.set('adults', String(lead.adults));
+                if (lead.children > 0) params.set('children', String(lead.children));
+                params.set('crmLeadId', lead.id);
+                params.set('source', lead.source || 'direct');
+                window.open(`/bookings?${params.toString()}`, '_blank');
+              }}>
+              <Calendar size={13} /> Створити бронювання
+            </button>
+          )}
+        </div>
 
         {/* Stage change */}
         <div className="inbox-detail-section">

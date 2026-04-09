@@ -171,6 +171,38 @@ export async function POST(request: NextRequest) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(resId, unit.property_id, unitId, guestId, checkIn, checkOut, nights || 1, adults || 1, children || 0, bookingStatus, body.paymentStatus || 'unpaid', source || 'direct', totalPrice || 0, commissionAmount, guestPageToken, finalCityTaxAmount, finalCityTaxIncluded, finalCityTaxPaid, internalNotes || null);
 
+    // Auto-link to CRM lead (by explicit ID or email match)
+    try {
+      const crmLeadId = body.crmLeadId;
+      let linkedLeadId: string | null = null;
+
+      if (crmLeadId) {
+        // Explicit link from CRM Inbox "Create Booking" button
+        const lead = db.prepare('SELECT id FROM crm_leads WHERE id = ?').get(crmLeadId) as { id: string } | undefined;
+        if (lead) linkedLeadId = lead.id;
+      }
+
+      if (!linkedLeadId && email) {
+        // Auto-match by email
+        const lead = db.prepare(
+          "SELECT id FROM crm_leads WHERE email = ? AND organization_id = ? AND reservation_id IS NULL ORDER BY updated_at DESC LIMIT 1"
+        ).get(email, org.id) as { id: string } | undefined;
+        if (lead) linkedLeadId = lead.id;
+      }
+
+      if (linkedLeadId) {
+        db.prepare(`
+          UPDATE crm_leads 
+          SET reservation_id = ?, guest_id = ?, stage = 'booked', 
+              updated_at = datetime('now')
+          WHERE id = ?
+        `).run(resId, guestId, linkedLeadId);
+        console.log(`[Booking] Linked reservation ${resId} to CRM lead ${linkedLeadId}`);
+      }
+    } catch (linkErr) {
+      console.error('[Booking] CRM link error (non-fatal):', linkErr);
+    }
+
     return NextResponse.json({ id: resId, guestId, guestPageToken }, { status: 201 });
   } catch (error) {
     console.error('POST /api/bookings error:', error);
