@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db';
  * POST /api/webhooks/teya
  * 
  * Receives webhook events from Teya after payment processing.
- * Verifies signature and updates booking/service payment status.
+ * Verifies signature and updates booking payment status in booking_service_orders.
  */
 export async function POST(req: Request) {
   try {
@@ -22,40 +22,32 @@ export async function POST(req: Request) {
     const event = JSON.parse(rawBody);
     const eventType = event.type || event.event_type;
 
-    console.log('[Teya Webhook] Received:', eventType, event.data?.id);
+    console.log('[Teya Webhook] Received:', eventType, JSON.stringify(event.data?.id || ''));
+
+    const db = getDb();
 
     switch (eventType) {
       case 'payment.succeeded.v1': {
         const transactionId = event.data?.id;
+        const sessionId = event.data?.checkout_session_id;
         const amount = event.data?.amount?.value;
         const currency = event.data?.amount?.currency;
-        const metadata = event.data?.metadata || {};
-        const reservationId = metadata.reservation_id;
 
-        if (transactionId) {
-          const db = getDb();
+        if (sessionId || transactionId) {
+          // Update booking_service_orders where payment_id matches the session ID
+          const result = db.prepare(`
+            UPDATE booking_service_orders 
+            SET payment_status = 'paid'
+            WHERE payment_id = ? AND payment_status IN ('pending', 'none')
+          `).run(sessionId || transactionId);
 
-          // Update any pending payment records
-          db.prepare(`
-            UPDATE service_bookings 
-            SET payment_status = 'paid', 
-                paid_at = datetime('now'),
-                teya_transaction_id = ?
-            WHERE teya_session_id = ? AND payment_status = 'pending'
-          `).run(transactionId, event.data?.checkout_session_id || '');
-
-          // Also check reservations if this was a full booking payment
-          if (reservationId) {
-            db.prepare(`
-              UPDATE reservations 
-              SET payment_status = 'paid',
-                  paid_at = datetime('now'),
-                  teya_transaction_id = ?
-              WHERE id = ? AND payment_status = 'pending'
-            `).run(transactionId, reservationId);
-          }
-
-          console.log('[Teya Webhook] Payment confirmed:', transactionId, amount, currency);
+          console.log('[Teya Webhook] Payment confirmed:', {
+            transactionId,
+            sessionId,
+            amount,
+            currency,
+            rowsUpdated: result.changes,
+          });
         }
         break;
       }
@@ -63,33 +55,29 @@ export async function POST(req: Request) {
       case 'payment.failed.v1': {
         const sessionId = event.data?.checkout_session_id;
         if (sessionId) {
-          const db = getDb();
-          db.prepare(`
-            UPDATE service_bookings 
+          const result = db.prepare(`
+            UPDATE booking_service_orders 
             SET payment_status = 'failed'
-            WHERE teya_session_id = ? AND payment_status = 'pending'
+            WHERE payment_id = ? AND payment_status = 'pending'
           `).run(sessionId);
+
+          console.log('[Teya Webhook] Payment failed:', sessionId, 'rows:', result.changes);
         }
-        console.log('[Teya Webhook] Payment failed:', event.data?.id);
         break;
       }
 
       case 'refund.succeeded.v1': {
         const transactionId = event.data?.transaction_id;
-        if (transactionId) {
-          const db = getDb();
-          db.prepare(`
-            UPDATE service_bookings 
+        const sessionId = event.data?.checkout_session_id;
+        if (transactionId || sessionId) {
+          const result = db.prepare(`
+            UPDATE booking_service_orders 
             SET payment_status = 'refunded'
-            WHERE teya_transaction_id = ?
-          `).run(transactionId);
-          db.prepare(`
-            UPDATE reservations 
-            SET payment_status = 'refunded'
-            WHERE teya_transaction_id = ?
-          `).run(transactionId);
+            WHERE payment_id = ? AND payment_status = 'paid'
+          `).run(sessionId || transactionId);
+
+          console.log('[Teya Webhook] Refund confirmed:', { transactionId, sessionId, rows: result.changes });
         }
-        console.log('[Teya Webhook] Refund confirmed:', transactionId);
         break;
       }
 

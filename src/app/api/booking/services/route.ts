@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === 'book-slots') {
-      const { serviceId, date, startHour, hours, persons, addons, reservationId } = body;
+      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId } = body;
 
       if (!serviceId || !date || startHour === undefined || !hours || hours < 2) {
         return NextResponse.json(
@@ -200,12 +200,14 @@ export async function POST(request: NextRequest) {
       if (existingTables.has('booking_service_orders') && reservationId) {
         const orderId = `bso_${Date.now()}`;
         db.prepare(`
-          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed')
+          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?)
         `).run(
           orderId, reservationId, serviceId, hours, date, slotIds[0],
           JSON.stringify({ persons: persons || 1, addons: addonDetails, hours, startHour }),
-          pricePerHour, totalPrice
+          pricePerHour, totalPrice,
+          paymentId || null,
+          paymentId ? 'pending' : 'none'
         );
       }
 
@@ -224,7 +226,7 @@ export async function POST(request: NextRequest) {
       }, { status: 201, headers: CORS_HEADERS });
 
     } else if (action === 'book-breakfast') {
-      const { reservationId, items, serviceDate } = body;
+      const { reservationId, items, serviceDate, paymentId } = body;
       // items: [{ menuItemId, quantity }]
 
       if (!items || items.length === 0) {
@@ -245,9 +247,9 @@ export async function POST(request: NextRequest) {
         if (reservationId) {
           const orderId = `bso_${Date.now()}_${menuItem.id}`;
           db.prepare(`
-            INSERT INTO booking_service_orders (id, reservation_id, service_id, menu_item_id, quantity, service_date, unit_price, total_price, status)
-            VALUES (?, ?, 'svc_breakfast', ?, ?, ?, ?, ?, 'confirmed')
-          `).run(orderId, reservationId, menuItem.id, qty, serviceDate || null, menuItem.price, itemTotal);
+            INSERT INTO booking_service_orders (id, reservation_id, service_id, menu_item_id, quantity, service_date, unit_price, total_price, status, payment_id, payment_status)
+            VALUES (?, ?, 'svc_breakfast', ?, ?, ?, ?, ?, 'confirmed', ?, ?)
+          `).run(orderId, reservationId, menuItem.id, qty, serviceDate || null, menuItem.price, itemTotal, paymentId || null, paymentId ? 'pending' : 'none');
         }
 
         orderDetails.push({

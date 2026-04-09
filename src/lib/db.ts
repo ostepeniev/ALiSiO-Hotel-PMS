@@ -1026,6 +1026,15 @@ function runMigrations(database: any) {
     )
   `);
 
+  // --- Migration: add Teya payment columns to booking_service_orders ---
+  try {
+    database.exec(`ALTER TABLE booking_service_orders ADD COLUMN payment_id TEXT`);
+    database.exec(`ALTER TABLE booking_service_orders ADD COLUMN payment_status TEXT DEFAULT 'none' CHECK (payment_status IN ('none', 'pending', 'paid', 'failed', 'refunded'))`);
+    console.log('[DB] Added payment columns to booking_service_orders');
+  } catch {
+    // Columns already exist — ignore
+  }
+
   // --- Migration: create sauna_addons table for broom etc ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS service_addons (
