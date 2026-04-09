@@ -43,6 +43,17 @@ export async function GET(request: NextRequest) {
       )
     `);
 
+    // Track processed email IDs (to avoid re-classifying not_guest emails that stay unread)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS email_processed (
+        message_id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+    // Cleanup old entries (older than 30 days)
+    db.prepare("DELETE FROM email_processed WHERE created_at < datetime('now', '-30 days')").run();
+
     // Get last poll timestamp
     const lastPoll = db.prepare(
       "SELECT value FROM app_settings WHERE key = 'email_last_poll'"
@@ -84,19 +95,24 @@ export async function GET(request: NextRequest) {
    Process a single email
    ──────────────────────────────────────────────────────── */
 async function processEmail(email: IncomingEmail, db: any, results: any) {
-  // 1. Check if already processed
+  // 1. Check if already processed (in CRM messages OR in processed tracker)
   const existing = db.prepare(
     "SELECT id FROM crm_messages WHERE external_id = ?"
   ).get(email.messageId);
   if (existing) return;
 
+  const alreadyProcessed = db.prepare(
+    "SELECT category FROM email_processed WHERE message_id = ?"
+  ).get(email.messageId);
+  if (alreadyProcessed) return; // Already classified in a previous poll
+
   // 2. Get the account for marking as read
   const account = getAccountById(email.accountId);
 
-  // 3. Blacklist check
+  // 3. Blacklist check — DON'T mark as read, leave unread in mailbox
   if (isBlacklisted(email)) {
     results.blacklisted++;
-    if (account) await markEmailAsRead(email.uid, account);
+    db.prepare("INSERT OR IGNORE INTO email_processed (message_id, category) VALUES (?, 'blacklisted')").run(email.messageId);
     return;
   }
 
@@ -106,7 +122,8 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
 
   if (classification.category === 'not_guest') {
     results.classified_not_guest++;
-    if (account) await markEmailAsRead(email.uid, account);
+    // DON'T mark as read — leave unread so user doesn't miss important non-guest emails
+    db.prepare("INSERT OR IGNORE INTO email_processed (message_id, category) VALUES (?, 'not_guest')").run(email.messageId);
     return;
   }
 

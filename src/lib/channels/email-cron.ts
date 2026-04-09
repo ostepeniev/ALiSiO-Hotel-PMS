@@ -51,6 +51,13 @@ export function startEmailPoller() {
   
   // Don't start in build/static generation
   if (typeof window !== 'undefined') return;
+
+  // Only auto-poll in production — in dev, use manual /api/crm/channels/email/poll
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Email Cron] Skipped — auto-polling disabled in development (use manual poll)');
+    return;
+  }
+
   if (!process.env.EMAIL_CZ_USER && !process.env.GMAIL_USER) {
     console.log('[Email Cron] Skipped — no email accounts configured');
     return;
