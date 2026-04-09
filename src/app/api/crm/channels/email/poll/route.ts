@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { fetchNewEmailsAllAccounts, isBlacklisted, classifyEmail, markEmailAsRead, getAccountById } from '@/lib/channels/email';
 import type { IncomingEmail } from '@/lib/channels/email';
+import { generateAutoResponse } from '@/lib/ai/auto-response';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -225,4 +226,21 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
   // 9. Mark as read in IMAP
   if (account) await markEmailAsRead(email.uid, account);
   results.messages_added++;
+
+  // 10. Generate AI auto-response draft and send to Telegram for approval
+  try {
+    await generateAutoResponse({
+      messageId: msgId,
+      conversationId: conv.id,
+      leadId: lead.id,
+      accountId: email.accountId,
+      guestName: email.from.name || email.from.address,
+      guestEmail: email.from.address,
+      subject: email.subject,
+      content: email.textBody || email.subject || '',
+      language: classification.language || 'en',
+    });
+  } catch (autoErr: any) {
+    console.error(`[AutoResponse] Non-fatal error:`, autoErr.message);
+  }
 }
