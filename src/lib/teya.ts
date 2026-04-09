@@ -150,16 +150,21 @@ export async function createCheckoutSession(opts: CheckoutSessionOptions): Promi
  * Verify Teya webhook signature using SHA256withRSA.
  */
 export function verifyWebhookSignature(body: string, signature: string): boolean {
-  const publicKey = process.env.TEYA_WEBHOOK_PUBLIC_KEY;
-  if (!publicKey) {
+  const rawKey = process.env.TEYA_WEBHOOK_PUBLIC_KEY;
+  if (!rawKey) {
     console.warn('[Teya Webhook] No public key configured, skipping verification');
     return true; // Allow in development
   }
 
   try {
+    // Wrap raw base64 key in PEM format if needed
+    const pemKey = rawKey.startsWith('-----BEGIN')
+      ? rawKey
+      : `-----BEGIN PUBLIC KEY-----\n${rawKey}\n-----END PUBLIC KEY-----`;
+
     const verifier = crypto.createVerify('SHA256');
     verifier.update(body);
-    return verifier.verify(publicKey, signature, 'base64');
+    return verifier.verify(pemKey, signature, 'base64');
   } catch (err) {
     console.error('[Teya Webhook] Signature verification failed:', err);
     return false;
@@ -216,13 +221,4 @@ export async function sendReceipt(transactionId: string, email: string): Promise
   } else {
     console.log('[Teya] Receipt sent to', email);
   }
-}
-
-/**
- * Get the Teya JS SDK URL for client-side embedding.
- */
-export function getTeyaSdkUrl(): string {
-  return IS_PRODUCTION
-    ? 'https://js.teya.com/v1/teya-blocks.js'
-    : 'https://js.teya.xyz/v1/teya-blocks.js';
 }
