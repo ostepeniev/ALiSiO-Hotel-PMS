@@ -29,19 +29,18 @@ export async function dispatchMessage(opts: {
     case 'email':
       return await dispatchEmail(db, leadId, opts.conversationId, content, senderName);
     case 'whatsapp':
-      // TODO: Phase 4.2 — WhatsApp Cloud API
       return { success: false, error: 'WhatsApp not configured yet' };
     case 'manual':
-      return { success: true }; // No external dispatch needed
+      return { success: true };
     case 'phone':
-      return { success: true }; // Just logged, no actual dispatch
+      return { success: true };
     default:
-      return { success: true }; // Other channels — just log
+      return { success: true };
   }
 }
 
 /**
- * Dispatch via email (SMTP)
+ * Dispatch via email (SMTP) — auto-routes to the correct account
  */
 async function dispatchEmail(
   db: any,
@@ -50,7 +49,6 @@ async function dispatchEmail(
   content: string,
   senderName?: string,
 ): Promise<DispatchResult> {
-  // Get lead email
   const lead = db.prepare(
     "SELECT email, first_name, last_name FROM crm_leads WHERE id = ?"
   ).get(leadId) as any;
@@ -59,7 +57,7 @@ async function dispatchEmail(
     return { success: false, error: 'Lead has no email address' };
   }
 
-  // Get conversation subject from last inbound email
+  // Find the last inbound email to extract subject, reply headers, and accountId
   const lastInbound = db.prepare(`
     SELECT metadata_json, external_id FROM crm_messages 
     WHERE conversation_id = ? AND direction = 'inbound' AND channel_type = 'email'
@@ -69,12 +67,17 @@ async function dispatchEmail(
   let subject = 'ALiSiO Resort & Glamping';
   let inReplyTo: string | undefined;
   let references: string | undefined;
+  let accountId: string | undefined;
 
   if (lastInbound?.metadata_json) {
     try {
       const meta = JSON.parse(lastInbound.metadata_json);
       if (meta.subject) {
         subject = meta.subject.startsWith('Re:') ? meta.subject : `Re: ${meta.subject}`;
+      }
+      // Route reply through the same account that received the message
+      if (meta.accountId) {
+        accountId = meta.accountId;
       }
     } catch { /* */ }
   }
@@ -83,7 +86,6 @@ async function dispatchEmail(
     references = lastInbound.external_id;
   }
 
-  // Format email body
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
       ${content.replace(/\n/g, '<br>')}
@@ -102,6 +104,7 @@ async function dispatchEmail(
     html: htmlBody,
     inReplyTo,
     references,
+    accountId,  // Routes to the correct SMTP account
   });
 
   if (result.success) {
@@ -109,3 +112,4 @@ async function dispatchEmail(
   }
   return { success: false, error: 'SMTP send failed' };
 }
+

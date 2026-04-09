@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Email Channel Client (IMAP + SMTP)
- * Supports email.cz (Seznam) and Gmail via standard IMAP/SMTP.
+ * Multi-account support: email.cz (Seznam) + Gmail + any IMAP/SMTP provider.
  */
 import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
@@ -10,6 +10,17 @@ import OpenAI from 'openai';
 /* ────────────────────────────────────────────────────────
    Types
    ──────────────────────────────────────────────────────── */
+export interface EmailAccountConfig {
+  id: string;         // e.g. 'emailcz', 'gmail'
+  label: string;      // e.g. 'Email.cz', 'Gmail'
+  user: string;
+  password: string;
+  imap: { host: string; port: number };
+  smtp: { host: string; port: number };
+  folder: string;
+  fromName?: string;
+}
+
 export interface IncomingEmail {
   uid: number;
   messageId: string;
@@ -19,6 +30,7 @@ export interface IncomingEmail {
   date: Date;
   textBody: string;
   htmlBody?: string;
+  accountId: string;   // which account received this
 }
 
 export interface EmailClassification {
@@ -31,22 +43,67 @@ export interface EmailClassification {
 }
 
 /* ────────────────────────────────────────────────────────
-   IMAP — Fetch new emails
+   Account Registry — reads all configured accounts from env
    ──────────────────────────────────────────────────────── */
-export async function fetchNewEmails(sinceDate?: Date): Promise<IncomingEmail[]> {
-  const host = process.env.EMAIL_CZ_IMAP_HOST || 'imap.seznam.cz';
-  const port = parseInt(process.env.EMAIL_CZ_IMAP_PORT || '993');
-  const user = process.env.EMAIL_CZ_USER;
-  const pass = process.env.EMAIL_CZ_PASSWORD;
-  const folder = process.env.EMAIL_POLL_FOLDER || 'INBOX';
+export function getEmailAccounts(): EmailAccountConfig[] {
+  const accounts: EmailAccountConfig[] = [];
 
-  if (!user || !pass) throw new Error('EMAIL_CZ_USER / EMAIL_CZ_PASSWORD not configured');
+  // Account 1: email.cz (Seznam)
+  if (process.env.EMAIL_CZ_USER && process.env.EMAIL_CZ_PASSWORD) {
+    accounts.push({
+      id: 'emailcz',
+      label: 'Email.cz',
+      user: process.env.EMAIL_CZ_USER,
+      password: process.env.EMAIL_CZ_PASSWORD,
+      imap: {
+        host: process.env.EMAIL_CZ_IMAP_HOST || 'imap.seznam.cz',
+        port: parseInt(process.env.EMAIL_CZ_IMAP_PORT || '993'),
+      },
+      smtp: {
+        host: process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz',
+        port: parseInt(process.env.EMAIL_CZ_SMTP_PORT || '465'),
+      },
+      folder: process.env.EMAIL_POLL_FOLDER || 'INBOX',
+      fromName: 'ALiSiO Resort',
+    });
+  }
 
+  // Account 2: Gmail
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    accounts.push({
+      id: 'gmail',
+      label: 'Gmail',
+      user: process.env.GMAIL_USER,
+      password: process.env.GMAIL_APP_PASSWORD,
+      imap: { host: 'imap.gmail.com', port: 993 },
+      smtp: { host: 'smtp.gmail.com', port: 465 },
+      folder: 'INBOX',
+      fromName: 'ALiSiO Resort',
+    });
+  }
+
+  return accounts;
+}
+
+/** Get a specific account by ID */
+export function getAccountById(accountId: string): EmailAccountConfig | undefined {
+  return getEmailAccounts().find(a => a.id === accountId);
+}
+
+/** Get an account by email address (for routing replies) */
+export function getAccountByAddress(address: string): EmailAccountConfig | undefined {
+  return getEmailAccounts().find(a => a.user.toLowerCase() === address.toLowerCase());
+}
+
+/* ────────────────────────────────────────────────────────
+   IMAP — Fetch new emails from a specific account
+   ──────────────────────────────────────────────────────── */
+export async function fetchNewEmails(account: EmailAccountConfig, sinceDate?: Date): Promise<IncomingEmail[]> {
   const client = new ImapFlow({
-    host,
-    port,
+    host: account.imap.host,
+    port: account.imap.port,
     secure: true,
-    auth: { user, pass },
+    auth: { user: account.user, pass: account.password },
     logger: false,
   });
 
@@ -54,10 +111,9 @@ export async function fetchNewEmails(sinceDate?: Date): Promise<IncomingEmail[]>
 
   try {
     await client.connect();
-    const lock = await client.getMailboxLock(folder);
+    const lock = await client.getMailboxLock(account.folder);
 
     try {
-      // Fetch unseen messages from the last 7 days (or sinceDate)
       const since = sinceDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const searchCriteria = { seen: false, since };
 
@@ -76,13 +132,11 @@ export async function fetchNewEmails(sinceDate?: Date): Promise<IncomingEmail[]>
           const fromAddr = envelope.from?.[0];
           if (!fromAddr?.address) continue;
 
-          // Parse body from source
           let textBody = '';
           let htmlBody = '';
 
           if (msg.source) {
             const sourceStr = msg.source.toString();
-            // Simple text extraction from source
             textBody = extractTextFromSource(sourceStr);
             if (sourceStr.includes('<html')) {
               htmlBody = extractHtmlFromSource(sourceStr);
@@ -96,14 +150,15 @@ export async function fetchNewEmails(sinceDate?: Date): Promise<IncomingEmail[]>
               name: fromAddr.name || fromAddr.address.split('@')[0],
               address: fromAddr.address,
             },
-            to: envelope.to?.[0]?.address || user,
+            to: envelope.to?.[0]?.address || account.user,
             subject: envelope.subject || '(no subject)',
             date: envelope.date || new Date(),
             textBody: textBody || envelope.subject || '',
             htmlBody: htmlBody || undefined,
+            accountId: account.id,
           });
         } catch (e) {
-          console.error('[Email] Error parsing message:', e);
+          console.error(`[Email:${account.id}] Error parsing message:`, e);
         }
       }
     } finally {
@@ -111,7 +166,7 @@ export async function fetchNewEmails(sinceDate?: Date): Promise<IncomingEmail[]>
     }
     await client.logout();
   } catch (e) {
-    console.error('[Email] IMAP connection error:', e);
+    console.error(`[Email:${account.id}] IMAP connection error:`, e);
     try { await client.logout(); } catch { /* */ }
     throw e;
   }
@@ -119,25 +174,40 @@ export async function fetchNewEmails(sinceDate?: Date): Promise<IncomingEmail[]>
   return emails;
 }
 
-/* ────────────────────────────────────────────────────────
-   Mark email as read
-   ──────────────────────────────────────────────────────── */
-export async function markEmailAsRead(uid: number): Promise<void> {
-  const host = process.env.EMAIL_CZ_IMAP_HOST || 'imap.seznam.cz';
-  const port = parseInt(process.env.EMAIL_CZ_IMAP_PORT || '993');
-  const user = process.env.EMAIL_CZ_USER!;
-  const pass = process.env.EMAIL_CZ_PASSWORD!;
-  const folder = process.env.EMAIL_POLL_FOLDER || 'INBOX';
+/** Fetch from ALL configured accounts */
+export async function fetchNewEmailsAllAccounts(sinceDate?: Date): Promise<IncomingEmail[]> {
+  const accounts = getEmailAccounts();
+  const allEmails: IncomingEmail[] = [];
 
+  for (const account of accounts) {
+    try {
+      console.log(`[Email:${account.id}] Polling ${account.user}...`);
+      const emails = await fetchNewEmails(account, sinceDate);
+      allEmails.push(...emails);
+      console.log(`[Email:${account.id}] Got ${emails.length} new emails`);
+    } catch (err: any) {
+      console.error(`[Email:${account.id}] Failed to poll:`, err.message);
+    }
+  }
+
+  return allEmails;
+}
+
+/* ────────────────────────────────────────────────────────
+   Mark email as read on a specific account
+   ──────────────────────────────────────────────────────── */
+export async function markEmailAsRead(uid: number, account: EmailAccountConfig): Promise<void> {
   const client = new ImapFlow({
-    host, port, secure: true,
-    auth: { user, pass },
+    host: account.imap.host,
+    port: account.imap.port,
+    secure: true,
+    auth: { user: account.user, pass: account.password },
     logger: false,
   });
 
   try {
     await client.connect();
-    const lock = await client.getMailboxLock(folder);
+    const lock = await client.getMailboxLock(account.folder);
     try {
       await client.messageFlagsAdd({ uid }, ['\\Seen'], { uid: true });
     } finally {
@@ -145,13 +215,13 @@ export async function markEmailAsRead(uid: number): Promise<void> {
     }
     await client.logout();
   } catch (e) {
-    console.error('[Email] Error marking as read:', e);
+    console.error(`[Email:${account.id}] Error marking as read:`, e);
     try { await client.logout(); } catch { /* */ }
   }
 }
 
 /* ────────────────────────────────────────────────────────
-   SMTP — Send email
+   SMTP — Send email from a specific account
    ──────────────────────────────────────────────────────── */
 export async function sendEmail(opts: {
   to: string;
@@ -160,24 +230,31 @@ export async function sendEmail(opts: {
   html?: string;
   inReplyTo?: string;
   references?: string;
+  accountId?: string;   // send from this account (defaults to first)
 }): Promise<{ messageId: string; success: boolean }> {
-  const host = process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz';
-  const port = parseInt(process.env.EMAIL_CZ_SMTP_PORT || '465');
-  const user = process.env.EMAIL_CZ_USER;
-  const pass = process.env.EMAIL_CZ_PASSWORD;
-
-  if (!user || !pass) throw new Error('EMAIL_CZ_USER / EMAIL_CZ_PASSWORD not configured');
+  // Find the right account
+  let account: EmailAccountConfig | undefined;
+  if (opts.accountId) {
+    account = getAccountById(opts.accountId);
+  }
+  if (!account) {
+    const accounts = getEmailAccounts();
+    account = accounts[0]; // Default to first configured
+  }
+  if (!account) {
+    throw new Error('No email accounts configured');
+  }
 
   const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: true, // SSL
-    auth: { user, pass },
+    host: account.smtp.host,
+    port: account.smtp.port,
+    secure: true,
+    auth: { user: account.user, pass: account.password },
   });
 
   try {
     const info = await transporter.sendMail({
-      from: `"ALiSiO Resort" <${user}>`,
+      from: `"${account.fromName || 'ALiSiO Resort'}" <${account.user}>`,
       to: opts.to,
       subject: opts.subject,
       text: opts.text,
@@ -188,7 +265,7 @@ export async function sendEmail(opts: {
 
     return { messageId: info.messageId, success: true };
   } catch (err) {
-    console.error('[Email] SMTP send error:', err);
+    console.error(`[Email:${account.id}] SMTP send error:`, err);
     return { messageId: '', success: false };
   }
 }
@@ -207,7 +284,7 @@ export function isBlacklisted(email: IncomingEmail): boolean {
     if (senderDomain.includes(rule) || senderAddr.includes(rule)) return true;
   }
 
-  // Also skip obvious system emails
+  // Skip obvious system emails
   const systemPatterns = [
     'mailer-daemon', 'postmaster', 'no-reply', 'noreply',
     'donotreply', 'notifications@', 'alert@', 'newsletter',
@@ -215,6 +292,10 @@ export function isBlacklisted(email: IncomingEmail): boolean {
   for (const p of systemPatterns) {
     if (senderAddr.includes(p)) return true;
   }
+
+  // Skip emails FROM our own accounts (self-sent)
+  const ownAddresses = getEmailAccounts().map(a => a.user.toLowerCase());
+  if (ownAddresses.includes(senderAddr)) return true;
 
   return false;
 }
@@ -225,7 +306,6 @@ export function isBlacklisted(email: IncomingEmail): boolean {
 export async function classifyEmail(email: IncomingEmail): Promise<EmailClassification> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    // Fallback — treat as uncertain
     return { category: 'uncertain', confidence: 0.5, reason: 'No AI key', guestName: email.from.name, guestEmail: email.from.address };
   }
 
@@ -278,19 +358,16 @@ Respond ONLY with valid JSON:
    Helpers — extract text from raw email source
    ──────────────────────────────────────────────────────── */
 function extractTextFromSource(source: string): string {
-  // Try to extract plain text part
   const textMatch = source.match(/Content-Type:\s*text\/plain[^]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\.\r?\n|$)/i);
   if (textMatch?.[1]) {
     return decodeEmailBody(textMatch[1].trim());
   }
 
-  // Fallback — strip HTML tags if only HTML available
   const htmlMatch = source.match(/Content-Type:\s*text\/html[^]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\n\.\r?\n|$)/i);
   if (htmlMatch?.[1]) {
     return decodeEmailBody(htmlMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
   }
 
-  // Last resort — take everything after headers
   const headerEnd = source.indexOf('\r\n\r\n');
   if (headerEnd > 0) {
     return source.substring(headerEnd + 4, headerEnd + 2000).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -305,13 +382,11 @@ function extractHtmlFromSource(source: string): string {
 }
 
 function decodeEmailBody(body: string): string {
-  // Handle quoted-printable
   if (body.includes('=\r\n') || body.includes('=\n') || body.includes('=3D')) {
     body = body
       .replace(/=\r?\n/g, '')
       .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
   }
-  // Handle base64
   if (/^[A-Za-z0-9+/=\r\n]+$/.test(body.replace(/\s/g, '')) && body.length > 20) {
     try {
       return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf-8');

@@ -51,12 +51,16 @@ export function startEmailPoller() {
   
   // Don't start in build/static generation
   if (typeof window !== 'undefined') return;
-  if (!process.env.EMAIL_CZ_USER) {
-    console.log('[Email Cron] Skipped — EMAIL_CZ_USER not configured');
+  if (!process.env.EMAIL_CZ_USER && !process.env.GMAIL_USER) {
+    console.log('[Email Cron] Skipped — no email accounts configured');
     return;
   }
 
-  console.log('[Email Cron] 📧 Starting email poller (every 2 min)');
+  const accounts = [
+    process.env.EMAIL_CZ_USER,
+    process.env.GMAIL_USER,
+  ].filter(Boolean);
+  console.log(`[Email Cron] 📧 Starting email poller (every 2 min) — ${accounts.length} account(s): ${accounts.join(', ')}`);
   
   // First poll after 10 seconds (let server stabilize)
   setTimeout(pollEmails, 10000);

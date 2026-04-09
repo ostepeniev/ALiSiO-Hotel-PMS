@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { fetchNewEmails, isBlacklisted, classifyEmail, markEmailAsRead } from '@/lib/channels/email';
+import { fetchNewEmailsAllAccounts, isBlacklisted, classifyEmail, markEmailAsRead, getAccountById } from '@/lib/channels/email';
 import type { IncomingEmail } from '@/lib/channels/email';
 import crypto from 'crypto';
 
@@ -11,15 +11,12 @@ export const maxDuration = 60;
 
 /**
  * GET /api/crm/channels/email/poll
- * Poll for new emails, classify them, and create CRM leads/messages.
- * Can be triggered manually or via cron.
+ * Poll ALL configured email accounts, classify, and create CRM leads/messages.
  */
 export async function GET(request: NextRequest) {
-  // Optional auth via query param (for cron)
   const { searchParams } = new URL(request.url);
   const secret = searchParams.get('secret');
   if (process.env.EMAIL_POLL_SECRET && secret !== process.env.EMAIL_POLL_SECRET) {
-    // Allow without secret in development
     if (process.env.NODE_ENV !== 'development') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -38,7 +35,6 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    // Ensure app_settings table exists
     db.exec(`
       CREATE TABLE IF NOT EXISTS app_settings (
         key TEXT PRIMARY KEY,
@@ -56,11 +52,10 @@ export async function GET(request: NextRequest) {
       ? new Date(lastPoll.value)
       : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Fetch new emails
+    // Fetch from ALL accounts
     console.log('[Email Poll] Fetching since:', sinceDate.toISOString());
-    const emails = await fetchNewEmails(sinceDate);
+    const emails = await fetchNewEmailsAllAccounts(sinceDate);
     results.fetched = emails.length;
-    console.log(`[Email Poll] Fetched ${emails.length} new emails`);
 
     // Process each email
     for (const email of emails) {
@@ -89,26 +84,29 @@ export async function GET(request: NextRequest) {
    Process a single email
    ──────────────────────────────────────────────────────── */
 async function processEmail(email: IncomingEmail, db: any, results: any) {
-  // 1. Check if already processed (by messageId)
+  // 1. Check if already processed
   const existing = db.prepare(
     "SELECT id FROM crm_messages WHERE external_id = ?"
   ).get(email.messageId);
-  if (existing) return; // Already processed
+  if (existing) return;
 
-  // 2. Blacklist check
+  // 2. Get the account for marking as read
+  const account = getAccountById(email.accountId);
+
+  // 3. Blacklist check
   if (isBlacklisted(email)) {
     results.blacklisted++;
-    await markEmailAsRead(email.uid);
+    if (account) await markEmailAsRead(email.uid, account);
     return;
   }
 
-  // 3. AI Classification
+  // 4. AI Classification
   const classification = await classifyEmail(email);
-  console.log(`[Email] ${email.from.address} → ${classification.category} (${classification.confidence}) — ${classification.reason}`);
+  console.log(`[Email:${email.accountId}] ${email.from.address} → ${classification.category} (${classification.confidence}) — ${classification.reason}`);
 
   if (classification.category === 'not_guest') {
     results.classified_not_guest++;
-    await markEmailAsRead(email.uid);
+    if (account) await markEmailAsRead(email.uid, account);
     return;
   }
 
@@ -118,28 +116,29 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     results.classified_guest++;
   }
 
-  // 4. Find or create lead
+  // 5. Find or create lead
   const orgRow = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string };
   const orgId = orgRow.id;
 
-  // Try to match by email address
   let lead = db.prepare(
     "SELECT id, stage FROM crm_leads WHERE email = ? AND organization_id = ? ORDER BY updated_at DESC LIMIT 1"
   ).get(email.from.address, orgId) as any;
 
   if (!lead) {
-    // Create new lead
     const leadId = crypto.randomBytes(16).toString('hex');
     const guestName = classification.guestName || email.from.name || email.from.address.split('@')[0];
     const nameParts = guestName.split(/\s+/);
     const firstName = nameParts[0] || guestName;
     const lastName = nameParts.slice(1).join(' ') || null;
 
+    // Use a channel_id based on which account received
+    const channelId = email.accountId === 'gmail' ? 'ch_gmail' : 'ch_email_main';
+
     db.prepare(`
       INSERT INTO crm_leads (id, organization_id, channel_id, first_name, last_name, email, source, stage, priority)
-      VALUES (?, ?, 'ch_email_main', ?, ?, ?, 'email', 'new', ?)
+      VALUES (?, ?, ?, ?, ?, ?, 'email', 'new', ?)
     `).run(
-      leadId, orgId, firstName, lastName, email.from.address,
+      leadId, orgId, channelId, firstName, lastName, email.from.address,
       classification.category === 'uncertain' ? 'low' : 'normal'
     );
 
@@ -147,7 +146,7 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     results.leads_created++;
   }
 
-  // 5. Find or create conversation
+  // 6. Find or create conversation
   let conv = db.prepare(
     "SELECT id FROM crm_conversations WHERE lead_id = ? AND status != 'archived' ORDER BY updated_at DESC LIMIT 1"
   ).get(lead.id) as any;
@@ -161,9 +160,10 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     conv = { id: convId };
   }
 
-  // 6. Create message
+  // 7. Create message — include accountId in metadata for reply routing
   const msgId = crypto.randomBytes(16).toString('hex');
   const content = email.textBody || email.subject || '(empty)';
+  const accountLabel = email.accountId === 'gmail' ? '📧G' : '📧';
 
   db.prepare(`
     INSERT INTO crm_messages (id, conversation_id, channel_type, direction, sender_type, sender_name, content, content_type, external_id, status, created_at, metadata_json)
@@ -171,19 +171,21 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
   `).run(
     msgId, conv.id,
     email.from.name || email.from.address,
-    content.substring(0, 10000), // Limit content size
+    content.substring(0, 10000),
     email.messageId,
     email.date.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ''),
     JSON.stringify({
       subject: email.subject,
       from: email.from.address,
+      to: email.to,
+      accountId: email.accountId,
       classification: classification.category,
       confidence: classification.confidence,
       language: classification.language,
     }),
   );
 
-  // 7. Update conversation & lead
+  // 8. Update conversation & lead
   db.prepare(`
     UPDATE crm_conversations 
     SET last_message_at = datetime('now'), last_channel = 'email', 
@@ -199,11 +201,11 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
         updated_at = datetime('now')
     WHERE id = ?
   `).run(
-    `📧 ${email.subject}`.substring(0, 100),
+    `${accountLabel} ${email.subject}`.substring(0, 100),
     lead.id,
   );
 
-  // 8. Mark as read in IMAP
-  await markEmailAsRead(email.uid);
+  // 9. Mark as read in IMAP
+  if (account) await markEmailAsRead(email.uid, account);
   results.messages_added++;
 }
