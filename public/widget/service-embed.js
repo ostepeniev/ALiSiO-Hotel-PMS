@@ -24,6 +24,7 @@
   var LANG = scriptTag ? (scriptTag.getAttribute('data-lang') || 'en') : 'en';
   var ACCENT = scriptTag ? (scriptTag.getAttribute('data-color') || '#1a1a2e') : '#1a1a2e';
   var RESERVATION_ID = scriptTag ? (scriptTag.getAttribute('data-reservation') || '') : '';
+  var ENABLE_PAYMENT = scriptTag ? (scriptTag.getAttribute('data-payment') !== 'false') : true;
 
   // Service ID mapping
   var SERVICE_IDS = { sauna: 'svc_sauna', tub: 'svc_pool', breakfast: 'svc_breakfast' };
@@ -46,6 +47,10 @@
       errorOccurred: 'An error occurred', loading: 'Loading...',
       minHours: 'min. 2 hours', persons: 'Persons', name: 'Your name', phone: 'Phone',
       noSlots: 'No available slots', slotBooked: 'This slot is taken',
+      payNow: 'Pay Now', payAmount: 'Pay', processing: 'Processing payment...',
+      paymentTitle: 'Payment', paymentDesc: 'Enter your card details to complete the booking.',
+      backToDetails: '← Back', paymentFailed: 'Payment failed. Please try again.',
+      paymentSuccess: 'Payment successful!',
       mon:'Mo',tue:'Tu',wed:'We',thu:'Th',fri:'Fr',sat:'Sa',sun:'Su',
       months:['January','February','March','April','May','June','July','August','September','October','November','December'],
     },
@@ -64,6 +69,10 @@
       errorOccurred: 'Виникла помилка', loading: 'Завантаження...',
       minHours: 'мін. 2 години', persons: 'Кількість осіб', name: 'Ваше ім\'я', phone: 'Телефон',
       noSlots: 'Немає вільних слотів', slotBooked: 'Цей слот зайнятий',
+      payNow: 'Оплатити', payAmount: 'Оплатити', processing: 'Обробка платежу...',
+      paymentTitle: 'Оплата', paymentDesc: 'Введіть дані картки для завершення бронювання.',
+      backToDetails: '← Назад', paymentFailed: 'Оплата не вдалася. Спробуйте ще раз.',
+      paymentSuccess: 'Оплата пройшла успішно!',
       mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Нд',
       months:['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
     },
@@ -82,6 +91,10 @@
       errorOccurred: 'Došlo k chybě', loading: 'Načítání...',
       minHours: 'min. 2 hodiny', persons: 'Osoby', name: 'Vaše jméno', phone: 'Telefon',
       noSlots: 'Žádné volné sloty', slotBooked: 'Tento slot je obsazen',
+      payNow: 'Zaplatit', payAmount: 'Zaplatit', processing: 'Zpracování platby...',
+      paymentTitle: 'Platba', paymentDesc: 'Zadejte údaje karty pro dokončení rezervace.',
+      backToDetails: '← Zpět', paymentFailed: 'Platba se nezdařila. Zkuste to znovu.',
+      paymentSuccess: 'Platba proběhla úspěšně!',
       mon:'Po',tue:'Út',wed:'St',thu:'Čt',fri:'Pá',sat:'So',sun:'Ne',
       months:['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
     },
@@ -100,6 +113,10 @@
       errorOccurred: 'Ein Fehler ist aufgetreten', loading: 'Laden...',
       minHours: 'min. 2 Stunden', persons: 'Personen', name: 'Ihr Name', phone: 'Telefon',
       noSlots: 'Keine freien Slots', slotBooked: 'Dieser Slot ist belegt',
+      payNow: 'Jetzt bezahlen', payAmount: 'Bezahlen', processing: 'Zahlung wird verarbeitet...',
+      paymentTitle: 'Bezahlung', paymentDesc: 'Geben Sie Ihre Kartendaten ein, um die Buchung abzuschließen.',
+      backToDetails: '← Zurück', paymentFailed: 'Zahlung fehlgeschlagen. Bitte versuchen Sie es erneut.',
+      paymentSuccess: 'Zahlung erfolgreich!',
       mon:'Mo',tue:'Di',wed:'Mi',thu:'Do',fri:'Fr',sat:'Sa',sun:'So',
       months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
     }
@@ -108,7 +125,7 @@
 
   // ─── State ───
   var state = {
-    view: 'card', // card | form | success
+    view: 'card', // card | form | payment | success
     loading: false, error: null,
     // Slot services (sauna, tub)
     date: null, startHour: 14, hours: 2, brooms: 0,
@@ -120,6 +137,10 @@
     guestName: '', guestPhone: '',
     // Calendar
     calOpen: false, calMonthOffset: 0,
+    // Payment
+    paymentSessionToken: null, paymentSessionId: null,
+    paymentSdkUrl: null, paymentSessionUrl: null,
+    teyaCheckout: null, paymentTotal: 0,
   };
 
   // ─── DOM ───
@@ -199,53 +220,200 @@
     state.loading = false; render();
   }
 
-  async function submitSlotBooking() {
-    if (!state.date) return;
-    state.loading = true; state.error = null; render();
+  // ─── Payment Flow (Hosted Checkout) ───
+  async function initiatePayment(amount, description) {
+    if (!ENABLE_PAYMENT) {
+      return null;
+    }
+    state.loading = true; state.error = null; state.paymentTotal = amount; render();
     try {
-      var body = {
-        action: 'book-slots',
+      // Save booking data to sessionStorage so we can finalize after redirect back
+      var bookingData = {
+        serviceType: SERVICE_TYPE,
         serviceId: serviceId,
         date: state.date,
         startHour: state.startHour,
         hours: state.hours,
-        persons: 1,
+        brooms: state.brooms,
+        itemQty: state.itemQty,
+        reservationId: RESERVATION_ID,
       };
-      if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
-      if (SERVICE_TYPE === 'sauna' && state.brooms > 0) {
-        body.addons = [{ id: 'addon_broom', quantity: state.brooms }];
-      }
+      try { sessionStorage.setItem('asw_pending_booking', JSON.stringify(bookingData)); } catch(e) {}
 
-      var res = await fetch(API_BASE + '/api/booking/services', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(body)
+      var res = await fetch(API_BASE + '/api/booking/checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amount,
+          currency: 'CZK',
+          description: description,
+          reservation_id: RESERVATION_ID || undefined,
+          return_path: window.location.pathname,
+        })
       });
-      if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+      if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Payment init failed'); }
+      var data = await res.json();
+      
+      state.paymentSessionId = data.session_id;
+      state.paymentSessionUrl = data.session_url;
+
+      // Redirect to Teya Hosted Checkout
+      if (data.session_url) {
+        window.location.href = data.session_url;
+        return data;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch(e) {
+      state.error = e.message || t.errorOccurred;
+      state.loading = false; render();
+      return null;
+    }
+  }
+
+  // Check if returning from payment (on page load)
+  function checkPaymentReturn() {
+    var params = new URLSearchParams(window.location.search);
+    var paymentStatus = params.get('payment_status');
+    var sessionId = params.get('session_id');
+    
+    if (!paymentStatus) return;
+    
+    // Clean URL params
+    var cleanUrl = window.location.pathname;
+    window.history.replaceState({}, '', cleanUrl);
+
+    if (paymentStatus === 'success' && sessionId) {
+      // Retrieve saved booking data and finalize
+      try {
+        var saved = sessionStorage.getItem('asw_pending_booking');
+        if (saved) {
+          var bookingData = JSON.parse(saved);
+          sessionStorage.removeItem('asw_pending_booking');
+          finalizeBookingAfterPayment(bookingData, sessionId);
+          return;
+        }
+      } catch(e) {
+        console.error('[ASW] Error restoring booking data:', e);
+      }
+      // No saved data — just show success
+      state.view = 'success'; render();
+    } else if (paymentStatus === 'cancel') {
+      state.error = t.paymentFailed;
+      render();
+    }
+  }
+
+  async function finalizeBookingAfterPayment(bookingData, paymentSessionId) {
+    state.loading = true; state.error = null; render();
+    try {
+      if (bookingData.serviceType === 'breakfast') {
+        var items = [];
+        Object.keys(bookingData.itemQty).forEach(function(id) {
+          if (bookingData.itemQty[id] > 0) items.push({ menuItemId: id, quantity: bookingData.itemQty[id] });
+        });
+        var body = { action: 'book-breakfast', items: items };
+        if (bookingData.reservationId) body.reservationId = bookingData.reservationId;
+        body.paymentId = paymentSessionId;
+        var res = await fetch(API_BASE + '/api/booking/services', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+      } else {
+        var body2 = {
+          action: 'book-slots',
+          serviceId: bookingData.serviceId,
+          date: bookingData.date,
+          startHour: bookingData.startHour,
+          hours: bookingData.hours,
+          persons: 1,
+        };
+        if (bookingData.reservationId) body2.reservationId = bookingData.reservationId;
+        body2.paymentId = paymentSessionId;
+        if (bookingData.serviceType === 'sauna' && bookingData.brooms > 0) {
+          body2.addons = [{ id: 'addon_broom', quantity: bookingData.brooms }];
+        }
+        var res2 = await fetch(API_BASE + '/api/booking/services', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body2)
+        });
+        if (!res2.ok) { var err2 = await res2.json(); throw new Error(err2.error || 'Failed'); }
+      }
       state.view = 'success';
-    } catch(e) { state.error = e.message || t.errorOccurred; }
+    } catch(e) {
+      state.error = e.message || t.errorOccurred;
+    }
     state.loading = false; render();
   }
 
-  async function submitBreakfastOrder() {
-    state.loading = true; state.error = null; render();
-    try {
-      var items = [];
-      Object.keys(state.itemQty).forEach(function(id) {
-        if (state.itemQty[id] > 0) items.push({ menuItemId: id, quantity: state.itemQty[id] });
-      });
-      if (items.length === 0) { state.error = 'Select at least one item'; state.loading = false; render(); return; }
+  // ─── Original Submit Logic (extracted) ───
+  async function doSubmitSlot(paymentId) {
+    var body = {
+      action: 'book-slots',
+      serviceId: serviceId,
+      date: state.date,
+      startHour: state.startHour,
+      hours: state.hours,
+      persons: 1,
+    };
+    if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
+    if (paymentId) body.paymentId = paymentId;
+    if (SERVICE_TYPE === 'sauna' && state.brooms > 0) {
+      body.addons = [{ id: 'addon_broom', quantity: state.brooms }];
+    }
 
-      var body = { action: 'book-breakfast', items: items };
-      if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
-
-      var res = await fetch(API_BASE + '/api/booking/services', {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(body)
-      });
-      if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
-      state.view = 'success';
-    } catch(e) { state.error = e.message || t.errorOccurred; }
+    var res = await fetch(API_BASE + '/api/booking/services', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+    state.view = 'success';
     state.loading = false; render();
+  }
+
+  async function doSubmitBreakfast(paymentId) {
+    var items = [];
+    Object.keys(state.itemQty).forEach(function(id) {
+      if (state.itemQty[id] > 0) items.push({ menuItemId: id, quantity: state.itemQty[id] });
+    });
+    if (items.length === 0) { state.error = 'Select at least one item'; state.loading = false; render(); return; }
+
+    var body = { action: 'book-breakfast', items: items };
+    if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
+    if (paymentId) body.paymentId = paymentId;
+
+    var res = await fetch(API_BASE + '/api/booking/services', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
+    state.view = 'success';
+    state.loading = false; render();
+  }
+
+  async function submitSlotBooking() {
+    if (!state.date) return;
+    var total = getSlotTotal();
+    if (ENABLE_PAYMENT && total > 0) {
+      var svcName = SERVICE_TYPE === 'sauna' ? t.sauna : t.tub;
+      var desc = svcName + ' — ' + state.hours + ' ' + t.hours + ', ' + fmtDisplay(state.date);
+      await initiatePayment(total, desc);
+    } else {
+      state.loading = true; state.error = null; render();
+      try { await doSubmitSlot(null); } catch(e) { state.error = e.message || t.errorOccurred; state.loading = false; render(); }
+    }
+  }
+
+  async function submitBreakfastOrder() {
+    var total = getBreakfastTotal();
+    if (total <= 0) { state.error = 'Select at least one item'; render(); return; }
+    if (ENABLE_PAYMENT && total > 0) {
+      await initiatePayment(total, t.breakfast);
+    } else {
+      state.loading = true; state.error = null; render();
+      try { await doSubmitBreakfast(null); } catch(e) { state.error = e.message || t.errorOccurred; state.loading = false; render(); }
+    }
   }
 
   // ─── Calendar ───
@@ -360,8 +528,9 @@
     h += '<span class="asw-total-amount">Kč ' + fmtPrice(total) + '</span>';
     h += '</div>';
 
-    // Book button
-    h += '<button class="asw-book-btn" id="asw-submit">' + t.addToBooking + '</button>';
+    // Book / Pay button
+    var btnLabel = ENABLE_PAYMENT ? (t.payAmount + ' ' + fmtPrice(total) + ' Kč') : t.addToBooking;
+    h += '<button class="asw-book-btn" id="asw-submit">' + btnLabel + '</button>';
     h += '</div>';
     return h;
   }
@@ -426,7 +595,8 @@
     h += '<span class="asw-total-amount">Kč ' + fmtPrice(total) + '</span>';
     h += '</div>';
 
-    h += '<button class="asw-book-btn" id="asw-submit"' + (total <= 0 ? ' disabled' : '') + '>' + t.order + '</button>';
+    var btnLabel = ENABLE_PAYMENT ? (t.payAmount + ' ' + fmtPrice(total) + ' Kč') : t.order;
+    h += '<button class="asw-book-btn" id="asw-submit"' + (total <= 0 ? ' disabled' : '') + '>' + btnLabel + '</button>';
     h += '</div>';
     return h;
   }
@@ -602,6 +772,7 @@
       '.asw-spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:asw-spin .7s linear infinite}',
       '@keyframes asw-spin{to{transform:rotate(360deg)}}',
 
+
       // Success
       '.asw-success-card{text-align:center;padding:40px 24px}',
       '.asw-success-icon{font-size:48px;margin-bottom:12px}',
@@ -641,5 +812,6 @@
   }
 
   // ─── Init ───
+  checkPaymentReturn();
   loadServiceData();
 })();
