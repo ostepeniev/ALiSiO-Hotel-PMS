@@ -2,6 +2,7 @@
  * CRM Polling Scheduler
  * - Email polling: every 2 minutes (fetch new emails from all accounts)
  * - Telegram callback polling: every 10 seconds (check for button presses)
+ * - Stage sync: every 5 minutes (reservation status → lead stage)
  */
 
 let isRunning = false;
@@ -60,8 +61,20 @@ async function pollTelegramCallbacks() {
         console.log(`[TG Cron] ✅ Processed ${data.processed} callback(s)`);
       }
     }
-  } catch (err: any) {
+  } catch {
     // Silent — non-critical
+  }
+}
+
+async function syncStages() {
+  try {
+    const { syncReservationStages } = await import('@/lib/sync/guest-lead-sync');
+    const result = syncReservationStages();
+    if (result.updated > 0) {
+      console.log(`[Stage Sync] ✅ Updated ${result.updated} lead stage(s)`);
+    }
+  } catch (err: any) {
+    console.error('[Stage Sync] Error:', err.message);
   }
 }
 
@@ -75,6 +88,17 @@ export function startEmailPoller() {
     console.log('[CRM Cron] Skipped — auto-polling disabled in development');
     return;
   }
+
+  // One-time: migrate existing leads without guest records
+  setTimeout(async () => {
+    try {
+      const { migrateLeadsWithoutGuests } = await import('@/lib/sync/guest-lead-sync');
+      const migrated = migrateLeadsWithoutGuests();
+      if (migrated > 0) console.log(`[Migration] ✅ Created guest records for ${migrated} existing leads`);
+    } catch (err: any) {
+      console.error('[Migration] Error:', err.message);
+    }
+  }, 5000);
 
   // Email polling
   if (process.env.EMAIL_CZ_USER || process.env.GMAIL_USER) {
@@ -90,6 +114,11 @@ export function startEmailPoller() {
     setTimeout(pollTelegramCallbacks, 15000);
     tgIntervalId = setInterval(pollTelegramCallbacks, TG_POLL_MS);
   }
+
+  // Stage sync (every 5 min)
+  console.log('[CRM Cron] 🔄 Stage sync (every 5 min)');
+  setTimeout(syncStages, 20000);
+  setInterval(syncStages, 5 * 60 * 1000);
 }
 
 export function stopEmailPoller() {

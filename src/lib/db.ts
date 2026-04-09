@@ -1714,6 +1714,27 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_phone ON crm_leads(phone)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_crm_leads_external ON crm_leads(external_booking_id)');
 
+  // --- Migration: add country/nationality to crm_leads for lead-guest parity ---
+  const leadCols = database.prepare("PRAGMA table_info(crm_leads)").all().map((c: any) => c.name);
+  if (!leadCols.includes('country')) {
+    try { database.exec("ALTER TABLE crm_leads ADD COLUMN country TEXT"); } catch { /* */ }
+  }
+  if (!leadCols.includes('nationality')) {
+    try { database.exec("ALTER TABLE crm_leads ADD COLUMN nationality TEXT"); } catch { /* */ }
+  }
+  if (!leadCols.includes('language')) {
+    try { database.exec("ALTER TABLE crm_leads ADD COLUMN language TEXT"); } catch { /* */ }
+  }
+
+  // --- Migration: add whatsapp to guests for sync with leads ---
+  const guestCols2 = database.prepare("PRAGMA table_info(guests)").all().map((c: any) => c.name);
+  if (!guestCols2.includes('whatsapp')) {
+    try { database.exec("ALTER TABLE guests ADD COLUMN whatsapp TEXT"); } catch { /* */ }
+  }
+  if (!guestCols2.includes('language')) {
+    try { database.exec("ALTER TABLE guests ADD COLUMN language TEXT"); } catch { /* */ }
+  }
+
   // --- Migration: create crm_conversations table ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS crm_conversations (

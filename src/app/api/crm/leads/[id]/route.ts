@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { syncLeadToGuest, findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync';
 import crypto from 'crypto';
 
 /* ================================================================
@@ -116,6 +117,7 @@ export async function PATCH(
       campingElectricity: 'camping_electricity',
       campingPetsJson: 'camping_pets_json',
       tags: 'tags', notes: 'notes',
+      country: 'country', nationality: 'nationality', language: 'language',
     };
 
     const sets: string[] = ['updated_at = ?'];
@@ -130,6 +132,14 @@ export async function PATCH(
 
     values.push(id);
     db.prepare(`UPDATE crm_leads SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+
+    // Sync lead → guest (keep guest data up to date)
+    try {
+      if (!existing.guest_id) findOrCreateGuestForLead(id);
+      else syncLeadToGuest(id);
+    } catch (syncErr) {
+      console.warn('[CRM Lead PATCH] Sync error (non-fatal):', syncErr);
+    }
 
     const updated = db.prepare('SELECT * FROM crm_leads WHERE id = ?').get(id);
     return NextResponse.json(updated);

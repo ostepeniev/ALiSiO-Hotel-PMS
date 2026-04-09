@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { syncGuestToLead } from '@/lib/sync/guest-lead-sync';
 
 // GET /api/guests/[id] — single guest with reservation history
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -60,6 +61,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       documentType: 'document_type',
       documentNumber: 'document_number',
       dateOfBirth: 'date_of_birth',
+      whatsapp: 'whatsapp',
+      language: 'language',
       notes: 'notes',
     };
 
@@ -81,6 +84,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     values.push(id);
 
     db.prepare(`UPDATE guests SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+
+    // Sync guest changes back to CRM lead(s)
+    try { syncGuestToLead(id); } catch { /* non-fatal */ }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

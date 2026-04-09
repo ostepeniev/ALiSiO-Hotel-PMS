@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { fetchNewEmailsAllAccounts, isBlacklisted, classifyEmail, markEmailAsRead, getAccountById } from '@/lib/channels/email';
 import type { IncomingEmail } from '@/lib/channels/email';
 import { generateAutoResponse } from '@/lib/ai/auto-response';
+import { findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -149,16 +150,19 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     const firstName = nameParts[0] || guestName;
     const lastName = nameParts.slice(1).join(' ') || null;
 
-    // Use a channel_id based on which account received
     const channelId = email.accountId === 'gmail' ? 'ch_gmail' : 'ch_email_main';
 
     db.prepare(`
-      INSERT INTO crm_leads (id, organization_id, channel_id, first_name, last_name, email, source, stage, priority)
-      VALUES (?, ?, ?, ?, ?, ?, 'email', 'new', ?)
+      INSERT INTO crm_leads (id, organization_id, channel_id, first_name, last_name, email, source, stage, priority, language)
+      VALUES (?, ?, ?, ?, ?, ?, 'email', 'new', ?, ?)
     `).run(
       leadId, orgId, channelId, firstName, lastName, email.from.address,
-      classification.category === 'uncertain' ? 'low' : 'normal'
+      classification.category === 'uncertain' ? 'low' : 'normal',
+      classification.language || null,
     );
+
+    // Create guest record immediately (Lead = potential Guest from day one)
+    findOrCreateGuestForLead(leadId);
 
     lead = { id: leadId, stage: 'new' };
     results.leads_created++;
