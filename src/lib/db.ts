@@ -1735,6 +1735,15 @@ function runMigrations(database: any) {
     try { database.exec("ALTER TABLE guests ADD COLUMN language TEXT"); } catch { /* */ }
   }
 
+  // --- Migration: create settings table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // --- Migration: create crm_conversations table ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS crm_conversations (
