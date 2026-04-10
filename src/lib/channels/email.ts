@@ -284,13 +284,19 @@ export function isBlacklisted(email: IncomingEmail): boolean {
     if (senderDomain.includes(rule) || senderAddr.includes(rule)) return true;
   }
 
-  // Skip obvious system emails
-  const systemPatterns = [
-    'mailer-daemon', 'postmaster', 'no-reply', 'noreply',
-    'donotreply', 'notifications@', 'alert@', 'newsletter',
-  ];
-  for (const p of systemPatterns) {
-    if (senderAddr.includes(p)) return true;
+  // Whitelist: OTA platforms that send from noreply@ addresses
+  const whitelistedDomains = ['booking.com', 'airbnb.com', 'expedia.com', 'agoda.com'];
+  const isWhitelisted = whitelistedDomains.some(d => senderDomain.includes(d));
+
+  // Skip obvious system emails (but NOT whitelisted OTA platforms)
+  if (!isWhitelisted) {
+    const systemPatterns = [
+      'mailer-daemon', 'postmaster', 'no-reply', 'noreply',
+      'donotreply', 'notifications@', 'alert@', 'newsletter',
+    ];
+    for (const p of systemPatterns) {
+      if (senderAddr.includes(p)) return true;
+    }
   }
 
   // Skip emails FROM our own accounts (self-sent)
