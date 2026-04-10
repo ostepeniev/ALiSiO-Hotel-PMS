@@ -6,7 +6,7 @@ import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Search, Plus, RefreshCw, Loader2, Eye, Calendar,
   Phone, Mail, Download, Filter, X, Trash2,
-  MessageSquare, ChevronLeft, ChevronRight,
+  MessageSquare, ChevronLeft, ChevronRight, User, Truck, Tent,
 } from 'lucide-react';
 import '../crm.css';
 
@@ -88,6 +88,152 @@ interface LeadRow {
 /* ================================================================
    Page
    ================================================================ */
+/* ================================================================
+   Add Lead Modal (from Pipeline)
+   ================================================================ */
+function AddLeadModal({ open, onClose, onCreated }: {
+  open: boolean; onClose: () => void; onCreated: () => void;
+}) {
+  const [form, setForm] = useState({
+    firstName: '', lastName: '', email: '', phone: '', whatsapp: '',
+    source: 'manual', externalBookingId: '', priority: 'normal',
+    checkInDate: '', checkOutDate: '', adults: 0, children: 0,
+    estimatedValue: 0, unitTypePreference: '',
+    campingVehicleType: '', campingTentType: '', campingElectricity: false,
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+
+  const handleSubmit = async () => {
+    if (!form.firstName) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/crm/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (res.ok) {
+        onCreated();
+        onClose();
+        setForm({
+          firstName: '', lastName: '', email: '', phone: '', whatsapp: '',
+          source: 'manual', externalBookingId: '', priority: 'normal',
+          checkInDate: '', checkOutDate: '', adults: 0, children: 0,
+          estimatedValue: 0, unitTypePreference: '',
+          campingVehicleType: '', campingTentType: '', campingElectricity: false,
+          notes: '',
+        });
+      }
+    } catch { /* */ }
+    setSaving(false);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 className="modal-title">Новий лід</h3>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ borderBottom: '1px solid var(--border-primary)', paddingBottom: 14, marginBottom: 14 }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <User size={14} /> Контактна інформація
+            </h4>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Ім&apos;я *</label>
+                <input className="form-input" value={form.firstName}
+                  onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Прізвище</label>
+                <input className="form-input" value={form.lastName}
+                  onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input className="form-input" type="email" value={form.email}
+                  onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Телефон</label>
+                <input className="form-input" value={form.phone}
+                  onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <div style={{ borderBottom: '1px solid var(--border-primary)', paddingBottom: 14, marginBottom: 14 }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Calendar size={14} /> Деталі бронювання
+            </h4>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Джерело</label>
+                <select className="form-select" value={form.source}
+                  onChange={e => setForm(p => ({ ...p, source: e.target.value }))}>
+                  {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Пріоритет</label>
+                <select className="form-select" value={form.priority}
+                  onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
+                  <option value="low">Низький</option>
+                  <option value="normal">Нормальний</option>
+                  <option value="high">Високий</option>
+                  <option value="urgent">Терміновий</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Заїзд</label>
+                <input className="form-input" type="date" value={form.checkInDate}
+                  onChange={e => setForm(p => ({ ...p, checkInDate: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Виїзд</label>
+                <input className="form-input" type="date" value={form.checkOutDate}
+                  onChange={e => setForm(p => ({ ...p, checkOutDate: e.target.value }))} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Дорослих</label>
+                <input className="form-input" type="number" min={0} value={form.adults}
+                  onChange={e => setForm(p => ({ ...p, adults: +e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Дітей</label>
+                <input className="form-input" type="number" min={0} value={form.children}
+                  onChange={e => setForm(p => ({ ...p, children: +e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Нотатки</label>
+            <textarea className="form-input" rows={2} value={form.notes}
+              onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Скасувати</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !form.firstName}>
+            {saving ? <Loader2 size={14} className="animate-pulse" /> : <Plus size={14} />}
+            Створити лід
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CrmLeadsPage() {
   const onMenuClick = useMobileMenu();
   const [leads, setLeads] = useState<LeadRow[]>([]);
@@ -98,6 +244,8 @@ export default function CrmLeadsPage() {
   const [sourceFilter, setSourceFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [page, setPage] = useState(0);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<LeadRow | null>(null);
   const limit = 50;
 
   const fetchLeads = useCallback(async () => {
@@ -177,9 +325,9 @@ export default function CrmLeadsPage() {
             <button className="btn btn-secondary" onClick={fetchLeads} title="Оновити">
               <RefreshCw size={16} />
             </button>
-            <a href="/crm" className="btn btn-primary">
+            <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
               <Plus size={16} /> Новий лід
-            </a>
+            </button>
           </div>
         </div>
 
@@ -230,7 +378,7 @@ export default function CrmLeadsPage() {
                 const stage = STAGE_CONFIG[lead.stage];
                 const prio = PRIORITY_LABELS[lead.priority];
                 return (
-                  <tr key={lead.id}>
+                  <tr key={lead.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedLead(lead)}>
                     <td>
                       <span className={`priority-dot ${lead.priority}`} />
                     </td>
@@ -302,7 +450,7 @@ export default function CrmLeadsPage() {
                       {lead.created_at?.split(' ')[0] || lead.created_at?.split('T')[0]}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
                         <a href={`/crm/inbox?lead=${lead.id}`} className="btn btn-sm btn-ghost btn-icon" title="Діалог">
                           <MessageSquare size={14} />
                         </a>
@@ -339,6 +487,159 @@ export default function CrmLeadsPage() {
             </button>
           </div>
         )}
+
+        {/* ═══════ LEAD DETAIL DRAWER ═══════ */}
+        {selectedLead && (
+          <>
+            <div className="lead-drawer-overlay" onClick={() => setSelectedLead(null)} />
+            <div className="lead-drawer">
+              <div className="lead-drawer-header">
+                <div>
+                  <h3 style={{ fontSize: 18, fontWeight: 700 }}>
+                    {selectedLead.first_name} {selectedLead.last_name || ''}
+                  </h3>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    {STAGE_CONFIG[selectedLead.stage]?.icon}{' '}
+                    {STAGE_CONFIG[selectedLead.stage]?.label}
+                  </div>
+                </div>
+                <button className="btn btn-ghost btn-icon" onClick={() => setSelectedLead(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="lead-drawer-body">
+                {/* Contact */}
+                <div className="lead-drawer-section">
+                  <div className="lead-drawer-section-title"><User size={12} /> Контакт</div>
+                  <div className="lead-info-grid">
+                    {selectedLead.email && (
+                      <div className="lead-info-item">
+                        <div className="lead-info-label">Email</div>
+                        <div className="lead-info-value">{selectedLead.email}</div>
+                      </div>
+                    )}
+                    {selectedLead.phone && (
+                      <div className="lead-info-item">
+                        <div className="lead-info-label">Телефон</div>
+                        <div className="lead-info-value">{selectedLead.phone}</div>
+                      </div>
+                    )}
+                    {selectedLead.whatsapp && selectedLead.whatsapp !== selectedLead.phone && (
+                      <div className="lead-info-item">
+                        <div className="lead-info-label">WhatsApp</div>
+                        <div className="lead-info-value">{selectedLead.whatsapp}</div>
+                      </div>
+                    )}
+                    <div className="lead-info-item">
+                      <div className="lead-info-label">Джерело</div>
+                      <div className="lead-info-value">{CHANNEL_ICONS[selectedLead.source]} {SOURCE_LABELS[selectedLead.source] || selectedLead.source}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Booking details */}
+                {(selectedLead.check_in_date || selectedLead.adults > 0) && (
+                  <div className="lead-drawer-section">
+                    <div className="lead-drawer-section-title"><Calendar size={12} /> Деталі</div>
+                    <div className="lead-info-grid">
+                      {selectedLead.check_in_date && (
+                        <div className="lead-info-item">
+                          <div className="lead-info-label">Дати</div>
+                          <div className="lead-info-value">{selectedLead.check_in_date} → {selectedLead.check_out_date}</div>
+                        </div>
+                      )}
+                      {selectedLead.adults > 0 && (
+                        <div className="lead-info-item">
+                          <div className="lead-info-label">Гості</div>
+                          <div className="lead-info-value">{selectedLead.adults} дор. {selectedLead.children > 0 ? `+ ${selectedLead.children} діт.` : ''}</div>
+                        </div>
+                      )}
+                      {selectedLead.estimated_value > 0 && (
+                        <div className="lead-info-item">
+                          <div className="lead-info-label">Вартість</div>
+                          <div className="lead-info-value" style={{ color: 'var(--accent-success)' }}>
+                            {selectedLead.estimated_value.toLocaleString()} {selectedLead.currency}
+                          </div>
+                        </div>
+                      )}
+                      {selectedLead.external_booking_id && (
+                        <div className="lead-info-item">
+                          <div className="lead-info-label">Зовнішній ID</div>
+                          <div className="lead-info-value" style={{ fontFamily: 'monospace' }}>
+                            {selectedLead.external_booking_id}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Camping */}
+                {(selectedLead.camping_vehicle_type || selectedLead.camping_tent_type) && (
+                  <div className="lead-drawer-section">
+                    <div className="lead-drawer-section-title"><Truck size={12} /> Кемпінг</div>
+                    <div className="lead-info-grid">
+                      {selectedLead.camping_vehicle_type && (
+                        <div className="lead-info-item">
+                          <div className="lead-info-label">Транспорт</div>
+                          <div className="lead-info-value">{VEHICLE_ICONS[selectedLead.camping_vehicle_type]} {selectedLead.camping_vehicle_type}</div>
+                        </div>
+                      )}
+                      {selectedLead.camping_tent_type && (
+                        <div className="lead-info-item">
+                          <div className="lead-info-label">Намет</div>
+                          <div className="lead-info-value">{selectedLead.camping_tent_type}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Stage change */}
+                <div className="lead-drawer-section">
+                  <div className="lead-drawer-section-title"><ChevronRight size={12} /> Змінити етап</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {Object.entries(STAGE_CONFIG).map(([id, stage]) => (
+                      <button
+                        key={id}
+                        className={`btn btn-sm ${selectedLead.stage === id ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{
+                          fontSize: 11,
+                          opacity: selectedLead.stage === id ? 1 : 0.8,
+                          borderColor: selectedLead.stage === id ? stage.color : undefined,
+                          background: selectedLead.stage === id ? stage.color : undefined,
+                        }}
+                        disabled={selectedLead.stage === id}
+                        onClick={async () => {
+                          try {
+                            await fetch(`/api/crm/leads/${selectedLead.id}/stage`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ stage: id, trigger: 'manual' }),
+                            });
+                            setSelectedLead({ ...selectedLead, stage: id });
+                            fetchLeads();
+                          } catch { /* */ }
+                        }}
+                      >
+                        {stage.icon} {stage.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ marginTop: 20, display: 'flex', gap: 8 }}>
+                  <a href={`/crm/inbox?lead=${selectedLead.id}`} className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                    <MessageSquare size={14} /> Відкрити діалог
+                  </a>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        <AddLeadModal open={showAddModal} onClose={() => setShowAddModal(false)} onCreated={fetchLeads} />
       </div>
     </>
   );
