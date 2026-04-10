@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createCheckoutSession } from '@/lib/teya';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
 /**
  * POST /api/booking/checkout-session
  * 
@@ -16,7 +26,7 @@ export async function POST(req: Request) {
     const { amount, currency, description, items, reservation_id, return_path } = body;
 
     if (!amount || typeof amount !== 'number' || amount <= 0) {
-      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid amount' }, { status: 400, headers: CORS_HEADERS });
     }
 
     // Determine base URL for redirects
@@ -48,10 +58,10 @@ export async function POST(req: Request) {
       session_token: session.session_token,
       session_id: session.id,
       session_url: session.session_url,
-    });
+    }, { headers: CORS_HEADERS });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Checkout Session API]', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500, headers: CORS_HEADERS });
   }
 }
