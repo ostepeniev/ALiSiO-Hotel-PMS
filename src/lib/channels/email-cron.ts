@@ -1,15 +1,16 @@
 /**
  * CRM Polling Scheduler
  * - Email polling: every 2 minutes (fetch new emails from all accounts)
- * - Telegram callback polling: every 10 seconds (check for button presses)
  * - Stage sync: every 5 minutes (reservation status → lead stage)
+ * 
+ * NOTE: Telegram callback polling is handled by kemptimebot (Python bot)
+ * via crm_bridge.py → HTTP POST to /api/crm/channels/telegram/callback
+ * See TELEGRAM_BOT_BRIDGE.md for architecture details.
  */
 
 let isRunning = false;
 let emailIntervalId: ReturnType<typeof setTimeout> | null = null;
-let tgIntervalId: ReturnType<typeof setTimeout> | null = null;
 const EMAIL_POLL_MS = 2 * 60 * 1000; // 2 minutes
-const TG_POLL_MS = 10 * 1000; // 10 seconds
 
 async function pollEmails() {
   if (isRunning) return;
@@ -49,22 +50,8 @@ async function pollEmails() {
   }
 }
 
-async function pollTelegramCallbacks() {
-  try {
-    const baseUrl = process.env.NEXTAUTH_URL || process.env.VERCEL_URL || 'http://localhost:3000';
-    const res = await fetch(`${baseUrl}/api/crm/channels/telegram/poll`, {
-      headers: { 'X-Internal-Cron': '1' },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.processed > 0) {
-        console.log(`[TG Cron] ✅ Processed ${data.processed} callback(s)`);
-      }
-    }
-  } catch {
-    // Silent — non-critical
-  }
-}
+// Telegram callback polling removed — handled by kemptimebot Python bridge
+// See: /root/projects/alisio-bot/src/bot/handlers/crm_bridge.py
 
 async function syncStages() {
   try {
@@ -108,11 +95,9 @@ export function startEmailPoller() {
     emailIntervalId = setInterval(pollEmails, EMAIL_POLL_MS);
   }
 
-  // Telegram callback polling
+  // NOTE: Telegram callbacks now handled by kemptimebot (Python) bridge
   if (process.env.TELEGRAM_BOT_TOKEN) {
-    console.log('[CRM Cron] 🤖 Telegram callback poller (every 10s)');
-    setTimeout(pollTelegramCallbacks, 15000);
-    tgIntervalId = setInterval(pollTelegramCallbacks, TG_POLL_MS);
+    console.log('[CRM Cron] 🤖 Telegram: using kemptimebot bridge (no local polling)');
   }
 
   // Stage sync (every 5 min)
@@ -125,10 +110,6 @@ export function stopEmailPoller() {
   if (emailIntervalId) {
     clearInterval(emailIntervalId);
     emailIntervalId = null;
-  }
-  if (tgIntervalId) {
-    clearInterval(tgIntervalId);
-    tgIntervalId = null;
   }
   console.log('[CRM Cron] Stopped');
 }
