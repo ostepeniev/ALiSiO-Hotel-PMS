@@ -143,6 +143,17 @@ export interface Translations {
   regError: string;
   serviceOrdered: string;
   orderError: string;
+  // Pets policy
+  petsNotAllowed: string;
+  petsWithFee: string;
+  // Parking
+  parkingTitle: string;
+  parkingFree: string;
+  // FAQ
+  faqTitle: string;
+  // Empty states
+  noServices: string;
+  noExplore: string;
   // Post-stay
   thankYou: (name: string) => string;
   thankYouStay: string;
@@ -200,7 +211,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'The campfire under the stars...', send: 'Send',
     greatDay: 'Great day for the river trail 🌲',
     notFound: 'Booking not found', notFoundDesc: 'Please check the link you received.', loading: 'Loading...',
-    regSaved: 'Registration saved!', regError: 'Error saving registration.', serviceOrdered: 'Service ordered!', orderError: 'Error ordering service.',
+    regSaved: 'Registration saved!', regError: 'Please fill in all required fields.', serviceOrdered: 'Service ordered!', orderError: 'Error ordering service.',
+    petsNotAllowed: 'Not allowed', petsWithFee: 'With fee',
+    parkingTitle: 'Parking', parkingFree: 'Free parking at the entrance',
+    faqTitle: 'FAQ', noServices: 'No additional services available at this time.', noExplore: 'Explore information will appear closer to your stay.',
     thankYou: (n) => `Thank you, ${n}!`, thankYouStay: 'We hope you enjoyed your stay', comeBack: 'Come back soon!',
     earlyBooking: 'Early Booking', earlyBookingDesc: 'Book your next stay at a special rate.',
     discount: 'discount', adultsShort: 'ad.', childrenShort: 'ch.', ourAccommodations: 'Our accommodations',
@@ -249,7 +263,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'Das Lagerfeuer unter den Sternen...', send: 'Senden',
     greatDay: 'Perfekter Tag für den Flusswanderweg 🌲',
     notFound: 'Buchung nicht gefunden', notFoundDesc: 'Bitte überprüfen Sie den erhaltenen Link.', loading: 'Laden...',
-    regSaved: 'Registrierung gespeichert!', regError: 'Fehler beim Speichern.', serviceOrdered: 'Service bestellt!', orderError: 'Fehler bei der Bestellung.',
+    regSaved: 'Registrierung gespeichert!', regError: 'Bitte füllen Sie alle Pflichtfelder aus.', serviceOrdered: 'Service bestellt!', orderError: 'Fehler bei der Bestellung.',
+    petsNotAllowed: 'Nicht erlaubt', petsWithFee: 'Mit Gebühr',
+    parkingTitle: 'Parken', parkingFree: 'Kostenloser Parkplatz am Eingang',
+    faqTitle: 'FAQ', noServices: 'Derzeit sind keine zusätzlichen Services verfügbar.', noExplore: 'Informationen zur Umgebung erscheinen kurz vor Ihrem Aufenthalt.',
     thankYou: (n) => `Danke, ${n}!`, thankYouStay: 'Wir hoffen, Sie hatten einen tollen Aufenthalt', comeBack: 'Bis bald!',
     earlyBooking: 'Frühbucher', earlyBookingDesc: 'Buchen Sie Ihren nächsten Aufenthalt zum Sonderpreis.',
     discount: 'Rabatt', adultsShort: 'Erw.', childrenShort: 'Ki.', ourAccommodations: 'Unsere Unterkünfte',
@@ -298,7 +315,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'Oheň pod hvězdami...', send: 'Odeslat',
     greatDay: 'Skvělý den na říční stezku 🌲',
     notFound: 'Rezervace nenalezena', notFoundDesc: 'Zkontrolujte prosím odkaz.', loading: 'Načítání...',
-    regSaved: 'Registrace uložena!', regError: 'Chyba při ukládání.', serviceOrdered: 'Služba objednána!', orderError: 'Chyba při objednání.',
+    regSaved: 'Registrace uložena!', regError: 'Prosím vyplňte všechna povinná pole.', serviceOrdered: 'Služba objednána!', orderError: 'Chyba při objednání.',
+    petsNotAllowed: 'Nepovoleno', petsWithFee: 'S poplatkem',
+    parkingTitle: 'Parkování', parkingFree: 'Bezplatné parkování u vchodu',
+    faqTitle: 'Časté dotazy', noServices: 'Žádné další služby nejsou momentálně k dispozici.', noExplore: 'Informace o okolí se objeví blíže k vašemu pobytu.',
     thankYou: (n) => `Děkujeme, ${n}!`, thankYouStay: 'Doufáme, že jste si pobyt užili', comeBack: 'Příště se těšíme!',
     earlyBooking: 'Předčasná rezervace', earlyBookingDesc: 'Zarezervujte si další pobyt za zvýhodněnou cenu.',
     discount: 'sleva', adultsShort: 'dosp.', childrenShort: 'dětí', ourAccommodations: 'Naše ubytování',
@@ -347,7 +367,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'Вогнище під зірками...', send: 'Надіслати',
     greatDay: 'Чудовий день для прогулянки біля річки 🌲',
     notFound: 'Бронювання не знайдено', notFoundDesc: 'Перевірте посилання.', loading: 'Завантаження...',
-    regSaved: 'Реєстрацію збережено!', regError: 'Помилка збереження.', serviceOrdered: 'Послугу замовлено!', orderError: 'Помилка замовлення.',
+    regSaved: 'Реєстрацію збережено!', regError: 'Будь ласка, заповніть всі обов\'язкові поля.', serviceOrdered: 'Послугу замовлено!', orderError: 'Помилка замовлення.',
+    petsNotAllowed: 'Не дозволено', petsWithFee: 'З доплатою',
+    parkingTitle: 'Парковка', parkingFree: 'Безкоштовна парковка біля входу',
+    faqTitle: 'Часті питання', noServices: 'Наразі додаткові послуги недоступні.', noExplore: 'Інформація про околиці з\'явиться ближче до перебування.',
     thankYou: (n) => `Дякуємо, ${n}!`, thankYouStay: 'Сподіваємось, вам сподобалось', comeBack: 'Чекаємо знову!',
     earlyBooking: 'Раннє бронювання', earlyBookingDesc: 'Забронюйте наступне перебування за спеціальною ціною.',
     discount: 'знижка', adultsShort: 'дор.', childrenShort: 'діт.', ourAccommodations: 'Наші помешкання',
@@ -396,7 +419,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'Ognisko pod gwiazdami...', send: 'Wyślij',
     greatDay: 'Świetny dzień na szlak nad rzeką 🌲',
     notFound: 'Nie znaleziono rezerwacji', notFoundDesc: 'Sprawdź link.', loading: 'Ładowanie...',
-    regSaved: 'Rejestracja zapisana!', regError: 'Błąd zapisu.', serviceOrdered: 'Usługa zamówiona!', orderError: 'Błąd zamówienia.',
+    regSaved: 'Rejestracja zapisana!', regError: 'Proszę wypełnić wszystkie wymagane pola.', serviceOrdered: 'Usługa zamówiona!', orderError: 'Błąd zamówienia.',
+    petsNotAllowed: 'Niedozwolone', petsWithFee: 'Z opłatą',
+    parkingTitle: 'Parking', parkingFree: 'Bezpłatny parking przy wjeździe',
+    faqTitle: 'FAQ', noServices: 'Brak dodatkowych usług w tym momencie.', noExplore: 'Informacje o okolicy pojawią się bliżej pobytu.',
     thankYou: (n) => `Dziękujemy, ${n}!`, thankYouStay: 'Mamy nadzieję, że pobyt się podobał', comeBack: 'Wracajcie!',
     earlyBooking: 'Wczesna rezerwacja', earlyBookingDesc: 'Zarezerwuj kolejny pobyt w specjalnej cenie.',
     discount: 'zniżka', adultsShort: 'dos.', childrenShort: 'dz.', ourAccommodations: 'Nasze zakwaterowanie',
@@ -445,7 +471,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'Het kampvuur onder de sterren...', send: 'Verzenden',
     greatDay: 'Mooie dag voor het rivierpad 🌲',
     notFound: 'Boeking niet gevonden', notFoundDesc: 'Controleer de link.', loading: 'Laden...',
-    regSaved: 'Registratie opgeslagen!', regError: 'Fout bij opslaan.', serviceOrdered: 'Dienst besteld!', orderError: 'Fout bij bestelling.',
+    regSaved: 'Registratie opgeslagen!', regError: 'Vul alle verplichte velden in.', serviceOrdered: 'Dienst besteld!', orderError: 'Fout bij bestelling.',
+    petsNotAllowed: 'Niet toegestaan', petsWithFee: 'Met toeslag',
+    parkingTitle: 'Parkeren', parkingFree: 'Gratis parkeren bij de ingang',
+    faqTitle: 'FAQ', noServices: 'Op dit moment geen extra diensten beschikbaar.', noExplore: 'Omgevingsinformatie verschijnt dichter bij uw verblijf.',
     thankYou: (n) => `Bedankt, ${n}!`, thankYouStay: 'We hopen dat u heeft genoten', comeBack: 'Tot snel!',
     earlyBooking: 'Vroegboeken', earlyBookingDesc: 'Boek uw volgende verblijf tegen een speciaal tarief.',
     discount: 'korting', adultsShort: 'vol.', childrenShort: 'ki.', ourAccommodations: 'Onze accommodaties',
@@ -494,7 +523,10 @@ const translations: Record<Lang, Translations> = {
     feedbackPlaceholder: 'Le feu de camp sous les étoiles...', send: 'Envoyer',
     greatDay: 'Belle journée pour le sentier de la rivière 🌲',
     notFound: 'Réservation introuvable', notFoundDesc: 'Vérifiez le lien reçu.', loading: 'Chargement...',
-    regSaved: 'Enregistrement sauvegardé !', regError: 'Erreur de sauvegarde.', serviceOrdered: 'Service commandé !', orderError: 'Erreur de commande.',
+    regSaved: 'Enregistrement sauvegardé !', regError: 'Veuillez remplir tous les champs obligatoires.', serviceOrdered: 'Service commandé !', orderError: 'Erreur de commande.',
+    petsNotAllowed: 'Non autorisés', petsWithFee: 'Avec supplément',
+    parkingTitle: 'Parking', parkingFree: 'Parking gratuit à l\'entrée',
+    faqTitle: 'FAQ', noServices: 'Aucun service supplémentaire disponible pour le moment.', noExplore: 'Les informations sur les environs apparaîtront plus près de votre séjour.',
     thankYou: (n) => `Merci, ${n} !`, thankYouStay: 'Nous espérons que vous avez passé un bon séjour', comeBack: 'À bientôt !',
     earlyBooking: 'Réservation anticipée', earlyBookingDesc: 'Réservez votre prochain séjour à un tarif spécial.',
     discount: 'réduction', adultsShort: 'ad.', childrenShort: 'enf.', ourAccommodations: 'Nos hébergements',

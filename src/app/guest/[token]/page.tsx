@@ -301,6 +301,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const amenities = parseJSON<any[]>(cfg?.amenities, []);
   const rules = parseJSON<any[]>(cfg?.rules, []);
   const usefulInfoList = parseJSON<any[]>(cfg?.useful_info, []);
+  const faqItems = parseJSON<any[]>(cfg?.faq_items, []);
   const guestName = `${r.first_name || ''} ${(r.last_name || '').charAt(0)}.`.trim();
   const dLeft = daysUntil(r.check_in);
   const currentDay = dayOfStay(r.check_in);
@@ -366,7 +367,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             <StoryBubble emoji="📍" label={t.directions} active onClick={() => setSheet('directions')} />
             <StoryBubble emoji="🔑" label={t.entry} active onClick={() => setSheet('entry')} />
             <StoryBubble emoji="📶" label={t.wifi} active onClick={() => setSheet('wifi')} />
-            <StoryBubble emoji="🅿️" label={t.parking} active onClick={() => setSheet('directions')} />
+            <StoryBubble emoji="🅿️" label={t.parking} active onClick={() => setSheet('parking')} />
             {cfg?.restaurant_name && (
               <StoryBubble emoji="🍽" label={t.restaurant} active={false} onClick={() => setSheet('restaurant')} />
             )}
@@ -451,7 +452,9 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <ListRow icon="📶" label={t.wifiLabel} value={t.tapToCopy}
                   onClick={() => { navigator.clipboard?.writeText(cfg.wifi_password); setSheet('wifi'); }} />
               )}
-              <ListRow icon="🐕" label={t.pets} value={t.petsWelcome} chevron={false} />
+              <ListRow icon="🐕" label={t.pets}
+                value={cfg?.pets_policy === 'not_allowed' ? t.petsNotAllowed : cfg?.pets_policy === 'with_fee' ? t.petsWithFee : t.petsWelcome}
+                chevron={false} />
               {r.property_phone && (
                 <ListRow icon="📞" label={t.support} value={r.property_phone} chevron={false} last />
               )}
@@ -488,6 +491,21 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             </div>
           )}
 
+          {/* ── FAQ (accordion) ── */}
+          {faqItems.length > 0 && (
+            <div className="gp-section">
+              <div className="gp-section-title">{t.faqTitle}</div>
+              <div className="gp-list-card" style={{ padding: 16 }}>
+                {faqItems.map((faq: any, i: number) => (
+                  <details key={i} className="gp-faq-item">
+                    <summary className="gp-faq-q">{translateContent(faq.q || '', lang)}</summary>
+                    <div className="gp-faq-a">{translateContent(faq.a || '', lang)}</div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── CHECKOUT FEEDBACK ── */}
           {phase === 'checkout' && (
             <div className="gp-section">
@@ -503,7 +521,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           <div className="gp-tab-title">{t.servicesTitle}</div>
           <div className="gp-tab-subtitle">{t.servicesSubtitle}</div>
 
-          {data.services?.map((svc: any) => {
+          {data.services?.length > 0 ? data.services.map((svc: any) => {
             const isOrdered = data.orderedServices?.some((o: any) => o.service_id === svc.id);
             const wType = getWidgetType(svc);
             return (
@@ -526,7 +544,12 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 </div>
               </button>
             );
-          })}
+          }) : (
+            <div className="gp-empty-state">
+              <div className="gp-empty-icon">✨</div>
+              <div className="gp-empty-text">{t.noServices}</div>
+            </div>
+          )}
 
           {/* Restaurant */}
           {cfg?.restaurant_name && (
@@ -551,7 +574,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           <div className="gp-tab-title">{t.exploreTitle}</div>
           <div className="gp-tab-subtitle">{t.exploreSubtitle}</div>
 
-          {usefulInfoList.map((info: any, i: number) => {
+          {usefulInfoList.length > 0 ? usefulInfoList.map((info: any, i: number) => {
             const ti = translateUsefulInfo(info, lang);
             return (
               <div key={i} className="gp-explore-card">
@@ -564,7 +587,12 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 )}
               </div>
             );
-          })}
+          }) : (
+            <div className="gp-empty-state">
+              <div className="gp-empty-icon">🗺</div>
+              <div className="gp-empty-text">{t.noExplore}</div>
+            </div>
+          )}
 
           {/* Static explore items from config */}
           {cfg?.maps_url && (
@@ -602,6 +630,22 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         )}
       </BottomSheet>
 
+      {/* Parking */}
+      <BottomSheet open={sheet === 'parking'} onClose={() => setSheet(null)} title={t.parkingTitle}>
+        <div className="gp-sheet-info" style={{ textAlign: 'center', padding: '20px 0' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🅿️</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.parkingFree}</div>
+          {r.property_address && (
+            <div style={{ fontSize: 14, color: 'var(--gp-sub)' }}>{r.property_address}</div>
+          )}
+        </div>
+        {cfg?.maps_url && (
+          <a href={cfg.maps_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+            <button className="gp-btn gp-btn-primary">{t.openGoogleMaps}</button>
+          </a>
+        )}
+      </BottomSheet>
+
       {/* Wi-Fi */}
       <BottomSheet open={sheet === 'wifi'} onClose={() => setSheet(null)} title={t.wifiTitle}>
         <div className="gp-wifi-center">
@@ -620,15 +664,26 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Entry */}
       <BottomSheet open={sheet === 'entry'} onClose={() => setSheet(null)} title={t.entryTitle}>
-        <div className="gp-entry-photo">📷 Photo of entrance / lockbox</div>
-        <div className="gp-entry-steps">
-          <strong>1.</strong> {t.entryStep1}<br />
-          <strong>2.</strong> {t.entryStep2}<br />
-          <strong>3.</strong> {t.entryStep3Code} <span className="gp-entry-code">{cfg?.lock_code || '4971#'}</span><br />
-          <strong>4.</strong> {t.entryStep4}
-        </div>
-        {cfg?.check_in_instructions && (
-          <div style={{ fontSize: 14, color: 'var(--gp-sub)', marginTop: 12 }}>{translateContent(cfg.check_in_instructions, lang)}</div>
+        {cfg?.entry_photo_url ? (
+          <img src={cfg.entry_photo_url} alt="Entrance" style={{ width: '100%', borderRadius: 12, marginBottom: 16, objectFit: 'cover', maxHeight: 200 }} />
+        ) : (
+          <div className="gp-entry-photo">📷 Photo of entrance / lockbox</div>
+        )}
+        {cfg?.check_in_instructions ? (
+          <div className="gp-entry-steps">{translateContent(cfg.check_in_instructions, lang)}</div>
+        ) : (
+          <div className="gp-entry-steps">
+            <strong>1.</strong> {t.entryStep1}<br />
+            <strong>2.</strong> {t.entryStep2}<br />
+            <strong>3.</strong> {t.entryStep3Code} <span className="gp-entry-code">{cfg?.lock_code || '4971#'}</span><br />
+            <strong>4.</strong> {t.entryStep4}
+          </div>
+        )}
+        {cfg?.lock_code && (
+          <div style={{ margin: '12px 0', padding: '10px 14px', background: 'var(--gp-card)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>🔐</span>
+            <span style={{ fontWeight: 600 }}>Code: <span className="gp-entry-code">{cfg.lock_code}</span></span>
+          </div>
         )}
         <div className="gp-sheet-tip orange" style={{ marginTop: 16 }}>{t.lateArrival}</div>
       </BottomSheet>
