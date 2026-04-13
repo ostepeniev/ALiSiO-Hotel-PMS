@@ -114,9 +114,44 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     `).all(reservation.id);
 
     // Get guest page config for this unit type
-    const guestPageConfig = db.prepare(
+    const unitTypeConfig = db.prepare(
       'SELECT * FROM guest_page_config WHERE unit_type_id = ?'
-    ).get(reservation.unit_type_id) || null;
+    ).get(reservation.unit_type_id) as any || null;
+
+    // Get property-level shared config
+    let propertyConfig: any = null;
+    try {
+      propertyConfig = db.prepare(
+        'SELECT * FROM property_guest_config WHERE property_id = ?'
+      ).get(reservation.property_id) as any || null;
+    } catch { /* table may not exist yet */ }
+
+    // Merge: unit-type overrides property-level
+    const guestPageConfig = propertyConfig ? {
+      ...unitTypeConfig,
+      // Property-level fields as defaults (unit-type overrides if set)
+      wifi_network: unitTypeConfig?.wifi_network || propertyConfig.wifi_network,
+      wifi_password: unitTypeConfig?.wifi_password || propertyConfig.wifi_password,
+      restaurant_name: propertyConfig.restaurant_name,
+      restaurant_hours: propertyConfig.restaurant_hours,
+      restaurant_menu_url: propertyConfig.restaurant_menu_url,
+      rules: unitTypeConfig?.rules || propertyConfig.rules,
+      useful_info: unitTypeConfig?.useful_info || propertyConfig.useful_info,
+      faq_items: unitTypeConfig?.faq_items || propertyConfig.faq_items,
+      maps_url: unitTypeConfig?.maps_url || propertyConfig.maps_url,
+      territory_map_url: unitTypeConfig?.territory_map_url || propertyConfig.territory_map_url,
+      pets_policy: unitTypeConfig?.pets_policy || propertyConfig.pets_policy || 'welcome',
+      parking_info: propertyConfig.parking_info,
+      video_guide_url: propertyConfig.video_guide_url,
+      emergency_phone: propertyConfig.emergency_phone,
+      weather_lat: propertyConfig.weather_lat,
+      weather_lon: propertyConfig.weather_lon,
+      // Unit-type specific (always from unit_type)
+      amenities: unitTypeConfig?.amenities,
+      check_in_instructions: unitTypeConfig?.check_in_instructions,
+      lock_code: unitTypeConfig?.lock_code,
+      entry_photo_url: unitTypeConfig?.entry_photo_url,
+    } : unitTypeConfig;
 
     return NextResponse.json({
       expired: false,

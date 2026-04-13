@@ -1904,6 +1904,84 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_crm_auto_org ON crm_automation_rules(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_crm_auto_stage ON crm_automation_rules(trigger_stage)');
+
+  // ═══════════════════════════════════════════════════════
+  // GUEST PAGE V3 — BATCH 3 MIGRATIONS
+  // ═══════════════════════════════════════════════════════
+
+  // --- Migration: property_guest_config (shared property-level settings) ---
+  const pgcExists = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='property_guest_config'"
+  ).get();
+  if (!pgcExists) {
+    database.exec(`
+      CREATE TABLE property_guest_config (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        property_id TEXT NOT NULL UNIQUE REFERENCES properties(id) ON DELETE CASCADE,
+        wifi_network TEXT DEFAULT 'ALiSiO_Guest',
+        wifi_password TEXT DEFAULT 'ALiSiO2026!',
+        restaurant_name TEXT DEFAULT 'Ресторан ALiSiO',
+        restaurant_hours TEXT,
+        restaurant_menu_url TEXT,
+        rules TEXT,
+        useful_info TEXT,
+        faq_items TEXT,
+        maps_url TEXT DEFAULT 'https://maps.app.goo.gl/WH2CKhTydtDx9EBe7',
+        territory_map_url TEXT,
+        pets_policy TEXT DEFAULT 'welcome',
+        parking_info TEXT DEFAULT 'Free parking at the entrance',
+        video_guide_url TEXT,
+        emergency_phone TEXT,
+        weather_lat REAL,
+        weather_lon REAL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    // Seed from first existing guest_page_config
+    try {
+      const firstCfg = database.prepare('SELECT * FROM guest_page_config LIMIT 1').get() as any;
+      const props = database.prepare('SELECT id FROM properties').all() as any[];
+      if (firstCfg && props.length > 0) {
+        for (const p of props) {
+          database.prepare(`
+            INSERT INTO property_guest_config (property_id, wifi_network, wifi_password, restaurant_name, restaurant_hours, restaurant_menu_url, rules, useful_info, faq_items, maps_url, territory_map_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(p.id, firstCfg.wifi_network, firstCfg.wifi_password, firstCfg.restaurant_name, firstCfg.restaurant_hours, firstCfg.restaurant_menu_url, firstCfg.rules, firstCfg.useful_info, firstCfg.faq_items, firstCfg.maps_url, firstCfg.territory_map_url);
+        }
+      }
+    } catch { /* seed silently */ }
+    console.log('[DB] Created property_guest_config table');
+  }
+
+  // --- Migration: guest_chat_messages ---
+  const gcmExists = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='guest_chat_messages'"
+  ).get();
+  if (!gcmExists) {
+    database.exec(`
+      CREATE TABLE guest_chat_messages (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+        sender TEXT NOT NULL CHECK (sender IN ('guest', 'host', 'system')),
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_gcm_res ON guest_chat_messages(reservation_id)');
+    console.log('[DB] Created guest_chat_messages table');
+  }
+
+  // --- Migration: add pets_policy, entry_photo_url to guest_page_config ---
+  try {
+    const gpcCols2 = database.prepare("PRAGMA table_info(guest_page_config)").all().map((c: any) => c.name);
+    if (!gpcCols2.includes('pets_policy')) {
+      database.exec("ALTER TABLE guest_page_config ADD COLUMN pets_policy TEXT DEFAULT 'welcome'");
+    }
+    if (!gpcCols2.includes('entry_photo_url')) {
+      database.exec("ALTER TABLE guest_page_config ADD COLUMN entry_photo_url TEXT");
+    }
+  } catch { /* ok */ }
 }
 
 // Generate a random 12-char token for guest pages

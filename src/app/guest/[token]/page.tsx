@@ -122,7 +122,11 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   // Chat state
   const [chatMsgs, setChatMsgs] = useState<{ from: 'host' | 'guest'; text: string; time: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Weather state
+  const [weather, setWeather] = useState<{ temp: number; desc: string; icon: string } | null>(null);
 
   // Resolve async params
   useEffect(() => { params.then(p => setToken(p.token)); }, [params]);
@@ -140,9 +144,38 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         const guestPhone = d.reservation?.guest_phone || null;
         const detectedLang = detectLanguage(guestPhone, guestCountry);
         setLang(detectedLang);
-        // Init chat welcome
+        // Init chat welcome (local only, DB messages loaded separately)
         const guestName = d.reservation?.first_name || 'Guest';
-        setChatMsgs([{ from: 'host', text: getTranslations(detectedLang).chatWelcome(guestName), time: '14:00' }]);
+        setChatMsgs([{ from: 'host', text: getTranslations(detectedLang).chatWelcome(guestName), time: '' }]);
+        // Load chat history from DB
+        fetch(`/api/guest/${token}/chat`)
+          .then(r => r.ok ? r.json() : null)
+          .then(c => {
+            if (c?.messages?.length) {
+              const dbMsgs = c.messages.map((m: any) => ({
+                from: m.sender === 'guest' ? 'guest' as const : 'host' as const,
+                text: m.message,
+                time: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+              }));
+              const welcome = { from: 'host' as const, text: getTranslations(detectedLang).chatWelcome(guestName), time: '' };
+              setChatMsgs([welcome, ...dbMsgs]);
+            }
+          }).catch(() => {});
+        // Fetch weather if coords available
+        const lat = d.guestPageConfig?.weather_lat;
+        const lon = d.guestPageConfig?.weather_lon;
+        if (lat && lon) {
+          fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`)
+            .then(r => r.ok ? r.json() : null)
+            .then(w => {
+              if (w?.current) {
+                const code = w.current.weather_code;
+                const icon = code <= 1 ? '☀️' : code <= 3 ? '⛅' : code <= 48 ? '☁️' : code <= 67 ? '🌧' : code <= 77 ? '❄️' : '⛈️';
+                const desc = code <= 1 ? 'Clear' : code <= 3 ? 'Partly cloudy' : code <= 48 ? 'Cloudy' : code <= 67 ? 'Rain' : code <= 77 ? 'Snow' : 'Stormy';
+                setWeather({ temp: Math.round(w.current.temperature_2m), desc, icon });
+              }
+            }).catch(() => {});
+        }
         // Pre-fill reg
         if (d.registeredGuests?.length > 0) {
           const g = d.registeredGuests[0];
@@ -229,16 +262,21 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   };
 
   // ─── Chat ──────────────────────────────────────
-  const sendChat = () => {
-    if (!chatInput.trim()) return;
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const msg = chatInput.trim();
     const now = new Date();
     const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setChatMsgs(prev => [...prev, { from: 'guest', text: chatInput, time }]);
+    setChatMsgs(prev => [...prev, { from: 'guest', text: msg, time }]);
     setChatInput('');
-    // Auto-reply simulation
-    setTimeout(() => {
-      setChatMsgs(prev => [...prev, { from: 'host', text: 'Got it! We\'ll take care of it right away 👍', time }]);
-    }, 1500);
+    setChatLoading(true);
+    try {
+      await fetch(`/api/guest/${token}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, sender: 'guest' }),
+      });
+    } catch { /* silently fail */ }
+    setChatLoading(false);
   };
 
   useEffect(() => {
@@ -390,7 +428,16 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             </div>
           )}
 
-          {/* ── WEATHER — hidden until real API integration ── */}
+          {/* ── WEATHER (real API) ── */}
+          {weather && (phase === 'during' || phase === 'checkin_day') && (
+            <div className="gp-weather">
+              <span className="gp-weather-icon">{weather.icon}</span>
+              <div>
+                <div className="gp-weather-title">{weather.temp}°C · {weather.desc}</div>
+                <div className="gp-weather-desc">{t.greatDay}</div>
+              </div>
+            </div>
+          )}
 
           {/* ── STAGE-BASED ACTIONS ── */}
           <div className="gp-section">
