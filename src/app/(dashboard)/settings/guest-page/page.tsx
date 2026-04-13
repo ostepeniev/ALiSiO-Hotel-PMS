@@ -25,6 +25,9 @@ interface ConfigItem {
   restaurant_hours: string;
   restaurant_menu_url: string | null;
   useful_info: string;
+  lock_code: string;
+  maps_url: string;
+  territory_map_url: string | null;
 }
 
 interface AmenityItem { icon: string; name: string; }
@@ -57,6 +60,9 @@ export default function GuestPageSettingsPage() {
   const [restaurantHours, setRestaurantHours] = useState('');
   const [restaurantMenuUrl, setRestaurantMenuUrl] = useState('');
   const [usefulInfo, setUsefulInfo] = useState<UsefulItem[]>([]);
+  const [lockCode, setLockCode] = useState('');
+  const [mapsUrl, setMapsUrl] = useState('');
+  const [territoryMapUrl, setTerritoryMapUrl] = useState('');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -99,6 +105,9 @@ export default function GuestPageSettingsPage() {
     setRestaurantHours(cfg.restaurant_hours || '');
     setRestaurantMenuUrl(cfg.restaurant_menu_url || '');
     setUsefulInfo(parseJSON<UsefulItem[]>(cfg.useful_info, []));
+    setLockCode(cfg.lock_code || '');
+    setMapsUrl(cfg.maps_url || '');
+    setTerritoryMapUrl(cfg.territory_map_url || '');
   };
 
   // Select config
@@ -127,6 +136,9 @@ export default function GuestPageSettingsPage() {
           restaurant_hours: restaurantHours,
           restaurant_menu_url: restaurantMenuUrl || null,
           useful_info: usefulInfo,
+          lock_code: lockCode || null,
+          maps_url: mapsUrl || null,
+          territory_map_url: territoryMapUrl || null,
         }),
       });
       if (res.ok) {
@@ -254,6 +266,25 @@ export default function GuestPageSettingsPage() {
                 <div style={{ padding: '16px 0' }}>
                   <textarea className="form-input" rows={4} value={instructions} placeholder="Інструкція для гостя при заїзді..."
                     onChange={e => setInstructions(e.target.value)} style={{ resize: 'vertical' }} />
+                </div>
+              )}
+
+              {/* === Lock code & Maps === */}
+              <SectionHeader id="location" title="Код замка та навігація" icon="🔑" />
+              {openSections.has('location') && (
+                <div style={{ padding: '16px 0' }}>
+                  <div className="form-group">
+                    <label className="form-label">Код замка / лок-бокса</label>
+                    <input className="form-input" value={lockCode} placeholder="4971#" onChange={e => setLockCode(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Google Maps URL</label>
+                    <input className="form-input" type="url" value={mapsUrl} placeholder="https://maps.app.goo.gl/..." onChange={e => setMapsUrl(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Карта території (URL зображення)</label>
+                    <input className="form-input" type="url" value={territoryMapUrl} placeholder="https://..." onChange={e => setTerritoryMapUrl(e.target.value)} />
+                  </div>
                 </div>
               )}
 

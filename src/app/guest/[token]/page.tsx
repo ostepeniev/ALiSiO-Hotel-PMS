@@ -389,16 +389,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             </div>
           )}
 
-          {/* ── WEATHER (during/checkin) ── */}
-          {(phase === 'during' || phase === 'checkin_day') && (
-            <div className="gp-weather">
-              <span className="gp-weather-icon">⛅</span>
-              <div>
-                <div className="gp-weather-title">14°C · Partly cloudy</div>
-                <div className="gp-weather-desc">{t.greatDay}</div>
-              </div>
-            </div>
-          )}
+          {/* ── WEATHER — hidden until real API integration ── */}
 
           {/* ── STAGE-BASED ACTIONS ── */}
           <div className="gp-section">
@@ -433,16 +424,20 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                   );
                 })}
               </>}
-              {phase === 'checkout' && <>
-                <ListRow icon="☐" label={t.closeWindows} chevron={false} />
-                <ListRow icon="☐" label={t.keyInLockbox} chevron={false} />
-                <ListRow icon="⏰" label={t.lateCheckout}
-                  value="400 Kč"
-                  onClick={() => {
-                    const lateService = data.services?.find((s: any) => s.name?.includes('check-out') || s.name?.includes('Check-out'));
-                    if (lateService) { setSelectedService(lateService); setSheet('service'); }
-                  }} last />
-              </>}
+              {phase === 'checkout' && (() => {
+                const lateService = data.services?.find((s: any) => {
+                  const n = ((s.name || '') + ' ' + (s.name_en || '') + ' ' + (s.id || '')).toLowerCase();
+                  return n.includes('late') || n.includes('check-out') || n.includes('пізній');
+                });
+                return <>
+                  <ListRow icon="☐" label={t.closeWindows} chevron={false} />
+                  <ListRow icon="☐" label={t.keyInLockbox} chevron={false} />
+                  <ListRow icon="⏰" label={t.lateCheckout}
+                    value={lateService ? formatPriceLocalized(lateService.price, lateService.currency) : ''}
+                    onClick={lateService ? () => { setSelectedService(lateService); setSheet('service'); } : undefined}
+                    last />
+                </>;
+              })()}
             </div>
           </div>
 
@@ -496,14 +491,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           {/* ── CHECKOUT FEEDBACK ── */}
           {phase === 'checkout' && (
             <div className="gp-section">
-              <div className="gp-feedback">
-                <div className="gp-feedback-title">{t.feedbackTitle}</div>
-                <div className="gp-feedback-desc">{t.feedbackQuestion}</div>
-                <textarea className="gp-feedback-textarea" placeholder={t.feedbackPlaceholder} />
-                <button className="gp-btn gp-btn-primary" style={{ marginTop: 8, fontSize: 14, padding: '10px 20px', width: 'auto' }}>
-                  {t.send}
-                </button>
-              </div>
+              <FeedbackForm t={t} token={token} showToast={showToast} />
             </div>
           )}
         </div>
@@ -595,10 +583,16 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Directions */}
       <BottomSheet open={sheet === 'directions'} onClose={() => setSheet(null)} title={t.howToGetHereTitle}>
-        <div className="gp-sheet-map-placeholder">🗺 Map — Google Maps embed</div>
+        {cfg?.maps_url ? (
+          <iframe src={cfg.maps_url.includes('embed') ? cfg.maps_url : `https://www.google.com/maps?q=${encodeURIComponent(r.property_address || r.property_city || '')}&output=embed`}
+            style={{ width: '100%', height: 160, border: 'none', borderRadius: 12, marginBottom: 16 }}
+            loading="lazy" allowFullScreen />
+        ) : (
+          <div className="gp-sheet-map-placeholder">🗺 {t.howToGetHere}</div>
+        )}
         <div className="gp-sheet-info">
-          <strong>{t.address}:</strong> {r.property_address || 'Loketská, Radošov, Karlovy Vary'}<br />
-          <strong>{t.parkingInfo}:</strong> Free, directly by the entrance
+          <strong>{t.address}:</strong> {r.property_address || `${r.property_city || ''}, ${r.property_country || ''}`}<br />
+          {r.property_phone && <><strong>{t.support}:</strong> {r.property_phone}</>}
         </div>
         <div className="gp-sheet-tip green">{t.videoGuide}</div>
         {cfg?.maps_url && (
@@ -803,7 +797,20 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
           <div className="gp-reg-footer">
             {regStep < 3 ? (
-              <button className="gp-btn gp-btn-primary" onClick={() => setRegStep(s => s + 1)}>
+              <button className="gp-btn gp-btn-primary" onClick={() => {
+                // Validation
+                if (regStep === 1) {
+                  if (!regData.fullName.trim() || !regData.email.trim() || !regData.dateOfBirth) {
+                    showToast(t.regError, 'error'); return;
+                  }
+                }
+                if (regStep === 2) {
+                  if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim()) {
+                    showToast(t.regError, 'error'); return;
+                  }
+                }
+                setRegStep(s => s + 1);
+              }}>
                 {t.continue_}
               </button>
             ) : (
@@ -833,6 +840,37 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* ════ TOAST ════ */}
       {toast && <div className={`gp-toast ${toast.type}`}>{toast.msg}</div>}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════
+// FEEDBACK FORM (checkout only)
+// ════════════════════════════════════════════════════
+function FeedbackForm({ t, token, showToast }: {
+  t: any; token: string; showToast: (msg: string, type?: 'success' | 'error') => void;
+}) {
+  const [text, setText] = useState('');
+  const [sent, setSent] = useState(false);
+  const handleSend = async () => {
+    if (!text.trim()) return;
+    try {
+      await fetch(`/api/guest/${token}/feedback`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback: text }),
+      });
+      setSent(true); showToast('💚 ' + t.send);
+    } catch { showToast(t.orderError, 'error'); }
+  };
+  if (sent) return <div className="gp-feedback"><div className="gp-confirm-success">💚 {t.send} ✅</div></div>;
+  return (
+    <div className="gp-feedback">
+      <div className="gp-feedback-title">{t.feedbackTitle}</div>
+      <div className="gp-feedback-desc">{t.feedbackQuestion}</div>
+      <textarea className="gp-feedback-textarea" placeholder={t.feedbackPlaceholder} value={text} onChange={e => setText(e.target.value)} />
+      <button className="gp-btn gp-btn-primary" style={{ marginTop: 8, fontSize: 14, padding: '10px 20px', width: 'auto' }} onClick={handleSend}>
+        {t.send}
+      </button>
     </div>
   );
 }
