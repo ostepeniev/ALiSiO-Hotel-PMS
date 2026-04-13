@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === 'book-slots') {
-      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId } = body;
+      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId, promoCode } = body;
 
       if (!serviceId || !date || startHour === undefined || !hours || hours < 2) {
         return NextResponse.json(
@@ -129,7 +129,42 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Service not found' }, { status: 404, headers: CORS_HEADERS });
       }
 
-      const pricePerHour = service.price; // 600 CZK
+      let pricePerHour = service.price; // 600 CZK default
+
+      // Validate promo code server-side
+      let appliedPromo: string | null = null;
+      if (promoCode) {
+        const promo = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(String(promoCode).toUpperCase().trim()) as any;
+        if (promo) {
+          // Check service applicability
+          let applicable = true;
+          if (promo.applicable_services) {
+            try {
+              const svcs = JSON.parse(promo.applicable_services) as string[];
+              if (svcs.length > 0 && !svcs.includes(serviceId)) applicable = false;
+            } catch { /* ignore */ }
+          }
+          // Check usage limit
+          if (promo.max_uses !== null && promo.current_uses >= promo.max_uses) applicable = false;
+          // Check dates
+          const now = new Date().toISOString();
+          if (promo.valid_from && now < promo.valid_from) applicable = false;
+          if (promo.valid_until && now > promo.valid_until) applicable = false;
+
+          if (applicable) {
+            appliedPromo = promo.code;
+            if (promo.discount_type === 'fixed_price') {
+              pricePerHour = promo.discount_value;
+            } else if (promo.discount_type === 'percentage') {
+              pricePerHour = pricePerHour * (1 - promo.discount_value / 100);
+            }
+            // Increment usage
+            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
+            console.log('[Booking] Applied promo:', promo.code, '→', pricePerHour, 'CZK/hr');
+          }
+        }
+      }
+
       let totalPrice = pricePerHour * hours;
 
       // Check if any of the requested slots are already booked
@@ -200,14 +235,15 @@ export async function POST(request: NextRequest) {
       if (existingTables.has('booking_service_orders') && reservationId) {
         const orderId = `bso_${Date.now()}`;
         db.prepare(`
-          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?)
+          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status, promo_code)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
         `).run(
           orderId, reservationId, serviceId, hours, date, slotIds[0],
           JSON.stringify({ persons: persons || 1, addons: addonDetails, hours, startHour }),
           pricePerHour, totalPrice,
           paymentId || null,
-          paymentId ? 'pending' : 'none'
+          paymentId ? 'pending' : 'none',
+          appliedPromo
         );
       }
 
@@ -223,6 +259,7 @@ export async function POST(request: NextRequest) {
         addonTotal,
         totalPrice,
         addons: addonDetails,
+        promoApplied: appliedPromo,
       }, { status: 201, headers: CORS_HEADERS });
 
     } else if (action === 'book-breakfast') {

@@ -1035,6 +1035,46 @@ function runMigrations(database: any) {
     // Columns already exist — ignore
   }
 
+  // --- Migration: add promo_code column to booking_service_orders ---
+  try {
+    database.exec(`ALTER TABLE booking_service_orders ADD COLUMN promo_code TEXT`);
+    console.log('[DB] Added promo_code column to booking_service_orders');
+  } catch {
+    // Column already exists — ignore
+  }
+
+  // --- Migration: create promo_codes table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS promo_codes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      code TEXT UNIQUE NOT NULL,
+      description TEXT,
+      discount_type TEXT NOT NULL DEFAULT 'fixed_price' CHECK (discount_type IN ('fixed_price', 'percentage', 'fixed_amount')),
+      discount_value REAL NOT NULL,
+      applicable_services TEXT,
+      valid_from TEXT,
+      valid_until TEXT,
+      max_uses INTEGER,
+      current_uses INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Seed GLAMPING promo code: 310 CZK/hour for sauna (instead of 600)
+  try {
+    const glamExists = database.prepare("SELECT id FROM promo_codes WHERE code = 'GLAMPING'").get();
+    if (!glamExists) {
+      database.prepare(`
+        INSERT INTO promo_codes (id, code, description, discount_type, discount_value, applicable_services, is_active)
+        VALUES ('promo_glamping', 'GLAMPING', 'Glamping guest sauna discount — 310 CZK/hr', 'fixed_price', 310, '["svc_sauna"]', 1)
+      `).run();
+      console.log('[DB] Seeded GLAMPING promo code (310 CZK/hr for sauna)');
+    }
+  } catch (e) {
+    console.warn('[DB] Promo seed error:', e);
+  }
+
   // --- Migration: create sauna_addons table for broom etc ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS service_addons (

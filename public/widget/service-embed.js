@@ -25,6 +25,7 @@
   var ACCENT = scriptTag ? (scriptTag.getAttribute('data-color') || '#1a1a2e') : '#1a1a2e';
   var RESERVATION_ID = scriptTag ? (scriptTag.getAttribute('data-reservation') || '') : '';
   var ENABLE_PAYMENT = scriptTag ? (scriptTag.getAttribute('data-payment') !== 'false') : true;
+  var AUTO_PROMO = scriptTag ? (scriptTag.getAttribute('data-promo') || '') : '';
 
   // Service ID mapping
   var SERVICE_IDS = { sauna: 'svc_sauna', tub: 'svc_pool', breakfast: 'svc_breakfast' };
@@ -51,6 +52,7 @@
       paymentTitle: 'Payment', paymentDesc: 'Enter your card details to complete the booking.',
       backToDetails: '← Back', paymentFailed: 'Payment failed. Please try again.',
       paymentSuccess: 'Payment successful!',
+      promoLabel: 'Have a promo code?', promoApply: 'Apply', promoApplied: 'Applied', promoInvalid: 'Invalid code', promoPlaceholder: 'Enter code',
       mon:'Mo',tue:'Tu',wed:'We',thu:'Th',fri:'Fr',sat:'Sa',sun:'Su',
       months:['January','February','March','April','May','June','July','August','September','October','November','December'],
     },
@@ -73,6 +75,7 @@
       paymentTitle: 'Оплата', paymentDesc: 'Введіть дані картки для завершення бронювання.',
       backToDetails: '← Назад', paymentFailed: 'Оплата не вдалася. Спробуйте ще раз.',
       paymentSuccess: 'Оплата пройшла успішно!',
+      promoLabel: 'Є промокод?', promoApply: 'Застосувати', promoApplied: 'Застосовано', promoInvalid: 'Невірний код', promoPlaceholder: 'Введіть код',
       mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Нд',
       months:['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
     },
@@ -95,6 +98,7 @@
       paymentTitle: 'Platba', paymentDesc: 'Zadejte údaje karty pro dokončení rezervace.',
       backToDetails: '← Zpět', paymentFailed: 'Platba se nezdařila. Zkuste to znovu.',
       paymentSuccess: 'Platba proběhla úspěšně!',
+      promoLabel: 'Máte promokód?', promoApply: 'Použít', promoApplied: 'Aplikováno', promoInvalid: 'Neplatný kód', promoPlaceholder: 'Zadejte kód',
       mon:'Po',tue:'Út',wed:'St',thu:'Čt',fri:'Pá',sat:'So',sun:'Ne',
       months:['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
     },
@@ -117,6 +121,7 @@
       paymentTitle: 'Bezahlung', paymentDesc: 'Geben Sie Ihre Kartendaten ein, um die Buchung abzuschließen.',
       backToDetails: '← Zurück', paymentFailed: 'Zahlung fehlgeschlagen. Bitte versuchen Sie es erneut.',
       paymentSuccess: 'Zahlung erfolgreich!',
+      promoLabel: 'Haben Sie einen Aktionscode?', promoApply: 'Anwenden', promoApplied: 'Angewendet', promoInvalid: 'Ungültiger Code', promoPlaceholder: 'Code eingeben',
       mon:'Mo',tue:'Di',wed:'Mi',thu:'Do',fri:'Fr',sat:'Sa',sun:'So',
       months:['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'],
     }
@@ -129,7 +134,7 @@
     loading: false, error: null,
     // Slot services (sauna, tub)
     date: null, startHour: 14, hours: 2, brooms: 0,
-    price: 600, broomPrice: 300, addons: [],
+    price: 600, originalPrice: 600, broomPrice: 300, addons: [],
     bookedSlots: [],
     // Breakfast
     menuItems: [], itemQty: {},
@@ -141,6 +146,9 @@
     paymentSessionToken: null, paymentSessionId: null,
     paymentSdkUrl: null, paymentSessionUrl: null,
     teyaCheckout: null, paymentTotal: 0,
+    // Promo
+    promoCode: AUTO_PROMO, promoApplied: false, promoOpen: !!AUTO_PROMO,
+    promoDiscountType: null, promoDiscountValue: null, promoError: null,
   };
 
   // ─── DOM ───
@@ -203,6 +211,7 @@
       var data = await res.json();
 
       state.price = data.price || 600;
+      state.originalPrice = state.price;
       state.bookedSlots = data.bookedSlots || [];
       state.addons = data.addons || [];
       if (state.addons.length > 0) state.broomPrice = state.addons[0].price || 300;
@@ -217,7 +226,42 @@
 
       if (!state.date) state.date = checkIn;
     } catch(e) { state.error = t.errorOccurred; console.error('ASW:', e); }
-    state.loading = false; render();
+    state.loading = false;
+
+    // Auto-apply promo code if provided via data-promo
+    if (AUTO_PROMO && !state.promoApplied) {
+      await applyPromoCode(AUTO_PROMO);
+    }
+    render();
+  }
+
+  // ─── Promo Code ───
+  async function applyPromoCode(code) {
+    if (!code) return;
+    state.promoError = null;
+    try {
+      var res = await fetch(API_BASE + '/api/booking/promo?code=' + encodeURIComponent(code) + '&serviceId=' + serviceId);
+      var data = await res.json();
+      if (data.valid) {
+        state.promoApplied = true;
+        state.promoCode = data.code;
+        state.promoDiscountType = data.discount_type;
+        state.promoDiscountValue = data.discount_value;
+        // Apply discount to displayed price
+        if (data.discount_type === 'fixed_price') {
+          state.price = data.discount_value;
+        } else if (data.discount_type === 'percentage') {
+          state.price = Math.round(state.originalPrice * (1 - data.discount_value / 100));
+        }
+      } else {
+        state.promoError = data.error || t.promoInvalid;
+        state.promoApplied = false;
+      }
+    } catch(e) {
+      state.promoError = t.promoInvalid;
+      console.error('ASW promo error:', e);
+    }
+    render();
   }
 
   // ─── Payment Flow (Hosted Checkout) ───
@@ -237,6 +281,7 @@
         brooms: state.brooms,
         itemQty: state.itemQty,
         reservationId: RESERVATION_ID,
+        promoCode: state.promoApplied ? state.promoCode : null,
       };
       try { sessionStorage.setItem('asw_pending_booking', JSON.stringify(bookingData)); } catch(e) {}
 
@@ -359,6 +404,7 @@
     };
     if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
     if (paymentId) body.paymentId = paymentId;
+    if (state.promoApplied && state.promoCode) body.promoCode = state.promoCode;
     if (SERVICE_TYPE === 'sauna' && state.brooms > 0) {
       body.addons = [{ id: 'addon_broom', quantity: state.brooms }];
     }
@@ -458,9 +504,34 @@
 
     // Price badge
     h += '<div class="asw-price-badge">';
-    h += '<span class="asw-price-amount">Kč ' + fmtPrice(state.price) + '</span>';
+    if (state.promoApplied && state.price < state.originalPrice) {
+      h += '<span class="asw-price-original">Kč ' + fmtPrice(state.originalPrice) + '</span>';
+      h += '<span class="asw-price-amount asw-price-promo">Kč ' + fmtPrice(state.price) + '</span>';
+    } else {
+      h += '<span class="asw-price-amount">Kč ' + fmtPrice(state.price) + '</span>';
+    }
     h += '<span class="asw-price-unit">' + t.perHour + '</span>';
     h += '</div>';
+
+    // Promo code section
+    if (SERVICE_TYPE !== 'breakfast') {
+      if (state.promoApplied) {
+        h += '<div class="asw-promo-applied">✅ ' + t.promoApplied + ': <strong>' + escHtml(state.promoCode) + '</strong></div>';
+      } else {
+        h += '<div class="asw-promo-section">';
+        h += '<button class="asw-promo-toggle" id="asw-promo-toggle">' + (state.promoOpen ? '▾' : '▸') + ' ' + t.promoLabel + '</button>';
+        if (state.promoOpen) {
+          h += '<div class="asw-promo-row">';
+          h += '<input type="text" class="asw-promo-input" id="asw-promo-input" placeholder="' + t.promoPlaceholder + '" value="' + escHtml(state.promoCode) + '" />';
+          h += '<button class="asw-promo-btn" id="asw-promo-apply">' + t.promoApply + '</button>';
+          h += '</div>';
+          if (state.promoError) {
+            h += '<div class="asw-promo-error">' + state.promoError + '</div>';
+          }
+        }
+        h += '</div>';
+      }
+    }
 
     if (state.loading) {
       h += '<div class="asw-loading"><div class="asw-spinner"></div></div>';
@@ -695,6 +766,27 @@
       else submitSlotBooking();
     });
 
+    // Promo code
+    bindClick('asw-promo-toggle', function() { state.promoOpen = !state.promoOpen; render(); });
+    bindClick('asw-promo-apply', function() {
+      var inp = root.querySelector('#asw-promo-input');
+      if (inp && inp.value.trim()) {
+        state.promoCode = inp.value.trim();
+        applyPromoCode(state.promoCode);
+      }
+    });
+    // Enter key on promo input
+    var promoInput = root.querySelector('#asw-promo-input');
+    if (promoInput) {
+      promoInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          state.promoCode = promoInput.value.trim();
+          if (state.promoCode) applyPromoCode(state.promoCode);
+        }
+      });
+    }
+
     // Close success
     bindClick('asw-close', function() {
       state.view = 'card'; state.error = null;
@@ -726,7 +818,21 @@
       // Price badge
       '.asw-price-badge{display:inline-flex;align-items:baseline;gap:4px;background:var(--bg2);padding:6px 14px;border-radius:8px;margin-bottom:18px}',
       '.asw-price-amount{font-size:22px;font-weight:800;color:var(--text)}',
+      '.asw-price-original{font-size:16px;font-weight:600;color:var(--text2);text-decoration:line-through;margin-right:6px}',
+      '.asw-price-promo{color:#16a34a}',
       '.asw-price-unit{font-size:13px;color:var(--text2)}',
+
+      // Promo code
+      '.asw-promo-section{margin-bottom:16px}',
+      '.asw-promo-toggle{background:none;border:none;color:var(--text2);font-size:13px;cursor:pointer;padding:4px 0;font-weight:500}',
+      '.asw-promo-toggle:hover{color:var(--text)}',
+      '.asw-promo-row{display:flex;gap:8px;margin-top:6px}',
+      '.asw-promo-input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg);color:var(--text);text-transform:uppercase;letter-spacing:1px}',
+      '.asw-promo-input:focus{outline:none;border-color:var(--accent)}',
+      '.asw-promo-btn{padding:8px 16px;border:none;border-radius:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}',
+      '.asw-promo-btn:hover{opacity:.9}',
+      '.asw-promo-error{font-size:12px;color:#dc2626;margin-top:4px}',
+      '.asw-promo-applied{font-size:13px;color:#16a34a;margin-bottom:14px;padding:6px 12px;background:#f0fdf4;border-radius:6px;border:1px solid #bbf7d0}',
 
       // Fields
       '.asw-field-group{margin-bottom:16px}',
