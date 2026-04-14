@@ -64,10 +64,10 @@ async function handleTranslate(db: any, draft: any, callbackQueryId?: string) {
       `📋 <b>Тема:</b> ${escapeHtml(draft.reply_subject || '')}`,
       ``,
       `━━━ Оригінал (UK) ━━━`,
-      `<i>${escapeHtml(draft.draft_content_uk.substring(0, 300))}</i>`,
+      `<i>${escapeHtml(draft.draft_content_uk.substring(0, 800))}</i>`,
       ``,
       `━━━ Переклад (${langLabel}) ━━━`,
-      escapeHtml(translated.substring(0, 500)),
+      escapeHtml(translated.substring(0, 2000)),
     ].join('\n');
 
     const keyboard = [

@@ -343,7 +343,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const guestName = `${r.first_name || ''} ${(r.last_name || '').charAt(0)}.`.trim();
   const dLeft = daysUntil(r.check_in);
   const currentDay = dayOfStay(r.check_in);
-  const unitName = r.unit_type_name || r.unit_name || 'Your cabin';
+  const unitName = r.unit_name || r.unit_type_name || 'Your cabin';
 
   // Stage message
   const stageMsg = (() => {

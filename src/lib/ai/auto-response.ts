@@ -103,7 +103,7 @@ export async function generateAutoResponse(opts: {
         { role: 'user', content: `Гість написав:\n\nТема: ${opts.subject}\n\n${opts.content.substring(0, 1500)}` },
       ],
       temperature: 0.7,
-      max_tokens: 800,
+      max_tokens: 1500,
     });
 
     const draftUk = response.choices[0]?.message?.content;
@@ -167,7 +167,18 @@ function buildAutoResponsePrompt(opts: {
   const stageInstructions = customPrompt?.system_prompt || '';
   const contextInstructions = customPrompt?.context_instructions || '';
 
-  return `Ти — професійний рецепціоніст готелю/курорту "${property?.name || 'ALiSiO Resort & Glamping'}".
+  // Determine property name based on lead context
+  const notes = (lead?.notes || '').toLowerCase();
+  let propertyName = property?.name || 'Kemp Carlsbad';
+  if (notes.includes('tiny') || notes.includes('barn') || notes.includes('glamping') || notes.includes('domek')) {
+    propertyName = 'QA Glamping';
+  } else if (notes.includes('budov') || notes.includes('wellness') || notes.includes('rezort')) {
+    propertyName = 'Wellness Resort & Camping Kemp Carlsbad';
+  } else {
+    propertyName = 'Camping Kemp Carlsbad';
+  }
+
+  return `Ти — професійний рецепціоніст "${propertyName}".
 Розташування: ${property?.city || 'Luhačovice'}, ${property?.country || 'Czech Republic'}.
 Check-in: ${property?.check_in_time || '14:00'}, Check-out: ${property?.check_out_time || '11:00'}.
 Сьогодні: ${today}.
@@ -176,7 +187,8 @@ Check-in: ${property?.check_in_time || '14:00'}, Check-out: ${property?.check_ou
 - Напиши відповідь **УКРАЇНСЬКОЮ мовою**. Переклад буде зроблено пізніше.
 - Пиши від імені готелю ("ми", не "вони").
 - Будь ввічливим, професійним і доброзичливим.
-- Відповідь 2-4 абзаци МАКСИМУМ.
+- Відповідь має бути ПОВНОЮ — з детальним розрахунком ціни, якщо є дані.
+- НЕ обрізай відповідь на середині речення.
 - НЕ додавай привітання типу "Шановний..." — це буде додано потім.
 - НЕ додавай підпис — він додається автоматично.
 - Якщо пишуть про ціни — відповідай конкретно, якщо є дані.
@@ -198,7 +210,7 @@ ${contextInstructions ? `## Додатковий контекст\n${contextInst
 ${history || 'Це перше повідомлення від гостя.'}
 
 ## ЗАДАЧА
-Згенеруй відповідь на повідомлення гостя УКРАЇНСЬКОЮ мовою.`;
+Згенеруй ПОВНУ відповідь на повідомлення гостя УКРАЇНСЬКОЮ мовою. Не обрізай текст.`;
 }
 
 /* ────────────────────────────────────────────────────────

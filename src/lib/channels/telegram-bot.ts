@@ -127,8 +127,8 @@ export async function sendDraftApproval(opts: {
   language: string;
   accountLabel: string;
 }): Promise<number | null> {
-  const queryPreview = opts.originalQuery.substring(0, 300);
-  const responsePreview = opts.proposedResponse.substring(0, 500);
+  const queryPreview = opts.originalQuery.substring(0, 500);
+  const responsePreview = opts.proposedResponse.substring(0, 2000);
 
   const text = [
     `📩 <b>Новий запит</b> | ${opts.accountLabel}`,
