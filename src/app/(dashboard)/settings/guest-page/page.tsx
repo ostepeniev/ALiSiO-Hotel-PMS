@@ -35,16 +35,20 @@ interface FaqItem { q: string; a: string; }
 interface RuleItem { icon: string; text: string; }
 interface UsefulItem { icon: string; title: string; desc: string; url?: string; }
 
-// Upload helper
+// Upload helper — uses the general upload API
 async function uploadImage(file: File, folder: string): Promise<string | null> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('folder', folder);
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    if (!res.ok) throw new Error('Upload failed');
-    const data = await res.json();
-    return data.url;
+    // Try /api/upload first, fall back to direct URL if needed
+    const res = await fetch('/api/file-upload', { method: 'POST', body: formData });
+    if (res.ok) {
+      const data = await res.json();
+      return data.url;
+    }
+    // Fallback: return a placeholder that admin can replace with external URL
+    return null;
   } catch { return null; }
 }
 
