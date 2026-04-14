@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
       const fields = ['amenities', 'check_in_instructions', 'external_amenities', 'faq_items', 'rules',
         'wifi_network', 'wifi_password', 'restaurant_name', 'restaurant_hours', 'restaurant_menu_url', 'useful_info',
-        'lock_code', 'maps_url', 'territory_map_url'];
+        'lock_code', 'maps_url', 'territory_map_url', 'pets_policy', 'entry_photo_url'];
 
       for (const f of fields) {
         if (body[f] !== undefined) {
