@@ -189,10 +189,11 @@ function Modal({ open, onClose, title, children, footer, size }: {
    ================================================================ */
 export default function BookingsPage() {
   const { isMobile } = useDevice();
-
-  // Mobile: render dedicated mobile bookings
   if (isMobile) return <MobileBookings />;
+  return <BookingsDesktop />;
+}
 
+function BookingsDesktop() {
   /* ── data ──────────────────────────────────────────── */
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitTypeRow[]>([]);

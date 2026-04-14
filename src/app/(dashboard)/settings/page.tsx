@@ -16,6 +16,7 @@ import {
   LinkIcon,
   UserCheck,
   Code2,
+  Sparkles,
 } from 'lucide-react';
 
 const settingsItems = [
@@ -53,6 +54,13 @@ const settingsItems = [
     icon: <UserCheck size={22} />,
     href: '/settings/guest-page',
     color: 'blue',
+  },
+  {
+    title: 'Послуги для гостей',
+    desc: 'Сніданки, сауна, велосипеди, чан — ціни та статуси',
+    icon: <Sparkles size={22} />,
+    href: '/settings/services',
+    color: 'orange',
   },
   {
     title: 'Шаблони документів',

@@ -138,13 +138,15 @@ function isWeekend(d: Date): boolean { return d.getDay() === 0 || d.getDay() ===
 
 // ─── Main Component ──────────────────────────────────────
 export default function CalendarPage() {
+  const { isMobile } = useDevice();
+  if (isMobile) return <MobileCalendar />;
+  return <CalendarDesktop />;
+}
+
+function CalendarDesktop() {
   // ─── State ──────
   const onMenuClick = useMobileMenu();
-  const { isMobile } = useDevice();
   const [units, setUnits] = useState<UnitRow[]>([]);
-
-  // Mobile: render dedicated mobile calendar
-  if (isMobile) return <MobileCalendar />;
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

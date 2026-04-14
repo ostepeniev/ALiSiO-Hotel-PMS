@@ -51,16 +51,17 @@ export default function DashboardPage() {
   const onMenuClick = useMobileMenu();
   const { isMobile } = useDevice();
 
-  // Mobile: render dedicated mobile dashboard
-  if (isMobile) return <MobileDashboard />;
-
   useEffect(() => {
+    if (isMobile) return; // skip fetch on mobile — MobileDashboard fetches its own data
     fetch('/api/dashboard')
       .then(r => r.json())
       .then(d => setData(d))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [isMobile]);
+
+  // Mobile: render dedicated mobile dashboard
+  if (isMobile) return <MobileDashboard />;
 
   if (loading || !data) {
     return (
