@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { extractTexts, getStoredTranslations } from '@/lib/translate';
 
 // GET /api/guest/[token] — get full booking data for guest page
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -170,6 +171,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       services,
       orderedServices,
       guestPageConfig,
+      // Pre-computed translations: { "source text": { en: "...", de: "...", ... } }
+      translations: (() => {
+        try {
+          const texts = extractTexts(guestPageConfig || {});
+          return getStoredTranslations(texts);
+        } catch { return {}; }
+      })(),
     });
   } catch (error: any) {
     console.error('GET /api/guest/[token] error:', error?.message || error);

@@ -125,9 +125,6 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   // Weather state
   const [weather, setWeather] = useState<{ temp: number; desc: string; icon: string } | null>(null);
 
-  // Runtime translation cache: Map<"lang:text", translatedText>
-  const [rtTranslations, setRtTranslations] = useState<Map<string, string>>(new Map());
-
   // Resolve async params
   useEffect(() => { params.then(p => setToken(p.token)); }, [params]);
 
@@ -191,69 +188,18 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       .catch(() => { setError('notFound'); setLoading(false); });
   }, [token]);
 
-  // ─── Runtime translation on lang change ─────────
-  useEffect(() => {
-    if (!data || data.expired || lang === 'uk') return;
-    const cfg = data.guestPageConfig;
-    if (!cfg) return;
-
-    // Collect all custom texts that need translation
-    const textsToTranslate: string[] = [];
-    const addText = (t: string) => { if (t && t.trim() && !rtTranslations.has(`${lang}:${t}`)) textsToTranslate.push(t); };
-
-    // FAQ
-    const faqArr = typeof cfg.faq_items === 'string' ? JSON.parse(cfg.faq_items || '[]') : (cfg.faq_items || []);
-    faqArr.forEach((f: any) => { addText(f.q); addText(f.a); });
-    // Rules
-    const rulesArr = typeof cfg.rules === 'string' ? JSON.parse(cfg.rules || '[]') : (cfg.rules || []);
-    rulesArr.forEach((r: any) => addText(r.text));
-    // Useful info
-    const usefulArr = typeof cfg.useful_info === 'string' ? JSON.parse(cfg.useful_info || '[]') : (cfg.useful_info || []);
-    usefulArr.forEach((u: any) => { addText(u.title); addText(u.desc); });
-    // Restaurant
-    addText(cfg.restaurant_name); addText(cfg.restaurant_hours);
-    // Check-in instructions
-    addText(cfg.check_in_instructions);
-
-    // Filter out texts that already have dictionary translations
-    const untranslated = textsToTranslate.filter(txt => {
-      const dictResult = translateContent(txt, lang);
-      return dictResult === txt; // No dictionary match — needs runtime translation
-    });
-
-    if (untranslated.length === 0) return;
-
-    fetch('/api/guest/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texts: untranslated, lang }),
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(result => {
-        if (!result?.translations) return;
-        setRtTranslations(prev => {
-          const next = new Map(prev);
-          untranslated.forEach((text, i) => {
-            if (result.translations[i] && result.translations[i] !== text) {
-              next.set(`${lang}:${text}`, result.translations[i]);
-            }
-          });
-          return next;
-        });
-      })
-      .catch(() => {});
-  }, [lang, data]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Enhanced translateContent that uses runtime translations as fallback
+  // Enhanced translateContent: uses static dictionary + DB pre-computed translations
   const tc = useCallback((text: string): string => {
     if (!text || lang === 'uk') return text;
-    // Try dictionary first
+    // 1. Try static dictionary
     const dictResult = translateContent(text, lang);
     if (dictResult !== text) return dictResult;
-    // Try runtime cache
-    const rtResult = rtTranslations.get(`${lang}:${text}`);
-    return rtResult || text;
-  }, [lang, rtTranslations]);
+    // 2. Try DB pre-computed translations (from data.translations)
+    const dbTranslation = data?.translations?.[text]?.[lang];
+    if (dbTranslation) return dbTranslation;
+    // 3. Fallback: original text
+    return text;
+  }, [lang, data?.translations]);
 
   const t = getTranslations(lang);
 

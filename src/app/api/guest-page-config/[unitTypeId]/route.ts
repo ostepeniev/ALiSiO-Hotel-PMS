@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { extractTexts, translateAndStore } from '@/lib/translate';
 
 // GET /api/guest-page-config/[unitTypeId] — get config for specific unit type
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ unitTypeId: string }> }) {
@@ -93,6 +94,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // Return updated config
     const updated = db.prepare('SELECT * FROM guest_page_config WHERE unit_type_id = ?').get(unitTypeId);
+
+    // Trigger background translation
+    const texts = extractTexts(updated);
+    translateAndStore(texts).catch(e => console.error('[translate] bg error:', e?.message));
+
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('PUT /api/guest-page-config/[unitTypeId] error:', error?.message);

@@ -94,14 +94,21 @@ async function handleApprove(db: any, draft: any, callbackQueryId?: string, useT
     ? draft.draft_content_translated
     : draft.draft_content_uk;
 
+  // Determine brand based on account
+  const isGlamping = draft.account_id === 'emailcz';
+  const brandName = isGlamping ? 'QA Glamping' : 'Carlsbad Wellness & Camping Resort';
+  const brandUrl = isGlamping ? 'https://qa-glamping.eu/' : 'https://kemp-carlsbad.cz/';
+  const brandPhone = '+420 723 565 616';
+
   // Build HTML email
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
       ${content.replace(/\n/g, '<br>')}
       <br><br>
       <div style="color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 8px; margin-top: 16px;">
-        ALiSiO Resort & Glamping<br>
-        <a href="https://www.kempuvek.cz" style="color: #6366f1;">www.kempuvek.cz</a>
+        ${brandName}<br>
+        <a href="${brandUrl}" style="color: #6366f1;">${brandUrl.replace('https://', '')}</a><br>
+        ${brandPhone}
       </div>
     </div>
   `;
@@ -109,7 +116,7 @@ async function handleApprove(db: any, draft: any, callbackQueryId?: string, useT
   // Send via correct email account
   const result = await sendEmail({
     to: draft.reply_to_email,
-    subject: draft.reply_subject || 'Re: ALiSiO',
+    subject: draft.reply_subject || 'Re: Your inquiry',
     text: content,
     html: htmlBody,
     inReplyTo: draft.in_reply_to,

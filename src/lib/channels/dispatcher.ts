@@ -64,7 +64,7 @@ async function dispatchEmail(
     ORDER BY created_at DESC LIMIT 1
   `).get(conversationId) as any;
 
-  let subject = 'ALiSiO Resort & Glamping';
+  let subject = 'Carlsbad Wellness & Camping Resort';
   let inReplyTo: string | undefined;
   let references: string | undefined;
   let accountId: string | undefined;
@@ -86,13 +86,20 @@ async function dispatchEmail(
     references = lastInbound.external_id;
   }
 
+  // Determine brand based on account
+  const isGlamping = accountId === 'emailcz';
+  const brandName = isGlamping ? 'QA Glamping' : 'Carlsbad Wellness & Camping Resort';
+  const brandUrl = isGlamping ? 'https://qa-glamping.eu/' : 'https://kemp-carlsbad.cz/';
+  const brandPhone = '+420 723 565 616';
+
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
       ${content.replace(/\n/g, '<br>')}
       <br><br>
       <div style="color: #888; font-size: 12px; border-top: 1px solid #ddd; padding-top: 8px; margin-top: 16px;">
-        ${senderName || 'ALiSiO Resort & Glamping'}<br>
-        <a href="https://www.kempuvek.cz" style="color: #6366f1;">www.kempuvek.cz</a>
+        ${senderName || brandName}<br>
+        <a href="${brandUrl}" style="color: #6366f1;">${brandUrl.replace('https://', '')}</a><br>
+        ${brandPhone}
       </div>
     </div>
   `;

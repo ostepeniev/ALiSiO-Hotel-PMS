@@ -1982,6 +1982,23 @@ function runMigrations(database: any) {
       database.exec("ALTER TABLE guest_page_config ADD COLUMN entry_photo_url TEXT");
     }
   } catch { /* ok */ }
+
+  // --- Migration: content_translations table (pre-computed translations) ---
+  try {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS content_translations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text_hash TEXT NOT NULL,
+        source_text TEXT NOT NULL,
+        lang TEXT NOT NULL,
+        translated_text TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(text_hash, lang)
+      )
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_ct_hash ON content_translations(text_hash)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_ct_lang ON content_translations(text_hash, lang)');
+  } catch { /* ok */ }
 }
 
 // Generate a random 12-char token for guest pages

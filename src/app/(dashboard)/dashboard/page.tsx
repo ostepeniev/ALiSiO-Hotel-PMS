@@ -46,22 +46,23 @@ const CLEAN_MAP: Record<string, { label: string; badge: string }> = {
 };
 
 export default function DashboardPage() {
+  const { isMobile } = useDevice();
+  if (isMobile) return <MobileDashboard />;
+  return <DashboardDesktop />;
+}
+
+function DashboardDesktop() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const onMenuClick = useMobileMenu();
-  const { isMobile } = useDevice();
 
   useEffect(() => {
-    if (isMobile) return; // skip fetch on mobile — MobileDashboard fetches its own data
     fetch('/api/dashboard')
       .then(r => r.json())
       .then(d => setData(d))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [isMobile]);
-
-  // Mobile: render dedicated mobile dashboard
-  if (isMobile) return <MobileDashboard />;
+  }, []);
 
   if (loading || !data) {
     return (

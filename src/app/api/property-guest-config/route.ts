@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { extractTexts, translateAndStore } from '@/lib/translate';
 
 // GET /api/property-guest-config — list all property configs
 export async function GET() {
@@ -70,6 +71,11 @@ export async function PUT(request: NextRequest) {
     }
 
     const updated = db.prepare('SELECT * FROM property_guest_config WHERE property_id = ?').get(property_id);
+
+    // Trigger background translation of all texts
+    const texts = extractTexts(updated);
+    translateAndStore(texts).catch(e => console.error('[translate] bg error:', e?.message));
+
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error('PUT /api/property-guest-config error:', error?.message);

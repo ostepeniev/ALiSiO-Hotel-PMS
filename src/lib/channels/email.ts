@@ -64,7 +64,7 @@ export function getEmailAccounts(): EmailAccountConfig[] {
         port: parseInt(process.env.EMAIL_CZ_SMTP_PORT || '587'),
       },
       folder: process.env.EMAIL_POLL_FOLDER || 'INBOX',
-      fromName: 'ALiSiO Resort',
+      fromName: 'QA Glamping',
     });
   }
 
@@ -78,7 +78,7 @@ export function getEmailAccounts(): EmailAccountConfig[] {
       imap: { host: 'imap.gmail.com', port: 993 },
       smtp: { host: 'smtp.gmail.com', port: 587 },
       folder: 'INBOX',
-      fromName: 'ALiSiO Resort',
+      fromName: 'Carlsbad Wellness & Camping Resort',
     });
   }
 
@@ -318,7 +318,7 @@ export async function classifyEmail(email: IncomingEmail): Promise<EmailClassifi
 
   const client = new OpenAI({ apiKey });
 
-  const prompt = `Classify this incoming email to a hotel/resort (ALiSiO Resort & Glamping in Luhačovice, Czech Republic).
+  const prompt = `Classify this incoming email to a hotel/resort (Carlsbad Wellness & Camping Resort / QA Glamping in Luhačovice, Czech Republic).
 
 FROM: ${email.from.name} <${email.from.address}>
 SUBJECT: ${email.subject}
