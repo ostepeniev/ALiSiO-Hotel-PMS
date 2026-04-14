@@ -1,14 +1,6 @@
-var db = require('./node_modules/better-sqlite3')('data/alisio.db');
-var all = db.prepare('SELECT property_id, rules, useful_info FROM property_guest_config').all();
-console.log('Total property configs:', all.length);
-all.forEach(function(c) {
-  console.log('\n=== Property:', c.property_id, '===');
-  console.log('Rules (first 150):', c.rules ? c.rules.substring(0, 150) : 'NULL');
-  console.log('Useful (first 200):', c.useful_info ? c.useful_info.substring(0, 200) : 'NULL');
-});
-
-// Also check unit type guest_page_config  
-var ut = db.prepare('SELECT unit_type_id, rules, useful_info FROM guest_page_config WHERE unit_type_id=?').get('ut_stealth');
-console.log('\n=== UT stealth ===');
-console.log('UT Rules (first 150):', ut && ut.rules ? ut.rules.substring(0, 150) : 'NULL');
-console.log('UT Useful (first 200):', ut && ut.useful_info ? ut.useful_info.substring(0, 200) : 'NULL');
+const db = require('better-sqlite3')('data/alisio.db');
+db.prepare('UPDATE property_guest_config SET weather_lat = ?, weather_lon = ? WHERE property_id = ?')
+  .run(50.19517710413591, 12.860128251841818, 'prop_main_001');
+console.log('Updated coordinates to 50.1952, 12.8601');
+const r = db.prepare('SELECT weather_lat, weather_lon FROM property_guest_config WHERE property_id = ?').get('prop_main_001');
+console.log('Verify:', r);

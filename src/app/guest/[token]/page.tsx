@@ -419,9 +419,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             {cfg?.restaurant_name && (
               <StoryBubble emoji="🍽" label={t.restaurant} active={false} onClick={() => setSheet('restaurant')} />
             )}
-            {usefulInfoList.some((u: any) => u.icon === '🥾' || (u.title || '').includes('маршрут')) && (
-              <StoryBubble emoji="🥾" label={t.hiking} active={false} onClick={() => setSheet('hiking')} />
-            )}
+
           </div>
 
           {/* ── ACTION CARD (pre-arrival, not registered) ── */}
@@ -665,10 +663,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Directions */}
       <BottomSheet open={sheet === 'directions'} onClose={() => setSheet(null)} title={t.howToGetHereTitle}>
-        {cfg?.maps_url ? (
-          <iframe src={cfg.maps_url.includes('embed') ? cfg.maps_url : `https://www.google.com/maps?q=${encodeURIComponent(r.property_address || r.property_city || '')}&output=embed`}
-            style={{ width: '100%', height: 160, border: 'none', borderRadius: 12, marginBottom: 16 }}
-            loading="lazy" allowFullScreen />
+        {cfg?.weather_lat && cfg?.weather_lon ? (
+          <iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${cfg.weather_lon-0.008},${cfg.weather_lat-0.004},${cfg.weather_lon+0.008},${cfg.weather_lat+0.004}&layer=mapnik&marker=${cfg.weather_lat},${cfg.weather_lon}`}
+            style={{ width: '100%', height: 200, border: 'none', borderRadius: 12, marginBottom: 16 }}
+            loading="lazy" />
         ) : (
           <div className="gp-sheet-map-placeholder">🗺 {t.howToGetHere}</div>
         )}
@@ -676,7 +674,13 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           <strong>{t.address}:</strong> {r.property_address || `${r.property_city || ''}, ${r.property_country || ''}`}<br />
           {r.property_phone && <><strong>{t.support}:</strong> {r.property_phone}</>}
         </div>
-        <div className="gp-sheet-tip green">{t.videoGuide}</div>
+        {cfg?.video_guide_url ? (
+          <a href={cfg.video_guide_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+            <div className="gp-sheet-tip green" style={{ cursor: 'pointer' }}>{t.videoGuide}</div>
+          </a>
+        ) : (
+          <div className="gp-sheet-tip green">{t.videoGuide}</div>
+        )}
         {cfg?.maps_url && (
           <a href={cfg.maps_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
             <button className="gp-btn gp-btn-primary">{t.openGoogleMaps}</button>
