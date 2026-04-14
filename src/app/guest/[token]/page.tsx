@@ -314,6 +314,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     script.setAttribute('data-container', widgetId);
     script.setAttribute('data-nonce', nonce);
     if (r?.id) script.setAttribute('data-reservation', r.id);
+    if (widgetService === 'sauna') script.setAttribute('data-promo', 'GLAMPING');
     container.appendChild(script);
 
     return () => { container.innerHTML = ''; };
