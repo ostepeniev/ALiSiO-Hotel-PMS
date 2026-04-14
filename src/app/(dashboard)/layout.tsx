@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/layout/Sidebar';
 import BottomNav from '@/components/layout/BottomNav';
+import MobileLayout from '@/components/mobile/MobileLayout';
 import { MobileMenuContext } from '@/lib/MobileMenuContext';
 import ChatWidget from '@/components/ai/ChatWidget';
+import { useDevice } from '@/lib/useDevice';
 
 export default function DashboardLayout({
   children,
@@ -16,6 +18,7 @@ export default function DashboardLayout({
   const [checking, setChecking] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
+  const { isMobile } = useDevice();
 
   useEffect(() => {
     async function checkAuth() {
@@ -63,6 +66,18 @@ export default function DashboardLayout({
 
   if (!authorized) return null;
 
+  // ─── Mobile Layout ──────────────────────────────
+  if (isMobile) {
+    return (
+      <MobileMenuContext.Provider value={() => setMobileMenuOpen(true)}>
+        <MobileLayout>
+          {children}
+        </MobileLayout>
+      </MobileMenuContext.Provider>
+    );
+  }
+
+  // ─── Desktop Layout ─────────────────────────────
   return (
     <div className="app-layout">
       <Sidebar

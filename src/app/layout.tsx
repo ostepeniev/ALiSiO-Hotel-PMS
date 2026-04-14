@@ -1,9 +1,24 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'ALiSiO PMS — Property Management System',
   description: 'Modern property management system for glamping, resort, and camping properties',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'ALiSiO PMS',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#0f1019',
 };
 
 export default function RootLayout({
@@ -13,6 +28,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="uk">
+      <head>
+        <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+      </head>
       <body>{children}</body>
     </html>
   );

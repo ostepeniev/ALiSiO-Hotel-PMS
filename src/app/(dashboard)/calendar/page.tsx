@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { useDevice } from '@/lib/useDevice';
+import MobileCalendar from '@/components/mobile/pages/MobileCalendar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
 import BookingViewModal from '@/components/booking/BookingViewModal';
 import {
@@ -138,7 +140,11 @@ function isWeekend(d: Date): boolean { return d.getDay() === 0 || d.getDay() ===
 export default function CalendarPage() {
   // ─── State ──────
   const onMenuClick = useMobileMenu();
+  const { isMobile } = useDevice();
   const [units, setUnits] = useState<UnitRow[]>([]);
+
+  // Mobile: render dedicated mobile calendar
+  if (isMobile) return <MobileCalendar />;
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -316,7 +322,8 @@ export default function CalendarPage() {
   }, [units, search, categoryFilter, cleaningFilter]);
 
   const filteredBookings = useMemo(() => {
-    let result = bookings;
+    // Always hide cancelled bookings from calendar (they sync to external platforms)
+    let result = bookings.filter(b => b.status !== 'cancelled');
     if (statusFilter) result = result.filter(b => b.status === statusFilter);
     if (paymentFilter) result = result.filter(b => b.payment_status === paymentFilter);
     return result;

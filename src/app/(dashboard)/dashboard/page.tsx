@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { useDevice } from '@/lib/useDevice';
+import MobileDashboard from '@/components/mobile/pages/MobileDashboard';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -47,6 +49,10 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const onMenuClick = useMobileMenu();
+  const { isMobile } = useDevice();
+
+  // Mobile: render dedicated mobile dashboard
+  if (isMobile) return <MobileDashboard />;
 
   useEffect(() => {
     fetch('/api/dashboard')

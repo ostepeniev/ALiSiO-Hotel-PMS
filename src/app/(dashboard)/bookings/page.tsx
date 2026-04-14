@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { useDevice } from '@/lib/useDevice';
+import MobileBookings from '@/components/mobile/pages/MobileBookings';
 import SourceIcon from '@/components/ui/SourceIcon';
 import MobileFilterBar from '@/components/mobile/MobileFilterBar';
 import GroupBookingModal from '@/components/booking/GroupBookingModal';
@@ -186,6 +188,11 @@ function Modal({ open, onClose, title, children, footer, size }: {
    Main
    ================================================================ */
 export default function BookingsPage() {
+  const { isMobile } = useDevice();
+
+  // Mobile: render dedicated mobile bookings
+  if (isMobile) return <MobileBookings />;
+
   /* ── data ──────────────────────────────────────────── */
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitTypeRow[]>([]);

@@ -126,18 +126,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       ).get(reservation.property_id) as any || null;
     } catch { /* table may not exist yet */ }
 
-    // Merge: unit-type overrides property-level
+    // Merge: property = shared base, unit-type = specific overrides
     const guestPageConfig = propertyConfig ? {
       ...unitTypeConfig,
-      // Property-level fields as defaults (unit-type overrides if set)
+      // Property-level fields (ALWAYS from property — these are shared)
       wifi_network: unitTypeConfig?.wifi_network || propertyConfig.wifi_network,
       wifi_password: unitTypeConfig?.wifi_password || propertyConfig.wifi_password,
       restaurant_name: propertyConfig.restaurant_name,
       restaurant_hours: propertyConfig.restaurant_hours,
       restaurant_menu_url: propertyConfig.restaurant_menu_url,
-      rules: unitTypeConfig?.rules || propertyConfig.rules,
-      useful_info: unitTypeConfig?.useful_info || propertyConfig.useful_info,
-      faq_items: unitTypeConfig?.faq_items || propertyConfig.faq_items,
+      rules: propertyConfig.rules,  // Always from property (shared)
+      useful_info: propertyConfig.useful_info,  // Always from property (shared)
+      faq_items: propertyConfig.faq_items,  // Always from property (shared)
       maps_url: unitTypeConfig?.maps_url || propertyConfig.maps_url,
       territory_map_url: unitTypeConfig?.territory_map_url || propertyConfig.territory_map_url,
       pets_policy: unitTypeConfig?.pets_policy || propertyConfig.pets_policy || 'welcome',

@@ -61,7 +61,7 @@ export function getEmailAccounts(): EmailAccountConfig[] {
       },
       smtp: {
         host: process.env.EMAIL_CZ_SMTP_HOST || 'smtp.seznam.cz',
-        port: parseInt(process.env.EMAIL_CZ_SMTP_PORT || '465'),
+        port: parseInt(process.env.EMAIL_CZ_SMTP_PORT || '587'),
       },
       folder: process.env.EMAIL_POLL_FOLDER || 'INBOX',
       fromName: 'ALiSiO Resort',
@@ -76,7 +76,7 @@ export function getEmailAccounts(): EmailAccountConfig[] {
       user: process.env.GMAIL_USER,
       password: process.env.GMAIL_APP_PASSWORD,
       imap: { host: 'imap.gmail.com', port: 993 },
-      smtp: { host: 'smtp.gmail.com', port: 465 },
+      smtp: { host: 'smtp.gmail.com', port: 587 },
       folder: 'INBOX',
       fromName: 'ALiSiO Resort',
     });
@@ -245,10 +245,11 @@ export async function sendEmail(opts: {
     throw new Error('No email accounts configured');
   }
 
+  const isPort465 = account.smtp.port === 465;
   const transporter = nodemailer.createTransport({
     host: account.smtp.host,
     port: account.smtp.port,
-    secure: true,
+    secure: isPort465,  // true for 465 (SSL), false for 587 (STARTTLS)
     auth: { user: account.user, pass: account.password },
   });
 

@@ -8,10 +8,7 @@ import {
   getTranslations, detectLanguage, getBrandName,
   formatDateLocalized, formatPriceLocalized,
 } from './translations';
-import {
-  translateContent, translateAmenity,
-  translateRule, translateUsefulInfo,
-} from './content-translations';
+import { translateContent } from './content-translations';
 
 // ─── Helpers ────────────────────────────────────
 function parseJSON<T>(val: string | null | undefined, fallback: T): T {
@@ -128,6 +125,9 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   // Weather state
   const [weather, setWeather] = useState<{ temp: number; desc: string; icon: string } | null>(null);
 
+  // Runtime translation cache: Map<"lang:text", translatedText>
+  const [rtTranslations, setRtTranslations] = useState<Map<string, string>>(new Map());
+
   // Resolve async params
   useEffect(() => { params.then(p => setToken(p.token)); }, [params]);
 
@@ -190,6 +190,70 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       })
       .catch(() => { setError('notFound'); setLoading(false); });
   }, [token]);
+
+  // ─── Runtime translation on lang change ─────────
+  useEffect(() => {
+    if (!data || data.expired || lang === 'uk') return;
+    const cfg = data.guestPageConfig;
+    if (!cfg) return;
+
+    // Collect all custom texts that need translation
+    const textsToTranslate: string[] = [];
+    const addText = (t: string) => { if (t && t.trim() && !rtTranslations.has(`${lang}:${t}`)) textsToTranslate.push(t); };
+
+    // FAQ
+    const faqArr = typeof cfg.faq_items === 'string' ? JSON.parse(cfg.faq_items || '[]') : (cfg.faq_items || []);
+    faqArr.forEach((f: any) => { addText(f.q); addText(f.a); });
+    // Rules
+    const rulesArr = typeof cfg.rules === 'string' ? JSON.parse(cfg.rules || '[]') : (cfg.rules || []);
+    rulesArr.forEach((r: any) => addText(r.text));
+    // Useful info
+    const usefulArr = typeof cfg.useful_info === 'string' ? JSON.parse(cfg.useful_info || '[]') : (cfg.useful_info || []);
+    usefulArr.forEach((u: any) => { addText(u.title); addText(u.desc); });
+    // Restaurant
+    addText(cfg.restaurant_name); addText(cfg.restaurant_hours);
+    // Check-in instructions
+    addText(cfg.check_in_instructions);
+
+    // Filter out texts that already have dictionary translations
+    const untranslated = textsToTranslate.filter(txt => {
+      const dictResult = translateContent(txt, lang);
+      return dictResult === txt; // No dictionary match — needs runtime translation
+    });
+
+    if (untranslated.length === 0) return;
+
+    fetch('/api/guest/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texts: untranslated, lang }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(result => {
+        if (!result?.translations) return;
+        setRtTranslations(prev => {
+          const next = new Map(prev);
+          untranslated.forEach((text, i) => {
+            if (result.translations[i] && result.translations[i] !== text) {
+              next.set(`${lang}:${text}`, result.translations[i]);
+            }
+          });
+          return next;
+        });
+      })
+      .catch(() => {});
+  }, [lang, data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Enhanced translateContent that uses runtime translations as fallback
+  const tc = useCallback((text: string): string => {
+    if (!text || lang === 'uk') return text;
+    // Try dictionary first
+    const dictResult = translateContent(text, lang);
+    if (dictResult !== text) return dictResult;
+    // Try runtime cache
+    const rtResult = rtTranslations.get(`${lang}:${text}`);
+    return rtResult || text;
+  }, [lang, rtTranslations]);
 
   const t = getTranslations(lang);
 
@@ -463,7 +527,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 {data.services?.slice(0, 3).map((svc: any, i: number) => {
                   const wType = getWidgetType(svc);
                   return (
-                    <ListRow key={svc.id} icon={svc.icon || '✨'} label={svc.name_en && lang !== 'uk' ? svc.name_en : translateContent(svc.name, lang)}
+                    <ListRow key={svc.id} icon={svc.icon || '✨'} label={svc.name_en && lang !== 'uk' ? svc.name_en : tc(svc.name)}
                       onClick={() => {
                         if (wType) { setWidgetService(wType); }
                         else { setSelectedService(svc); setSheet('service'); }
@@ -515,8 +579,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               <div className="gp-list-card" style={{ padding: 16 }}>
                 <div className="gp-amenity-grid">
                   {amenities.map((am: any, i: number) => {
-                    const ta = translateAmenity(am, lang);
-                    return <span key={i} className="gp-amenity-chip">{ta.icon} {ta.name}</span>;
+                    return <span key={i} className="gp-amenity-chip">{am.icon} {tc(am.name)}</span>;
                   })}
                 </div>
               </div>
@@ -530,8 +593,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <div className="gp-rules-title">{t.houseRules}</div>
                 <div className="gp-rules-text">
                   {rules.map((rule: any, i: number) => {
-                    const tr = translateRule(rule, lang);
-                    return <span key={i}>{tr.icon} {tr.text}{i < rules.length - 1 ? ' · ' : ''}</span>;
+                    return <span key={i}>{rule.icon} {tc(rule.text)}{i < rules.length - 1 ? ' · ' : ''}</span>;
                   })}
                 </div>
               </div>
@@ -545,8 +607,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               <div className="gp-list-card" style={{ padding: 16 }}>
                 {faqItems.map((faq: any, i: number) => (
                   <details key={i} className="gp-faq-item">
-                    <summary className="gp-faq-q">{translateContent(faq.q || '', lang)}</summary>
-                    <div className="gp-faq-a">{translateContent(faq.a || '', lang)}</div>
+                    <summary className="gp-faq-q">{tc(faq.q || '')}</summary>
+                    <div className="gp-faq-a">{tc(faq.a || '')}</div>
                   </details>
                 ))}
               </div>
@@ -580,14 +642,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <div className="gp-service-emoji">{svc.icon || '✨'}</div>
                 <div className="gp-service-info">
                   <div className="gp-service-name">
-                    {svc.name_en && lang !== 'uk' ? svc.name_en : translateContent(svc.name, lang)}
+                    {svc.name_en && lang !== 'uk' ? svc.name_en : tc(svc.name)}
                     {isOrdered && ' ✅'}
                   </div>
-                  <div className="gp-service-desc">{translateContent(svc.description || '', lang)}</div>
+                  <div className="gp-service-desc">{tc(svc.description || '')}</div>
                 </div>
                 <div className="gp-service-price-col">
                   <div className="gp-service-price">{formatPriceLocalized(svc.price, svc.currency)}</div>
-                  {svc.unit_label && <div className="gp-service-per">/{translateContent(svc.unit_label, lang)}</div>}
+                  {svc.unit_label && <div className="gp-service-per">/{tc(svc.unit_label)}</div>}
                 </div>
               </button>
             );
@@ -601,9 +663,9 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           {/* Restaurant */}
           {cfg?.restaurant_name && (
             <div className="gp-restaurant">
-              <div className="gp-restaurant-title">🍽 {translateContent(cfg.restaurant_name, lang)}</div>
+              <div className="gp-restaurant-title">🍽 {tc(cfg.restaurant_name)}</div>
               {cfg.restaurant_hours && (
-                <div className="gp-restaurant-hours">{translateContent(cfg.restaurant_hours, lang)}</div>
+                <div className="gp-restaurant-hours">{tc(cfg.restaurant_hours)}</div>
               )}
               {cfg.restaurant_menu_url && (
                 <a href={cfg.restaurant_menu_url} target="_blank" rel="noopener noreferrer">
@@ -622,11 +684,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           <div className="gp-tab-subtitle">{t.exploreSubtitle}</div>
 
           {usefulInfoList.length > 0 ? usefulInfoList.map((info: any, i: number) => {
-            const ti = translateUsefulInfo(info, lang);
             return (
               <div key={i} className="gp-explore-card">
-                <div className="gp-explore-title">{ti.icon} {ti.title}</div>
-                <div className="gp-explore-desc">{ti.desc}</div>
+                <div className="gp-explore-title">{info.icon} {tc(info.title)}</div>
+                <div className="gp-explore-desc">{tc(info.desc)}</div>
                 {info.url && (
                   <a href={info.url} target="_blank" rel="noopener noreferrer">
                     <button className="gp-explore-cta">{t.navigate} →</button>
@@ -717,7 +778,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           <div className="gp-entry-photo">📷 Photo of entrance / lockbox</div>
         )}
         {cfg?.check_in_instructions ? (
-          <div className="gp-entry-steps">{translateContent(cfg.check_in_instructions, lang)}</div>
+          <div className="gp-entry-steps">{tc(cfg.check_in_instructions)}</div>
         ) : (
           <div className="gp-entry-steps">
             <strong>1.</strong> {t.entryStep1}<br />
@@ -736,10 +797,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       </BottomSheet>
 
       {/* Restaurant */}
-      <BottomSheet open={sheet === 'restaurant'} onClose={() => setSheet(null)} title={translateContent(cfg?.restaurant_name || 'Restaurant', lang)}>
+      <BottomSheet open={sheet === 'restaurant'} onClose={() => setSheet(null)} title={tc(cfg?.restaurant_name || 'Restaurant')}>
         {cfg?.restaurant_hours && (
           <div style={{ fontSize: 15, lineHeight: 1.8, marginBottom: 16 }}>
-            {translateContent(cfg.restaurant_hours, lang)}
+            {tc(cfg.restaurant_hours)}
           </div>
         )}
         <div className="gp-sheet-tip green">
@@ -749,17 +810,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Service detail (simple services) */}
       <BottomSheet open={sheet === 'service' && !!selectedService} onClose={() => { setSheet(null); setSelectedService(null); }}
-        title={selectedService ? (selectedService.name_en && lang !== 'uk' ? selectedService.name_en : translateContent(selectedService.name || '', lang)) : ''}>
+        title={selectedService ? (selectedService.name_en && lang !== 'uk' ? selectedService.name_en : tc(selectedService.name || '')) : ''}>
         {selectedService && (
           <>
             <div className="gp-service-detail">
               <div className="gp-service-detail-emoji">{selectedService.icon || '✨'}</div>
               <div className="gp-service-detail-price">{formatPriceLocalized(selectedService.price, selectedService.currency)}</div>
               {selectedService.unit_label && (
-                <div className="gp-service-detail-per">{t.per} {translateContent(selectedService.unit_label, lang)}</div>
+                <div className="gp-service-detail-per">{t.per} {tc(selectedService.unit_label)}</div>
               )}
             </div>
-            <div className="gp-service-detail-desc">{translateContent(selectedService.description || '', lang)}</div>
+            <div className="gp-service-detail-desc">{tc(selectedService.description || '')}</div>
             {!data.orderedServices?.some((o: any) => o.service_id === selectedService.id) ? (
               <button className="gp-btn gp-btn-primary" onClick={() => handleOrderService(selectedService.id)}
                 disabled={orderingService === selectedService.id}>
