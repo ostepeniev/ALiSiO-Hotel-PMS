@@ -143,6 +143,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       territory_map_url: unitTypeConfig?.territory_map_url || propertyConfig.territory_map_url,
       pets_policy: unitTypeConfig?.pets_policy || propertyConfig.pets_policy || 'welcome',
       parking_info: propertyConfig.parking_info,
+      parking_photo_url: propertyConfig.parking_photo_url,
       video_guide_url: propertyConfig.video_guide_url,
       emergency_phone: propertyConfig.emergency_phone,
       weather_lat: propertyConfig.weather_lat,

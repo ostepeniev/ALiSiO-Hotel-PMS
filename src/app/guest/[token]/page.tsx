@@ -110,17 +110,15 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   // Registration state
   const [showReg, setShowReg] = useState(false);
   const [regStep, setRegStep] = useState(1);
+  const [regCurrentGuest, setRegCurrentGuest] = useState(0); // 0-indexed: which guest is being registered
   const [regData, setRegData] = useState({
     fullName: '', email: '', phone: '', dateOfBirth: '',
-    documentType: '', documentNumber: '', nationality: '',
+    documentType: '', documentNumber: '', nationality: '', address: '',
   });
   const [regLoading, setRegLoading] = useState(false);
 
-  // Chat state
-  const [chatMsgs, setChatMsgs] = useState<{ from: 'host' | 'guest'; text: string; time: string }[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  // WhatsApp number
+  const WHATSAPP_NUMBER = '420723565616';
 
   // Weather state
   const [weather, setWeather] = useState<{ temp: number; desc: string; icon: string } | null>(null);
@@ -141,23 +139,18 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         const guestPhone = d.reservation?.guest_phone || null;
         const detectedLang = detectLanguage(guestPhone, guestCountry);
         setLang(detectedLang);
-        // Init chat welcome (local only, DB messages loaded separately)
-        const guestName = d.reservation?.first_name || 'Guest';
-        setChatMsgs([{ from: 'host', text: getTranslations(detectedLang).chatWelcome(guestName), time: '' }]);
-        // Load chat history from DB
-        fetch(`/api/guest/${token}/chat`)
-          .then(r => r.ok ? r.json() : null)
-          .then(c => {
-            if (c?.messages?.length) {
-              const dbMsgs = c.messages.map((m: any) => ({
-                from: m.sender === 'guest' ? 'guest' as const : 'host' as const,
-                text: m.message,
-                time: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-              }));
-              const welcome = { from: 'host' as const, text: getTranslations(detectedLang).chatWelcome(guestName), time: '' };
-              setChatMsgs([welcome, ...dbMsgs]);
-            }
-          }).catch(() => {});
+        // Check for payment return
+        if (typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search);
+          const paymentStatus = urlParams.get('payment');
+          if (paymentStatus === 'success') {
+            setTimeout(() => showToast('💳 ' + getTranslations(detectedLang).serviceOrdered), 500);
+            window.history.replaceState({}, '', window.location.pathname);
+          } else if (paymentStatus === 'cancel') {
+            setTimeout(() => showToast(getTranslations(detectedLang).orderError, 'error'), 500);
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        }
         // Fetch weather if coords available
         const lat = d.guestPageConfig?.weather_lat;
         const lon = d.guestPageConfig?.weather_lon;
@@ -181,7 +174,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             email: g.email || '', phone: g.phone || '',
             dateOfBirth: g.date_of_birth || '',
             documentType: g.document_type || '', documentNumber: g.document_number || '',
-            nationality: g.nationality || '',
+            nationality: g.nationality || '', address: g.address || '',
           });
         }
       })
@@ -211,7 +204,9 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   // ─── Phase/Stage logic ─────────────────────────
   const r = data?.reservation;
   const cfg = data?.guestPageConfig;
-  const isRegistered = (data?.registeredGuests?.length || 0) > 0;
+  const requiredGuests = r?.adults || 1;
+  const registeredCount = data?.registeredGuests?.length || 0;
+  const isRegistered = registeredCount >= requiredGuests;
   const catType = r?.category_type || 'resort';
   const brandName = data?.expired ? data.brandName : getBrandName(catType);
 
@@ -227,71 +222,81 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     return 'before';
   })();
 
-  // ─── Service ordering ──────────────────────────
+  // ─── Service ordering (with Teya payment) ─────
   const handleOrderService = async (serviceId: string) => {
     setOrderingService(serviceId);
     try {
-      const res = await fetch(`/api/guest/${token}/services`, {
+      const res = await fetch(`/api/guest/${token}/pay`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ services: [{ serviceId, quantity: 1 }] }),
+        body: JSON.stringify({ serviceId, quantity: 1 }),
       });
-      if (!res.ok) throw new Error('Error');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Payment error');
+      }
       const result = await res.json();
-      setData((prev: any) => ({ ...prev, orderedServices: result.orderedServices }));
+      if (result.session_url) {
+        // Redirect to Teya payment page
+        window.location.href = result.session_url;
+        return;
+      }
+      // Fallback: if no session_url, treat as simple order
       setSheet(null); setSelectedService(null);
       showToast(t.serviceOrdered);
-    } catch { showToast(t.orderError, 'error'); }
+    } catch (err: any) {
+      showToast(err.message || t.orderError, 'error');
+    }
     setOrderingService(null);
   };
 
-  // ─── Registration submit ──────────────────────
+  // ─── Registration submit (one guest at a time) ──
   const handleRegSubmit = async () => {
     setRegLoading(true);
     try {
       const nameParts = regData.fullName.trim().split(/\s+/);
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
-      const guests = [{
+      // Collect all previously registered guests + this new one
+      const existingGuests = (data?.registeredGuests || []).map((g: any) => ({
+        firstName: g.first_name, lastName: g.last_name,
+        dateOfBirth: g.date_of_birth, address: g.address,
+        nationality: g.nationality, documentType: g.document_type,
+        documentNumber: g.document_number,
+      }));
+      const allGuests = [...existingGuests, {
         firstName, lastName,
-        dateOfBirth: regData.dateOfBirth, address: '',
+        dateOfBirth: regData.dateOfBirth, address: regData.address,
         nationality: regData.nationality,
         documentType: regData.documentType,
         documentNumber: regData.documentNumber,
       }];
       const res = await fetch(`/api/guest/${token}/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guests }),
+        body: JSON.stringify({ guests: allGuests }),
       });
       if (!res.ok) throw new Error('Error');
       const result = await res.json();
       setData((prev: any) => ({ ...prev, registeredGuests: result.registeredGuests }));
-      setShowReg(false); setRegStep(1);
-      showToast(t.regSaved);
+      const newCount = result.registeredGuests?.length || 0;
+      if (newCount >= requiredGuests) {
+        // All guests registered
+        setShowReg(false);
+        showToast(t.regSaved);
+      } else {
+        // More guests to register — reset form for next guest
+        setRegCurrentGuest(newCount);
+        setRegStep(1);
+        setRegData({ fullName: '', email: '', phone: '', dateOfBirth: '', documentType: '', documentNumber: '', nationality: '', address: '' });
+        showToast(`✅ ${t.guestReg} ${newCount}/${requiredGuests}`);
+      }
     } catch { showToast(t.regError, 'error'); }
     setRegLoading(false);
   };
 
-  // ─── Chat ──────────────────────────────────────
-  const sendChat = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-    const msg = chatInput.trim();
-    const now = new Date();
-    const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setChatMsgs(prev => [...prev, { from: 'guest', text: msg, time }]);
-    setChatInput('');
-    setChatLoading(true);
-    try {
-      await fetch(`/api/guest/${token}/chat`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, sender: 'guest' }),
-      });
-    } catch { /* silently fail */ }
-    setChatLoading(false);
-  };
-
-  useEffect(() => {
-    if (sheet === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMsgs, sheet]);
+  // ─── WhatsApp helper ──────────────────────────
+  const openWhatsApp = useCallback(() => {
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}`, '_blank');
+  }, []);
 
   // ─── Service widget injection ─────────────────
   useEffect(() => {
@@ -414,7 +419,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           {/* ── STORIES ROW ── */}
           <div className="gp-stories">
             <StoryBubble emoji="📍" label={t.directions} active onClick={() => setSheet('directions')} />
-            <StoryBubble emoji="🔑" label={t.entry} active onClick={() => setSheet('entry')} />
+            <StoryBubble emoji="🔑" label={t.entry} active onClick={() => {
+              if (!isRegistered) { setSheet('reg-required'); return; }
+              setSheet('entry');
+            }} />
             <StoryBubble emoji="📶" label={t.wifi} active onClick={() => setSheet('wifi')} />
             <StoryBubble emoji="🅿️" label={t.parking} active onClick={() => setSheet('parking')} />
             {cfg?.restaurant_name && (
@@ -423,17 +431,19 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
           </div>
 
-          {/* ── ACTION CARD (pre-arrival, not registered) ── */}
-          {phase === 'before' && !isRegistered && (
+          {/* ── ACTION CARD (registration required — always visible until complete) ── */}
+          {!isRegistered && (
             <div className="gp-action-card">
               <div className="gp-action-card-top">
                 <div className="gp-action-badge">!</div>
                 <div>
                   <div className="gp-action-title">{t.completeReg}</div>
-                  <div className="gp-action-desc">{t.regMinutes}</div>
+                  <div className="gp-action-desc">{registeredCount > 0 ? `${registeredCount}/${requiredGuests} ${t.done}` : t.regMinutes}</div>
                 </div>
               </div>
-              <button className="gp-btn gp-btn-primary" onClick={() => setShowReg(true)}>{t.startReg}</button>
+              <button className="gp-btn gp-btn-primary" onClick={() => { setRegCurrentGuest(registeredCount); setShowReg(true); }}>
+                {registeredCount > 0 ? `${t.startReg} (${registeredCount + 1}/${requiredGuests})` : t.startReg}
+              </button>
             </div>
           )}
 
@@ -457,11 +467,13 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               {phase === 'before' && <>
                 <ListRow icon="✅" label={t.bookingConfirmed} chevron={false} />
                 <ListRow icon={isRegistered ? '✅' : '⚠️'} label={t.guestReg}
-                  value={isRegistered ? t.done : t.required}
+                  value={isRegistered ? t.done : `${registeredCount}/${requiredGuests}`}
                   valueClass={isRegistered ? '' : 'required'}
-                  onClick={isRegistered ? null : () => setShowReg(true)} />
-                <ListRow icon="🔒" label={t.entryInstructions}
-                  value={formatDateLocalized(r.check_in, lang)} chevron={false} last />
+                  onClick={isRegistered ? null : () => { setRegCurrentGuest(registeredCount); setShowReg(true); }} />
+                <ListRow icon={isRegistered ? '🔑' : '🔒'} label={t.entryInstructions}
+                  value={isRegistered ? '' : formatDateLocalized(r.check_in, lang)}
+                  onClick={isRegistered ? () => setSheet('entry') : () => setSheet('reg-required')}
+                  last />
               </>}
               {phase === 'checkin_day' && <>
                 <ListRow icon="✅" label={t.regComplete} chevron={false} />
@@ -691,6 +703,9 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Parking */}
       <BottomSheet open={sheet === 'parking'} onClose={() => setSheet(null)} title={t.parkingTitle}>
+        {cfg?.parking_photo_url && (
+          <img src={cfg.parking_photo_url} alt="Parking" style={{ width: '100%', borderRadius: 12, marginBottom: 16, objectFit: 'cover', maxHeight: 200 }} />
+        )}
         <div className="gp-sheet-info" style={{ textAlign: 'center', padding: '20px 0' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🅿️</div>
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.parkingFree}</div>
@@ -772,10 +787,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               )}
             </div>
             <div className="gp-service-detail-desc">{tc(selectedService.description || '')}</div>
-            {!data.orderedServices?.some((o: any) => o.service_id === selectedService.id) ? (
+            {!data.orderedServices?.some((o: any) => o.service_id === selectedService.id && o.payment_status === 'paid') ? (
               <button className="gp-btn gp-btn-primary" onClick={() => handleOrderService(selectedService.id)}
                 disabled={orderingService === selectedService.id}>
-                {orderingService === selectedService.id ? '...' : t.addToStay}
+                {orderingService === selectedService.id ? '...' : `💳 ${t.addToStay} — ${formatPriceLocalized(selectedService.price, selectedService.currency)}`}
               </button>
             ) : (
               <button className="gp-btn" style={{ background: 'var(--gp-green)', color: '#FFF' }} disabled>✅ {t.done}</button>
@@ -792,22 +807,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         <div ref={widgetContainerRef} style={{ minHeight: 200 }} />
       </BottomSheet>
 
-      {/* Chat */}
-      <BottomSheet open={sheet === 'chat'} onClose={() => setSheet(null)} title={t.chatTitle}>
-        <div className="gp-chat-messages">
-          {chatMsgs.map((m, i) => (
-            <div key={i} className={`gp-chat-msg ${m.from}`}>
-              <div className="gp-chat-bubble">{m.text}</div>
-              <div className="gp-chat-time">{m.time}</div>
-            </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-        <div className="gp-chat-input-row">
-          <input className="gp-chat-input" value={chatInput} onChange={e => setChatInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && sendChat()}
-            placeholder={t.typePlaceholder} />
-          <button className="gp-chat-send" onClick={sendChat}>↑</button>
+      {/* Registration required sheet */}
+      <BottomSheet open={sheet === 'reg-required'} onClose={() => setSheet(null)} title={t.entryTitle}>
+        <div className="gp-sheet-info" style={{ textAlign: 'center', padding: '30px 0' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{t.completeReg}</div>
+          <div style={{ fontSize: 14, color: 'var(--gp-sub)', marginBottom: 20 }}>
+            {registeredCount > 0 ? `${registeredCount}/${requiredGuests} ${t.done}` : t.regMinutes}
+          </div>
+          <button className="gp-btn gp-btn-primary" onClick={() => { setSheet(null); setRegCurrentGuest(registeredCount); setShowReg(true); }}>
+            {t.startReg}
+          </button>
         </div>
       </BottomSheet>
 
@@ -819,7 +829,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
               if (regStep === 1) setShowReg(false);
               else setRegStep(s => s - 1);
             }}>{regStep === 1 ? '✕' : t.back}</button>
-            <span className="gp-reg-step">{t.stepOf(regStep, 3)}</span>
+            <span className="gp-reg-step">{requiredGuests > 1 ? `${t.guest} ${regCurrentGuest + 1}/${requiredGuests} · ` : ''}{t.stepOf(regStep, 3)}</span>
             <div style={{ width: 48 }} />
           </div>
           <div className="gp-reg-progress">
@@ -879,7 +889,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <div className="gp-field">
                   <div className="gp-field-label">{t.nationality} *</div>
                   <input className="gp-field-input" value={regData.nationality} autoComplete="country-name"
+                    placeholder="DEU, CZE, UKR..."
                     onChange={e => setRegData(d => ({ ...d, nationality: e.target.value }))} />
+                </div>
+                <div className="gp-field">
+                  <div className="gp-field-label">{t.permanentAddress} *</div>
+                  <input className="gp-field-input" value={regData.address} autoComplete="street-address"
+                    placeholder="München, Germany"
+                    onChange={e => setRegData(d => ({ ...d, address: e.target.value }))} />
                 </div>
               </>
             )}
@@ -897,6 +914,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                     [t.documentType, regData.documentType],
                     [t.documentNumber, regData.documentNumber],
                     [t.nationality, regData.nationality],
+                    [t.permanentAddress, regData.address],
                   ].map(([label, value], i) => (
                     <div key={i} className="gp-confirm-row">
                       <span className="gp-confirm-label">{label}</span>
@@ -919,7 +937,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                   }
                 }
                 if (regStep === 2) {
-                  if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim()) {
+                  if (!regData.documentType || !regData.documentNumber.trim() || !regData.nationality.trim() || !regData.address.trim()) {
                     showToast(t.regError, 'error'); return;
                   }
                 }
@@ -942,11 +960,12 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           { id: 'home' as const, icon: '🏠', label: t.home },
           { id: 'services' as const, icon: '✨', label: t.services },
           { id: 'explore' as const, icon: '🗺', label: t.explore },
-          { id: 'chat' as const, icon: '💬', label: t.chat },
+          { id: 'whatsapp' as const, icon: '💬', label: 'WhatsApp' },
         ] as const).map(item => (
-          <button key={item.id} className={`gp-tab-btn ${item.id !== 'chat' && tab === item.id ? 'active' : ''}`}
-            onClick={() => item.id === 'chat' ? setSheet('chat') : setTab(item.id as 'home' | 'services' | 'explore')}>
-            <span className="gp-tab-icon">{item.icon}</span>
+          <button key={item.id} className={`gp-tab-btn ${item.id !== 'whatsapp' && tab === item.id ? 'active' : ''}`}
+            onClick={() => item.id === 'whatsapp' ? openWhatsApp() : setTab(item.id as 'home' | 'services' | 'explore')}
+            style={item.id === 'whatsapp' ? { color: '#25D366' } : undefined}>
+            <span className="gp-tab-icon">{item.id === 'whatsapp' ? '📱' : item.icon}</span>
             <span className="gp-tab-label">{item.label}</span>
           </button>
         ))}

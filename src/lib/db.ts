@@ -1119,6 +1119,23 @@ function runMigrations(database: any) {
     console.log('[DB] unit_types extension note:', e.message);
   }
 
+  // --- Migration: add parking_photo_url to property_guest_config ---
+  try {
+    database.exec(`ALTER TABLE property_guest_config ADD COLUMN parking_photo_url TEXT`);
+    console.log('[DB] Added parking_photo_url to property_guest_config');
+  } catch {
+    // Column already exists — ignore
+  }
+
+  // --- Migration: add payment columns to service_orders ---
+  try {
+    database.exec(`ALTER TABLE service_orders ADD COLUMN payment_id TEXT`);
+    database.exec(`ALTER TABLE service_orders ADD COLUMN payment_status TEXT DEFAULT 'none' CHECK (payment_status IN ('none', 'pending', 'paid', 'failed', 'refunded'))`);
+    console.log('[DB] Added payment columns to service_orders');
+  } catch {
+    // Columns already exist — ignore
+  }
+
   // --- Migration: seed new services (tub, late checkout, early checkin) ---
   try {
     const propRow2 = database.prepare("SELECT id FROM properties LIMIT 1").get() as any;

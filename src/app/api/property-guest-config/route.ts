@@ -35,7 +35,7 @@ export async function PUT(request: NextRequest) {
     const fields = [
       'wifi_network', 'wifi_password', 'restaurant_name', 'restaurant_hours', 'restaurant_menu_url',
       'rules', 'useful_info', 'faq_items', 'maps_url', 'territory_map_url',
-      'pets_policy', 'parking_info', 'video_guide_url', 'emergency_phone',
+      'pets_policy', 'parking_info', 'parking_photo_url', 'video_guide_url', 'emergency_phone',
       'weather_lat', 'weather_lon',
     ];
 

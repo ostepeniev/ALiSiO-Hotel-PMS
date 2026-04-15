@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 // POST /api/guest/[token]/register — submit guest registration data
 export async function POST(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
@@ -10,11 +11,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { token } = await params;
     const body = await request.json();
 
-    // Find reservation with organization_id
+    // Find reservation with organization_id + full booking info for notification
     const reservation = db.prepare(`
-      SELECT r.id, r.guest_id as booking_guest_id, p.organization_id
+      SELECT r.id, r.guest_id as booking_guest_id, r.check_in, r.check_out, r.nights,
+             r.adults, r.total_price, r.currency, r.source, r.status, r.payment_status,
+             g.first_name as booking_first_name, g.last_name as booking_last_name,
+             g.email as booking_email, g.phone as booking_phone,
+             u.name as unit_name, ut.name as unit_type_name,
+             p.organization_id, p.name as property_name
       FROM reservations r
       JOIN properties p ON r.property_id = p.id
+      JOIN guests g ON r.guest_id = g.id
+      JOIN units u ON r.unit_id = u.id
+      JOIN unit_types ut ON u.unit_type_id = ut.id
       WHERE r.guest_page_token = ?
     `).get(token) as any;
 
@@ -131,6 +140,44 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const registeredGuests = db.prepare(
       'SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at'
     ).all(reservation.id);
+
+    // ─── Telegram notification ───────────────────
+    try {
+      const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const guestLines = registeredGuests.map((g: any, i: number) => {
+        const docLabel: Record<string, string> = { passport: 'Passport', id_card: 'ID Card', driving_license: 'Driving Licence' };
+        return [
+          `\n👤 <b>Гість ${i + 1}:</b> ${escHtml(g.first_name)} ${escHtml(g.last_name)}`,
+          g.date_of_birth ? `🎂 ${g.date_of_birth}` : '',
+          g.document_type ? `🪪 ${docLabel[g.document_type] || g.document_type}: ${escHtml(g.document_number || '')}` : '',
+          g.nationality ? `🌍 Країна: ${escHtml(g.nationality)}` : '',
+          g.address ? `🏠 Адреса: ${escHtml(g.address)}` : '',
+        ].filter(Boolean).join('\n');
+      }).join('\n');
+
+      const text = [
+        `✅ <b>Реєстрація гостя</b>`,
+        ``,
+        `🏠 ${escHtml(reservation.unit_name)} (${escHtml(reservation.unit_type_name)})`,
+        `📅 ${reservation.check_in} — ${reservation.check_out} (${reservation.nights} ночей)`,
+        `💰 ${reservation.total_price} ${reservation.currency} | ${escHtml(reservation.source || 'Direct')}`,
+        `📊 Статус: ${reservation.status} | Оплата: ${reservation.payment_status}`,
+        ``,
+        `━━━ Контакти з бронювання ━━━`,
+        `👤 ${escHtml(reservation.booking_first_name)} ${escHtml(reservation.booking_last_name)}`,
+        reservation.booking_email ? `📧 ${escHtml(reservation.booking_email)}` : '',
+        reservation.booking_phone ? `📞 ${reservation.booking_phone}` : '',
+        ``,
+        `━━━ Зареєстровані гості (${registeredGuests.length}/${reservation.adults}) ━━━`,
+        guestLines,
+      ].filter(Boolean).join('\n');
+
+      sendTelegramMessage(text).catch(err => 
+        console.error('[Registration Telegram] Error:', err.message)
+      );
+    } catch (tgErr: any) {
+      console.error('[Registration Telegram] Error:', tgErr.message);
+    }
 
     return NextResponse.json({ success: true, registeredGuests });
   } catch (error: any) {

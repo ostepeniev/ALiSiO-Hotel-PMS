@@ -178,6 +178,41 @@ export default function BookingPage() {
 
   // Step 5 — Success
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
+  const [redirectingToPayment, setRedirectingToPayment] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | null>(null);
+
+  // Handle return from Teya payment
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const successId = params.get('success');
+    const pStatus = params.get('payment_status');
+
+    if (successId && pStatus === 'success') {
+      // Returned from successful payment
+      setReservation({
+        success: true,
+        reservationId: successId,
+        unitName: '',
+        checkIn: '',
+        checkOut: '',
+        nights: 0,
+        totalPrice: 0,
+        originalPrice: 0,
+        promoDiscount: 0,
+        certificateDiscount: 0,
+        currency: 'CZK',
+      });
+      setPaymentStatus('success');
+      setStep(5);
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (pStatus === 'cancel') {
+      setPaymentStatus('failed');
+      setStep(5);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // Mobile summary
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
@@ -498,12 +533,42 @@ export default function BookingPage() {
       }
 
       setReservation(data);
-      goToStep(5);
+
+      // Create Teya checkout session for payment
+      setRedirectingToPayment(true);
+      try {
+        const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: totalWithDiscount,
+            currency: 'CZK',
+            description: `Booking ${data.reservationId} — ${data.unitName}`,
+            reservation_id: data.reservationId,
+            return_path: `/booking?success=${data.reservationId}`,
+          }),
+        });
+        if (payRes.ok) {
+          const payData = await payRes.json();
+          if (payData.session_url) {
+            window.location.href = payData.session_url;
+            return; // Don't proceed, page will redirect
+          }
+        }
+        // If checkout session fails, still show success (tentative booking)
+        console.error('Checkout session creation failed, showing tentative booking');
+        setRedirectingToPayment(false);
+        goToStep(5);
+      } catch (payErr) {
+        console.error('Payment redirect error:', payErr);
+        setRedirectingToPayment(false);
+        goToStep(5);
+      }
     } catch (e: any) {
       setError(e?.message || t.errorOccurred);
     }
     setSubmitting(false);
-  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, gender, promoApplied, certInput, t, goToStep, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin]);
+  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, gender, promoApplied, certInput, t, goToStep, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, totalWithDiscount]);
 
   // ─── Reset ──────
   const resetForm = useCallback(() => {
@@ -536,6 +601,9 @@ export default function BookingPage() {
     setBreakfastItems({});
     setBreakfastAdded(false);
     setMenuItems([]);
+    // Payment state
+    setRedirectingToPayment(false);
+    setPaymentStatus(null);
   }, []);
 
   // ─── Render Calendar Month ──────
@@ -1747,51 +1815,77 @@ export default function BookingPage() {
 
 
           {/* ═══════ STEP 5: Success ═══════ */}
-          {step === 5 && reservation && (
+          {step === 5 && (
             <div className="booking-fade-in booking-success">
-              <div className="booking-success-icon">✓</div>
-              <h2>{t.bookingSuccess}</h2>
-              <p>{t.bookingSuccessDesc}</p>
-              <p style={{ color: 'var(--bk-accent)', fontWeight: 600, fontSize: 13 }}>
-                {t.weWillContact}
-              </p>
+              {/* Payment cancelled/failed */}
+              {paymentStatus === 'failed' && (
+                <>
+                  <div className="booking-success-icon" style={{ background: '#fee2e2', color: '#dc2626' }}>✗</div>
+                  <h2>{t.paymentFailed}</h2>
+                  <p>{t.paymentFailedDesc}</p>
+                  <button className="booking-btn-next" onClick={resetForm} type="button" style={{ marginTop: 16 }}>
+                    {t.tryAgain}
+                  </button>
+                </>
+              )}
+              {/* Payment success or tentative booking */}
+              {paymentStatus !== 'failed' && reservation && (
+                <>
+                  <div className="booking-success-icon">✓</div>
+                  <h2>{paymentStatus === 'success' ? t.paymentSuccess : t.bookingSuccess}</h2>
+                  <p>{paymentStatus === 'success' ? t.paymentSuccessDesc : t.bookingSuccessDesc}</p>
+                  <p style={{ color: 'var(--bk-accent)', fontWeight: 600, fontSize: 13 }}>
+                    {t.weWillContact}
+                  </p>
 
-              <div className="booking-success-id">
-                {t.bookingId}: <strong>{reservation.reservationId}</strong>
-              </div>
-
-              <div className="booking-success-details">
-                <div className="booking-success-detail-row">
-                  <span>{t.houseName}</span>
-                  <span>{reservation.unitName}</span>
-                </div>
-                <div className="booking-success-detail-row">
-                  <span>{t.checkIn}</span>
-                  <span>{formatShortDate(reservation.checkIn, lang)}</span>
-                </div>
-                <div className="booking-success-detail-row">
-                  <span>{t.checkOut}</span>
-                  <span>{formatShortDate(reservation.checkOut, lang)}</span>
-                </div>
-                <div className="booking-success-detail-row">
-                  <span>{t.nights}</span>
-                  <span>{reservation.nights}</span>
-                </div>
-                {reservation.promoDiscount > 0 && (
-                  <div className="booking-success-detail-row">
-                    <span>{t.discount}</span>
-                    <span style={{ color: 'var(--bk-accent)' }}>−{formatPrice(reservation.promoDiscount)} Kč</span>
+                  <div className="booking-success-id">
+                    {t.bookingId}: <strong>{reservation.reservationId}</strong>
                   </div>
-                )}
-                <div className="booking-success-detail-row">
-                  <span><strong>{t.total}</strong></span>
-                  <span><strong>{formatPrice(reservation.totalPrice)} Kč</strong></span>
-                </div>
-              </div>
 
-              <button className="booking-btn-next" onClick={resetForm} type="button" style={{ marginTop: 16 }}>
-                {t.backToStart}
-              </button>
+                  {reservation.unitName && (
+                    <div className="booking-success-details">
+                      <div className="booking-success-detail-row">
+                        <span>{t.houseName}</span>
+                        <span>{reservation.unitName}</span>
+                      </div>
+                      <div className="booking-success-detail-row">
+                        <span>{t.checkIn}</span>
+                        <span>{formatShortDate(reservation.checkIn, lang)}</span>
+                      </div>
+                      <div className="booking-success-detail-row">
+                        <span>{t.checkOut}</span>
+                        <span>{formatShortDate(reservation.checkOut, lang)}</span>
+                      </div>
+                      <div className="booking-success-detail-row">
+                        <span>{t.nights}</span>
+                        <span>{reservation.nights}</span>
+                      </div>
+                      {reservation.promoDiscount > 0 && (
+                        <div className="booking-success-detail-row">
+                          <span>{t.discount}</span>
+                          <span style={{ color: 'var(--bk-accent)' }}>−{formatPrice(reservation.promoDiscount)} Kč</span>
+                        </div>
+                      )}
+                      <div className="booking-success-detail-row">
+                        <span><strong>{t.total}</strong></span>
+                        <span><strong>{formatPrice(reservation.totalPrice)} Kč</strong></span>
+                      </div>
+                    </div>
+                  )}
+
+                  <button className="booking-btn-next" onClick={resetForm} type="button" style={{ marginTop: 16 }}>
+                    {t.backToStart}
+                  </button>
+                </>
+              )}
+
+              {/* Redirecting to payment overlay */}
+              {redirectingToPayment && (
+                <div style={{ textAlign: 'center', padding: 40 }}>
+                  <div style={{ fontSize: 40, marginBottom: 16, animation: 'pulse 1.5s infinite' }}>💳</div>
+                  <h2>{t.redirectingToPayment}</h2>
+                </div>
+              )}
             </div>
           )}
         </main>
