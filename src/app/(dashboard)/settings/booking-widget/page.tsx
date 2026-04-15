@@ -1,7 +1,7 @@
 'use client';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
 
@@ -22,8 +22,6 @@ export default function BookingWidgetSettingsPage() {
   const [lang, setLang] = useState('uk');
   const [color, setColor] = useState('#1a1a2e');
   const [copied, setCopied] = useState(false);
-  const [previewKey, setPreviewKey] = useState(0);
-  const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch('/api/properties')
@@ -65,33 +63,14 @@ export default function BookingWidgetSettingsPage() {
     });
   }
 
-  // Live preview
-  useEffect(() => {
-    if (!previewRef.current) return;
-    const container = previewRef.current;
-    container.innerHTML = '';
-    
-    const widgetId = `asw-preview-${Date.now()}`;
-    const widgetDiv = document.createElement('div');
-    widgetDiv.id = widgetId;
-    container.appendChild(widgetDiv);
-
-    const script = document.createElement('script');
-    script.src = `/widget/${scriptFile}`;
-    script.setAttribute('data-container', widgetId);
-    if (!isService) {
-      script.setAttribute('data-property', selectedProperty);
-    } else {
-      script.setAttribute('data-service', widgetType);
-    }
-    script.setAttribute('data-lang', lang);
-    script.setAttribute('data-color', color);
-    container.appendChild(script);
-
-    setPreviewKey(k => k + 1);
-
-    return () => { container.innerHTML = ''; };
-  }, [selectedProperty, lang, color, widgetType]);
+  // Live preview via iframe (dynamic scripts can't use document.currentScript)
+  const previewSrc = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5}</style>
+</head><body>
+<div id="alisio-${isService ? 'service' : 'booking'}-widget"></div>
+<script src="${domain}/widget/${scriptFile}" ${!isService ? `data-property="${selectedProperty}"` : `data-service="${widgetType}"`} data-lang="${lang}" data-color="${color}"></script>
+</body></html>`;
 
   return (
     <>
@@ -256,13 +235,14 @@ export default function BookingWidgetSettingsPage() {
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>
               👁️ Попередній перегляд
             </h3>
-            <div
-              ref={previewRef}
-              key={previewKey}
+            <iframe
+              key={`${widgetType}-${selectedProperty}-${lang}-${color}`}
+              srcDoc={previewSrc}
               style={{
-                background: '#f5f5f5', borderRadius: 12, padding: 24,
-                minHeight: 300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                width: '100%', minHeight: 500, border: 'none', borderRadius: 12,
+                background: '#f5f5f5',
               }}
+              sandbox="allow-scripts allow-same-origin"
             />
           </div>
         </div>
