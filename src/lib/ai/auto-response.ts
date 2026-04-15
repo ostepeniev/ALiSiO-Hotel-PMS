@@ -251,7 +251,7 @@ Keep the same tone, meaning, and formatting. Do not add or remove information.`,
       { role: 'user', content: draft.draft_content_uk },
     ],
     temperature: 0.3,
-    max_tokens: 800,
+    max_tokens: 1500,
   });
 
   const translated = response.choices[0]?.message?.content;
@@ -264,4 +264,50 @@ Keep the same tone, meaning, and formatting. Do not add or remove information.`,
   `).run(translated, draftId);
 
   return translated;
+}
+
+/* ────────────────────────────────────────────────────────
+   Regenerate draft with user correction
+   ──────────────────────────────────────────────────────── */
+export async function regenerateDraft(draftId: string, correctionText: string): Promise<string | null> {
+  const db = getDb();
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const draft = db.prepare('SELECT * FROM crm_auto_drafts WHERE id = ?').get(draftId) as any;
+  if (!draft) return null;
+
+  const currentContent = draft.draft_content_translated || draft.draft_content_uk;
+
+  const client = new OpenAI({ apiKey });
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `Ти — асистент менеджера готелю. Тобі дано поточну відповідь гостю та інструкцію від менеджера що потрібно змінити.
+Внеси правку і поверни ПОВНИЙ оновлений текст відповіді УКРАЇНСЬКОЮ мовою.
+НЕ додавай пояснень — тільки оновлений текст.
+НЕ обрізай текст на середині.`,
+      },
+      {
+        role: 'user',
+        content: `Поточна відповідь:\n${currentContent}\n\nПравка від менеджера:\n${correctionText}`,
+      },
+    ],
+    temperature: 0.5,
+    max_tokens: 1500,
+  });
+
+  const regenerated = response.choices[0]?.message?.content;
+  if (!regenerated) return null;
+
+  // Update draft with regenerated content
+  db.prepare(`
+    UPDATE crm_auto_drafts 
+    SET draft_content_uk = ?, draft_content_translated = NULL, status = 'pending', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(regenerated, draftId);
+
+  return regenerated;
 }

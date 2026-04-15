@@ -69,7 +69,8 @@
   };
 
   // ─── DOM ───
-  const container = document.getElementById('alisio-booking-widget');
+  const CONTAINER_ID = (scriptTag && scriptTag.getAttribute('data-container')) || 'alisio-booking-widget';
+  const container = document.getElementById(CONTAINER_ID);
   if (!container) return;
   const shadow = container.attachShadow({ mode: 'open' });
 

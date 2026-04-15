@@ -2024,7 +2024,7 @@ function seedData(database: any) {
   database.prepare('INSERT INTO organizations (id, name, slug) VALUES (?, ?, ?)').run(orgId, 'ALiSiO Properties', 'alisio');
 
   // Property
-  database.prepare('INSERT INTO properties (id, organization_id, name, slug, city, country) VALUES (?, ?, ?, ?, ?, ?)').run(propId, orgId, 'ALiSiO Resort & Glamping', 'alisio-main', 'Luhačovice', 'CZ');
+  database.prepare('INSERT INTO properties (id, organization_id, name, slug, city, country) VALUES (?, ?, ?, ?, ?, ?)').run(propId, orgId, 'Carlsbad Wellness & Camping Resort', 'alisio-main', 'Březová-Karlovy Vary', 'CZ');
 
   // Categories
   database.prepare('INSERT INTO categories (id, property_id, name, type, sort_order, icon, color) VALUES (?, ?, ?, ?, ?, ?, ?)').run(catGlamp, propId, 'Glamping', 'glamping', 1, '🏕️', '#a78bfa');

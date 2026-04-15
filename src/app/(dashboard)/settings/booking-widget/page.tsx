@@ -71,15 +71,16 @@ export default function BookingWidgetSettingsPage() {
     const container = previewRef.current;
     container.innerHTML = '';
     
+    const widgetId = `asw-preview-${Date.now()}`;
     const widgetDiv = document.createElement('div');
-    widgetDiv.id = containerId;
+    widgetDiv.id = widgetId;
     container.appendChild(widgetDiv);
 
     const script = document.createElement('script');
     script.src = `/widget/${scriptFile}`;
+    script.setAttribute('data-container', widgetId);
     if (!isService) {
       script.setAttribute('data-property', selectedProperty);
-      script.setAttribute('data-api', '');
     } else {
       script.setAttribute('data-service', widgetType);
     }
