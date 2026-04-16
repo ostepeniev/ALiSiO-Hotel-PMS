@@ -87,6 +87,7 @@ export interface Translations {
   entryStep3Code: string;
   entryStep4: string;
   lateArrival: string;
+  yourAccommodation: string;
   // Services tab
   servicesTitle: string;
   servicesSubtitle: string;
@@ -196,6 +197,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Walk to your cabin (follow signs)', entryStep2: 'Lockbox is on the right side of the door',
     entryStep3Code: 'Code:', entryStep4: 'Turn the key left to open',
     lateArrival: '🌙 Arriving after dark? Pathway lights turn on automatically at sunset.',
+    yourAccommodation: 'Your accommodation',
     servicesTitle: 'Services', servicesSubtitle: 'Add something special to your stay',
     addToStay: 'Add to My Stay', per: 'per', viewMenu: 'View Menu →',
     exploreTitle: 'Explore', exploreSubtitle: 'Discover what\'s around you',
@@ -248,6 +250,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Gehen Sie zu Ihrer Kabine (Schilder folgen)', entryStep2: 'Schlüsselbox rechts neben der Tür',
     entryStep3Code: 'Code:', entryStep4: 'Schlüssel nach links drehen zum Öffnen',
     lateArrival: '🌙 Nachts anreisen? Wegbeleuchtung schaltet sich automatisch ein.',
+    yourAccommodation: 'Ihre Unterkunft',
     servicesTitle: 'Services', servicesSubtitle: 'Etwas Besonderes für Ihren Aufenthalt',
     addToStay: 'Zum Aufenthalt hinzufügen', per: 'pro', viewMenu: 'Menü ansehen →',
     exploreTitle: 'Entdecken', exploreSubtitle: 'Entdecken Sie die Umgebung',
@@ -300,6 +303,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Jděte ke své chatě (sledujte značky)', entryStep2: 'Schránka na klíče je vpravo od dveří',
     entryStep3Code: 'Kód:', entryStep4: 'Otočte klíčem doleva',
     lateArrival: '🌙 Přijíždíte po setmění? Osvětlení cest se zapíná automaticky.',
+    yourAccommodation: 'Vaše ubytování',
     servicesTitle: 'Služby', servicesSubtitle: 'Přidejte něco speciálního k pobytu',
     addToStay: 'Přidat k pobytu', per: 'za', viewMenu: 'Zobrazit menu →',
     exploreTitle: 'Okolí', exploreSubtitle: 'Objevte, co je kolem vás',
@@ -352,6 +356,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Йдіть до своєї кабіни (за вказівниками)', entryStep2: 'Скринька з ключем — праворуч від дверей',
     entryStep3Code: 'Код:', entryStep4: 'Поверніть ключ вліво',
     lateArrival: '🌙 Приїжджаєте після заходу сонця? Освітлення доріжок вмикається автоматично.',
+    yourAccommodation: 'Ваше помешкання',
     servicesTitle: 'Послуги', servicesSubtitle: 'Додайте щось особливе до перебування',
     addToStay: 'Додати до перебування', per: 'за', viewMenu: 'Меню →',
     exploreTitle: 'Околиці', exploreSubtitle: 'Відкрийте для себе, що навколо',
@@ -404,6 +409,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Idź do swojej chatki (podążaj za znakami)', entryStep2: 'Skrzynka na klucze po prawej stronie drzwi',
     entryStep3Code: 'Kod:', entryStep4: 'Obróć klucz w lewo',
     lateArrival: '🌙 Przyjeżdżasz po zmroku? Oświetlenie ścieżek włącza się automatycznie.',
+    yourAccommodation: 'Twoje zakwaterowanie',
     servicesTitle: 'Usługi', servicesSubtitle: 'Dodaj coś szczególnego do pobytu',
     addToStay: 'Dodaj do pobytu', per: 'za', viewMenu: 'Zobacz menu →',
     exploreTitle: 'Odkrywaj', exploreSubtitle: 'Odkryj co jest wokół ciebie',
@@ -456,6 +462,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Loop naar uw cabin (volg de borden)', entryStep2: 'Sleutelkastje rechts naast de deur',
     entryStep3Code: 'Code:', entryStep4: 'Draai de sleutel naar links',
     lateArrival: '🌙 Komt u na zonsondergang? Padverlichting gaat automatisch aan.',
+    yourAccommodation: 'Uw accommodatie',
     servicesTitle: 'Diensten', servicesSubtitle: 'Voeg iets bijzonders toe aan uw verblijf',
     addToStay: 'Toevoegen', per: 'per', viewMenu: 'Menu bekijken →',
     exploreTitle: 'Ontdek', exploreSubtitle: 'Ontdek wat er om u heen is',
@@ -508,6 +515,7 @@ const translations: Record<Lang, Translations> = {
     entryStep1: 'Dirigez-vous vers votre chalet (suivez les panneaux)', entryStep2: 'Boîte à clé à droite de la porte',
     entryStep3Code: 'Code :', entryStep4: 'Tournez la clé à gauche',
     lateArrival: '🌙 Arrivée de nuit ? L\'éclairage des chemins s\'active automatiquement.',
+    yourAccommodation: 'Votre hébergement',
     servicesTitle: 'Services', servicesSubtitle: 'Ajoutez quelque chose de spécial à votre séjour',
     addToStay: 'Ajouter au séjour', per: 'par', viewMenu: 'Voir le menu →',
     exploreTitle: 'Explorer', exploreSubtitle: 'Découvrez ce qu\'il y a autour de vous',

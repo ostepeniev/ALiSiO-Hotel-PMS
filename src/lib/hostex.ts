@@ -238,6 +238,21 @@ export async function createReservation(data: {
   return res.data || null;
 }
 
+/**
+ * Update reservation remarks in Hostex
+ * Used to push guest page URL back into the reservation notes
+ */
+export async function updateReservationRemarks(stayCode: string, remarks: string): Promise<boolean> {
+  await rateLimitWait();
+  try {
+    const res = await hostexRequest<any>('PUT', `/reservations/${stayCode}`, { remarks });
+    return res.error_code === 0;
+  } catch (e) {
+    console.error(`[Hostex] Failed to update remarks for ${stayCode}:`, e);
+    return false;
+  }
+}
+
 // ─── Exchange rate (ČNB mid-rate EUR/CZK) ─────────────────
 
 let cachedRate: { rate: number; fetchedAt: number } | null = null;

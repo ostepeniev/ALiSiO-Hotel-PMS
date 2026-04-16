@@ -2,14 +2,20 @@
  * Hostex → ALiSiO PMS Sync Service
  * Handles reservation, guest, and payment synchronization
  */
-import { getDb } from './db';
+import { getDb, generateGuestToken } from './db';
 import {
   getProperties,
   getAllReservations,
   getEurCzkRate,
+  updateReservationRemarks,
   type HostexReservation,
-  type HostexProperty,
 } from './hostex';
+
+// Public URL of the PMS (used to build guest page links sent to Hostex)
+const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pms.alisio.cz';
+
+// Channel types that represent owner blocks / closed dates — NOT real guests
+const BLOCKED_CHANNEL_TYPES = new Set(['owner', 'manual', 'owner_reservation', 'blocked', 'maintenance']);
 
 // ─── Property Mapping ─────────────────────────────────────
 
@@ -125,7 +131,7 @@ export async function syncReservations(): Promise<SyncResult> {
     // 4. Process each reservation
     for (const res of reservations) {
       try {
-        processReservation(db, res, result);
+        await processReservation(db, res, result);
       } catch (e: any) {
         result.errors.push(`${res.reservation_code}: ${e.message}`);
         console.error(`[Hostex Sync] Error processing ${res.reservation_code}:`, e.message);
@@ -150,8 +156,16 @@ export async function syncReservations(): Promise<SyncResult> {
 
 // ─── Process single reservation ───────────────────────────
 
-function processReservation(db: any, res: HostexReservation, result: SyncResult) {
-  // Skip cancelled
+async function processReservation(db: any, res: HostexReservation, result: SyncResult) {
+  // ── Handle BLOCKED DATES (owner/manual closures in Hostex) ──────────────
+  // These are not real guest bookings — they are closed-date blocks.
+  // We store them as availability_blocks, NOT as reservations.
+  if (BLOCKED_CHANNEL_TYPES.has(res.channel_type)) {
+    processBlockedDate(db, res, result);
+    return;
+  }
+
+  // Skip cancelled reservations
   if (res.status === 'cancelled' || res.status === 'denied' || res.status === 'timeout') {
     // If we have it in DB, mark as cancelled
     const existing = db.prepare('SELECT id FROM reservations WHERE hostex_reservation_code = ?').get(res.reservation_code) as any;
@@ -212,7 +226,7 @@ function processReservation(db: any, res: HostexReservation, result: SyncResult)
     `).run(
       res.check_in_date, res.check_out_date, calcNights(res.check_in_date, res.check_out_date),
       res.number_of_adults, res.number_of_children, res.number_of_infants,
-      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus, // Don't override manual 'paid'
+      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
       totalCzk, mapChannelToSource(res.channel_type),
       res.channel_type, res.channel_id, res.listing_id,
       totalEur, commissionEur, netEur,
@@ -220,15 +234,28 @@ function processReservation(db: any, res: HostexReservation, result: SyncResult)
       financialNote,
       existing.id
     );
+
+    // Push guest page URL to Hostex if not already done
+    if (existing.guest_page_token) {
+      const guestPageUrl = `${PMS_BASE_URL}/guest/${existing.guest_page_token}`;
+      const remarks = res.remarks || '';
+      if (!remarks.includes(guestPageUrl)) {
+        const newRemarks = `${remarks ? remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
+        updateReservationRemarks(res.stay_code, newRemarks).catch(() => {});
+      }
+    }
+
     result.updated++;
   } else {
-    // Create new reservation
+    // Create new reservation + generate guest page token
     const newId = `hx_${res.reservation_code.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
+    const guestPageToken = (status === 'confirmed' || status === 'checked_in') ? generateGuestToken() : null;
+
     db.prepare(`
       INSERT INTO reservations (
         id, property_id, unit_id, guest_id, check_in, check_out, nights,
         adults, children, infants, status, payment_status, source,
-        total_price, currency, notes,
+        total_price, currency, notes, guest_page_token,
         hostex_reservation_code, hostex_stay_code, hostex_channel_type,
         hostex_channel_id, hostex_listing_id,
         total_rate_eur, commission_eur, net_rate_eur,
@@ -236,7 +263,7 @@ function processReservation(db: any, res: HostexReservation, result: SyncResult)
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
-        ?, 'CZK', ?,
+        ?, 'CZK', ?, ?,
         ?, ?, ?,
         ?, ?,
         ?, ?, ?,
@@ -247,7 +274,7 @@ function processReservation(db: any, res: HostexReservation, result: SyncResult)
       res.check_in_date, res.check_out_date, calcNights(res.check_in_date, res.check_out_date),
       res.number_of_adults, res.number_of_children, res.number_of_infants,
       status, paymentStatus, mapChannelToSource(res.channel_type),
-      totalCzk, financialNote,
+      totalCzk, financialNote, guestPageToken,
       res.reservation_code, res.stay_code, res.channel_type,
       res.channel_id, res.listing_id,
       totalEur, commissionEur, netEur,
@@ -259,6 +286,67 @@ function processReservation(db: any, res: HostexReservation, result: SyncResult)
       createAutoPayment(db, newId, totalCzk, res.channel_type, res.booked_at);
     }
 
+    // Push guest page URL to Hostex remarks (async, non-blocking)
+    if (guestPageToken) {
+      const guestPageUrl = `${PMS_BASE_URL}/guest/${guestPageToken}`;
+      const remarks = res.remarks || '';
+      const newRemarks = `${remarks ? remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
+      updateReservationRemarks(res.stay_code, newRemarks).catch(() => {});
+    }
+
+    result.created++;
+  }
+
+  result.synced++;
+}
+
+// ─── Process blocked date (owner closure in Hostex) ────────
+
+function processBlockedDate(db: any, res: HostexReservation, result: SyncResult) {
+  const unitId = PROPERTY_MAP[res.property_id];
+  if (!unitId) { result.skipped++; return; }
+
+  // Ensure availability_blocks table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS availability_blocks (
+      id TEXT PRIMARY KEY,
+      unit_id TEXT NOT NULL,
+      date_from TEXT NOT NULL,
+      date_to TEXT NOT NULL,
+      reason TEXT DEFAULT 'blocked',
+      notes TEXT,
+      hostex_code TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  const blockId = `hx_block_${res.reservation_code.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
+  const existing = db.prepare('SELECT id FROM availability_blocks WHERE id = ?').get(blockId);
+
+  if (res.status === 'cancelled') {
+    // Remove the block if cancelled
+    if (existing) {
+      db.prepare('DELETE FROM availability_blocks WHERE id = ?').run(blockId);
+      result.updated++;
+      result.synced++;
+    } else {
+      result.skipped++;
+    }
+    return;
+  }
+
+  const notes = res.remarks || res.channel_remarks || 'Закрито в Hostex';
+
+  if (existing) {
+    db.prepare(`
+      UPDATE availability_blocks SET date_from = ?, date_to = ?, notes = ? WHERE id = ?
+    `).run(res.check_in_date, res.check_out_date, notes, blockId);
+    result.updated++;
+  } else {
+    db.prepare(`
+      INSERT INTO availability_blocks (id, unit_id, date_from, date_to, reason, notes, hostex_code)
+      VALUES (?, ?, ?, ?, 'blocked', ?, ?)
+    `).run(blockId, unitId, res.check_in_date, res.check_out_date, notes, res.reservation_code);
     result.created++;
   }
 

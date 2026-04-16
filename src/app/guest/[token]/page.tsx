@@ -754,10 +754,16 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           </div>
         )}
         {cfg?.lock_code && (
-          <div style={{ margin: '12px 0', padding: '10px 14px', background: 'var(--gp-card)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 20 }}>🔐</span>
-            <span style={{ fontWeight: 600 }}>Code: <span className="gp-entry-code">{cfg.lock_code}</span></span>
-          </div>
+          <>
+            <div style={{ margin: '12px 0 6px', padding: '10px 14px', background: 'var(--gp-green, #1e4d2b)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 20 }}>🏠</span>
+              <span style={{ fontWeight: 600, color: '#fff', fontSize: 15 }}>{t.yourAccommodation}: <span style={{ opacity: 0.9 }}>{unitName}</span></span>
+            </div>
+            <div style={{ margin: '0 0 12px', padding: '10px 14px', background: 'var(--gp-card)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 20 }}>🔐</span>
+              <span style={{ fontWeight: 600 }}>Code: <span className="gp-entry-code">{cfg.lock_code}</span></span>
+            </div>
+          </>
         )}
         <div className="gp-sheet-tip orange" style={{ marginTop: 16 }}>{t.lateArrival}</div>
       </BottomSheet>

@@ -164,6 +164,7 @@ function CalendarDesktop() {
   const [calRegistrations, setCalRegistrations] = useState<any[]>([]);
   const [calActivityLog, setCalActivityLog] = useState<any[]>([]);
   const [bookingSources, setBookingSources] = useState<any[]>([]);
+  const [blocks, setBlocks] = useState<{ id: string; unit_id: string; date_from: string; date_to: string; notes: string }[]>([]);
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
   const [showPayForm, setShowPayForm] = useState(false);
@@ -256,6 +257,14 @@ function CalendarDesktop() {
       if (Array.isArray(srcs)) setBookingSources(srcs);
       if (Array.isArray(uts)) setUnitTypes(uts);
       if (Array.isArray(aus)) setAllUnits(aus);
+      // Fetch availability blocks (host closures)
+      try {
+        const blkRes = await fetch('/api/availability-blocks');
+        if (blkRes.ok) {
+          const blk = await blkRes.json();
+          if (Array.isArray(blk)) setBlocks(blk);
+        }
+      } catch { /* ignore */ }
     } catch (e) { console.error('Calendar fetch error:', e); }
     setLoading(false);
   }, []);
@@ -981,6 +990,35 @@ function CalendarDesktop() {
                               </div>
                             );
                           })}
+
+                          {/* Blocked date bars (owner closures from Hostex) */}
+                          {blocks
+                            .filter(blk => blk.unit_id === unit.id)
+                            .map(blk => {
+                              const bar = getBarStyle({ check_in: blk.date_from, check_out: blk.date_to } as any);
+                              if (!bar) return null;
+                              return (
+                                <div
+                                  key={blk.id}
+                                  title={`🔒 Закрито: ${blk.notes || 'Hostex block'}\n${blk.date_from} → ${blk.date_to}`}
+                                  style={{
+                                    position: 'absolute', top: 4, height: ROW_H - 8,
+                                    left: bar.left, width: bar.width,
+                                    background: 'repeating-linear-gradient(45deg, #3a3a4a, #3a3a4a 6px, #2a2a38 6px, #2a2a38 12px)',
+                                    border: '1px solid #555',
+                                    borderLeft: '3px solid #888',
+                                    borderRadius: 6, display: 'flex', alignItems: 'center',
+                                    padding: '0 8px', overflow: 'hidden', cursor: 'default',
+                                    gap: 4, zIndex: 1, opacity: 0.85,
+                                  }}
+                                >
+                                  <span style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    🔒 Закрито
+                                  </span>
+                                </div>
+                              );
+                            })
+                          }
                         </div>
                       );
                     })}
