@@ -6,6 +6,7 @@ import type { IncomingEmail } from '@/lib/channels/email';
 import { parseBookingComEmail, cleanBookingComBody } from '@/lib/channels/booking-com-parser';
 import { generateAutoResponse } from '@/lib/ai/auto-response';
 import { findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync';
+import { onInboundMessage } from '@/lib/crm/stage-transitions';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -206,6 +207,11 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
     `${previewPrefix}${bookingData.guestMessage || email.subject}`.substring(0, 100),
     lead.id,
   );
+
+  // AUTO STAGE TRANSITION: guest sent message → advance stage
+  if (!lead.isNew) {
+    onInboundMessage(lead.id, lead.stage);
+  }
 
   // 11. Mark as read in IMAP
   if (account) await markEmailAsRead(email.uid, account);

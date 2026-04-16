@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { verifyWebhookSignature } from '@/lib/teya';
 import { getDb } from '@/lib/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { onPaymentReceived } from '@/lib/crm/stage-transitions';
 
 /**
  * POST /api/webhooks/teya
@@ -87,6 +88,30 @@ export async function POST(req: Request) {
                 sendTelegramMessage(text).catch(() => {});
               }
             } catch { /* non-critical */ }
+          }
+
+          // AUTO STAGE TRANSITION: payment received → advance CRM lead
+          try {
+            // Find CRM lead linked to the reservation
+            const leadByPayment = db.prepare(`
+              SELECT l.id, l.stage, l.estimated_value, r.total_price
+              FROM crm_leads l
+              JOIN reservations r ON r.id = l.reservation_id
+              WHERE l.reservation_id IN (
+                SELECT so.reservation_id FROM service_orders so WHERE so.payment_id = ?
+                UNION
+                SELECT bso.reservation_id FROM booking_service_orders bso WHERE bso.payment_id = ?
+              )
+              LIMIT 1
+            `).get(paymentRef, paymentRef) as any;
+
+            if (leadByPayment) {
+              const totalPrice = leadByPayment.total_price || leadByPayment.estimated_value || 0;
+              const isFullPayment = amount && totalPrice > 0 && amount >= totalPrice * 0.9; // 90%+ = full
+              onPaymentReceived(leadByPayment.id, leadByPayment.stage, !!isFullPayment);
+            }
+          } catch (stageErr: any) {
+            console.error('[Teya Webhook] Stage transition error:', stageErr.message);
           }
         }
         break;

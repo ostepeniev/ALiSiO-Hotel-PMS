@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db';
 import { translateDraft, regenerateDraft } from '@/lib/ai/auto-response';
 import { editTelegramMessage, answerCallbackQuery } from '@/lib/channels/telegram-bot';
 import { sendEmail } from '@/lib/channels/email';
+import { onOutboundReply } from '@/lib/crm/stage-transitions';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -290,6 +291,16 @@ async function handleApprove(db: any, draft: any, callbackQueryId?: string, useT
   if (draft.telegram_message_id) {
     await editTelegramMessage(draft.telegram_message_id,
       `✅ <b>Відправлено!</b>\n📤 → ${escapeHtml(draft.reply_to_email)}\n📋 ${escapeHtml(draft.reply_subject || '')}\n\n${escapeHtml(content.substring(0, 200))}...`, []);
+  }
+
+  // AUTO STAGE TRANSITION: staff replied — advance lead stage
+  try {
+    const lead = db.prepare('SELECT stage FROM crm_leads WHERE id = ?').get(draft.lead_id) as any;
+    if (lead) {
+      onOutboundReply(draft.lead_id, lead.stage, content);
+    }
+  } catch (stageErr: any) {
+    console.error('[Stage Transition] Non-fatal:', stageErr.message);
   }
 
   return NextResponse.json({ ok: true, sent: true });

@@ -87,6 +87,17 @@ export function startEmailPoller() {
     }
   }, 5000);
 
+  // Seed stage prompts (idempotent — skips if already exist)
+  setTimeout(async () => {
+    try {
+      const { seedStagePrompts } = await import('@/lib/crm/seed-prompts');
+      const seeded = seedStagePrompts();
+      if (seeded > 0) console.log(`[Seed] ✅ Created ${seeded} stage AI prompts`);
+    } catch (err: any) {
+      console.error('[Seed] Prompt seed error:', err.message);
+    }
+  }, 6000);
+
   // Email polling
   if (process.env.EMAIL_CZ_USER || process.env.GMAIL_USER) {
     const accounts = [process.env.EMAIL_CZ_USER, process.env.GMAIL_USER].filter(Boolean);
