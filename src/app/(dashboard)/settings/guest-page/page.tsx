@@ -140,6 +140,7 @@ export default function GuestPageSettingsPage() {
   const [pTerritoryMap, setPTerritoryMap] = useState('');
   const [pPets, setPPets] = useState('welcome');
   const [pParking, setPParking] = useState('');
+  const [pParkingPhoto, setPParkingPhoto] = useState('');
   const [pWeatherLat, setPWeatherLat] = useState('');
   const [pWeatherLon, setPWeatherLon] = useState('');
   const [pEmergency, setPEmergency] = useState('');
@@ -208,6 +209,7 @@ export default function GuestPageSettingsPage() {
     setPTerritoryMap(cfg.territory_map_url || '');
     setPPets(cfg.pets_policy || 'welcome');
     setPParking(cfg.parking_info || '');
+    setPParkingPhoto(cfg.parking_photo_url || '');
     setPWeatherLat(cfg.weather_lat?.toString() || '');
     setPWeatherLon(cfg.weather_lon?.toString() || '');
     setPEmergency(cfg.emergency_phone || '');
@@ -242,7 +244,7 @@ export default function GuestPageSettingsPage() {
           restaurant_name: pRestName, restaurant_hours: pRestHours, restaurant_menu_url: pRestMenu || null,
           rules: pRules, faq_items: pFaq, useful_info: pUseful,
           maps_url: pMaps || null, territory_map_url: pTerritoryMap || null,
-          pets_policy: pPets, parking_info: pParking,
+          pets_policy: pPets, parking_info: pParking, parking_photo_url: pParkingPhoto || null,
           weather_lat: pWeatherLat ? parseFloat(pWeatherLat) : null,
           weather_lon: pWeatherLon ? parseFloat(pWeatherLon) : null,
           emergency_phone: pEmergency || null, video_guide_url: pVideoGuide || null,
@@ -496,6 +498,10 @@ export default function GuestPageSettingsPage() {
                     <div className="form-group">
                       <label className="form-label">Інформація про паркінг</label>
                       <textarea className="form-input" rows={2} value={pParking} placeholder="Free parking at the entrance..." onChange={e => setPParking(e.target.value)} style={{ resize: 'vertical' }} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Фото паркінгу (URL)</label>
+                      <input className="form-input" value={pParkingPhoto} placeholder="https://example.com/parking.jpg" onChange={e => setPParkingPhoto(e.target.value)} />
                     </div>
                   </div>
                 )}

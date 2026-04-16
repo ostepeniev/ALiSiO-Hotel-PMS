@@ -635,7 +635,9 @@
       state.menuItems.forEach(function(item) {
         var qty = state.itemQty[item.id] || 0;
         var nameKey = 'name' + LANG.charAt(0).toUpperCase() + LANG.slice(1);
-        var displayName = item[nameKey] || item.name;
+        var displayName = item[nameKey] || item.nameEn || item.name;
+        var descKey = 'description' + LANG.charAt(0).toUpperCase() + LANG.slice(1);
+        var displayDesc = item[descKey] || item.descriptionEn || item.description;
 
         h += '<div class="asw-menu-item">';
         if (item.photoUrl) {
@@ -645,7 +647,7 @@
         }
         h += '<div class="asw-menu-info">';
         h += '<div class="asw-menu-name">' + escHtml(displayName) + '</div>';
-        if (item.description) h += '<div class="asw-menu-desc">' + escHtml(item.description) + '</div>';
+        if (displayDesc) h += '<div class="asw-menu-desc">' + escHtml(displayDesc) + '</div>';
         if (item.weightGrams) h += '<div class="asw-menu-weight">' + item.weightGrams + 'g</div>';
         h += '<div class="asw-menu-price">' + fmtPrice(item.price) + ' Kč</div>';
         h += '</div>';

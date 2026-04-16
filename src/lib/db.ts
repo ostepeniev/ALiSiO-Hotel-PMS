@@ -1136,6 +1136,42 @@ function runMigrations(database: any) {
     // Columns already exist — ignore
   }
 
+  // --- Migration: add description_en/cs/de to menu_items ---
+  try {
+    database.exec(`ALTER TABLE menu_items ADD COLUMN description_en TEXT`);
+    database.exec(`ALTER TABLE menu_items ADD COLUMN description_cs TEXT`);
+    database.exec(`ALTER TABLE menu_items ADD COLUMN description_de TEXT`);
+    console.log('[DB] Added description_en/cs/de to menu_items');
+  } catch {
+    // Columns already exist — ignore
+  }
+  // Backfill English/Czech/German descriptions for the 3 seed breakfast items
+  try {
+    const bfDesc: Record<string, { en: string; cs: string; de: string }> = {
+      'mi_breakfast_1': {
+        en: 'Scrambled eggs, toast, butter, jam, fresh vegetables, coffee/tea',
+        cs: 'Míchaná vejce, toast, máslo, džem, čerstvá zelenina, káva/čaj',
+        de: 'Rührei, Toast, Butter, Marmelade, frisches Gemüse, Kaffee/Tee',
+      },
+      'mi_breakfast_2': {
+        en: 'Fluffy pancakes with seasonal berries, honey and sour cream',
+        cs: 'Nadýchané lívanečky se sezónním ovocem, medem a zakysanou smetanou',
+        de: 'Lockere Pfannkuchen mit Saisonbeeren, Honig und saurer Sahne',
+      },
+      'mi_breakfast_3': {
+        en: 'Homemade granola with yoghurt, fruits and honey',
+        cs: 'Domácí granola s jogurtem, ovocem a medem',
+        de: 'Hausgemachte Granola mit Joghurt, Früchten und Honig',
+      },
+    };
+    const upd = database.prepare('UPDATE menu_items SET description_en=?, description_cs=?, description_de=? WHERE id=? AND description_en IS NULL');
+    for (const [id, d] of Object.entries(bfDesc)) {
+      upd.run(d.en, d.cs, d.de, id);
+    }
+  } catch (e: any) {
+    console.warn('[DB] menu_items backfill note:', e.message);
+  }
+
   // --- Migration: seed new services (tub, late checkout, early checkin) ---
   try {
     const propRow2 = database.prepare("SELECT id FROM properties LIMIT 1").get() as any;

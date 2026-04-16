@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
         r.status, r.payment_status, r.source, r.total_price, r.notes, r.internal_notes, r.created_at, r.guest_page_token,
         r.group_id, r.commission_amount,
         r.city_tax_amount, r.city_tax_included, r.city_tax_paid,
-        r.registration_status,
+        r.registration_status, r.hostex_channel_type, r.hostex_reservation_code,
         g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone, g.nationality,
         u.id as unit_id, u.name as unit_name, u.code as unit_code,
         c.id as category_id, c.name as category_name, c.type as category_type,

@@ -1,0 +1,470 @@
+/**
+ * Hostex → ALiSiO PMS Sync Service
+ * Handles reservation, guest, and payment synchronization
+ */
+import { getDb } from './db';
+import {
+  getProperties,
+  getAllReservations,
+  getEurCzkRate,
+  type HostexReservation,
+  type HostexProperty,
+} from './hostex';
+
+// ─── Property Mapping ─────────────────────────────────────
+
+/** Hostex property_id → ALiSiO unit_id mapping */
+const PROPERTY_MAP: Record<number, string> = {
+  12446083: 'u_mr1',                        // A1 River Wood → A1 - Mirror
+  12558043: 'u_mr2',                        // A2 Slow Down  → A2 - Mirror
+  12590381: 'u_st1',                        // B1            → B1 - Stealth
+  12590382: 'u_st2',                        // B2            → B2 - Stealth
+  12446084: 'u_st3',                        // B3 Stealth    → B3 - Stealth
+  12565124: '1e7f6c7bd383af9cdfaa43eb50160148', // B4 Svitanok → B4 - Svitanok
+};
+
+const PROPERTY_ID = 'prop_main_001';
+const ORG_ID = 'org_alisio_001';
+
+// ─── Channel type → source mapping ───────────────────────
+function mapChannelToSource(channelType: string): string {
+  switch (channelType) {
+    case 'airbnb': return 'airbnb';
+    case 'booking.com': return 'booking_com';
+    case 'booking_site': return 'direct';
+    case 'agoda': return 'other_ota';
+    default: return 'other_ota';
+  }
+}
+
+// ─── Payment detection from channel_remarks ───────────────
+interface PaymentInfo {
+  isPrepaid: boolean;
+  paymentCharge: number | null;
+  channelType: string;
+}
+
+function detectPaymentInfo(reservation: HostexReservation): PaymentInfo {
+  const remarks = reservation.channel_remarks || '';
+  const channelType = reservation.channel_type;
+
+  // Airbnb: always prepaid
+  if (channelType === 'airbnb') {
+    return { isPrepaid: true, paymentCharge: null, channelType };
+  }
+
+  // Booking.com: parse remarks for prepaid status
+  if (channelType === 'booking.com') {
+    const isPrepaid = remarks.includes('PRE-PAID') || remarks.includes('PREPAID');
+    let paymentCharge: number | null = null;
+
+    const chargeMatch = remarks.match(/Payment charge is (\w+)\s+([\d.]+)/);
+    if (chargeMatch) {
+      paymentCharge = parseFloat(chargeMatch[2]);
+    }
+
+    return { isPrepaid, paymentCharge, channelType };
+  }
+
+  // Direct / booking_site: not prepaid (guest pays on arrival or via booking site)
+  if (channelType === 'booking_site') {
+    return { isPrepaid: false, paymentCharge: null, channelType };
+  }
+
+  return { isPrepaid: false, paymentCharge: null, channelType };
+}
+
+// ─── Guest name splitting ─────────────────────────────────
+function splitGuestName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+// ─── Calculate nights ─────────────────────────────────────
+function calcNights(checkIn: string, checkOut: string): number {
+  const d1 = new Date(checkIn);
+  const d2 = new Date(checkOut);
+  return Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+// ─── Main sync function ──────────────────────────────────
+
+export interface SyncResult {
+  synced: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+  eurCzkRate: number;
+}
+
+export async function syncReservations(): Promise<SyncResult> {
+  const db = getDb();
+  const result: SyncResult = {
+    synced: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    errors: [],
+    eurCzkRate: 25.2,
+  };
+
+  try {
+    // 1. Get EUR→CZK rate
+    result.eurCzkRate = await getEurCzkRate();
+    console.log(`[Hostex Sync] EUR/CZK rate: ${result.eurCzkRate}`);
+
+    // 2. Fetch all non-cancelled reservations from Hostex
+    const reservations = await getAllReservations();
+    console.log(`[Hostex Sync] Fetched ${reservations.length} reservations from Hostex`);
+
+    // 3. Ensure DB tables/columns exist
+    ensureHostexColumns(db);
+
+    // 4. Process each reservation
+    for (const res of reservations) {
+      try {
+        processReservation(db, res, result);
+      } catch (e: any) {
+        result.errors.push(`${res.reservation_code}: ${e.message}`);
+        console.error(`[Hostex Sync] Error processing ${res.reservation_code}:`, e.message);
+      }
+    }
+
+    // 5. Log sync result
+    logSync(db, 'reservations', result.errors.length === 0 ? 'success' : 'partial',
+      result.synced, result.errors.join('; '));
+
+    console.log(`[Hostex Sync] Done: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped, ${result.errors.length} errors`);
+
+  } catch (e: any) {
+    result.errors.push(`Sync failed: ${e.message}`);
+    console.error('[Hostex Sync] Fatal error:', e.message);
+    const db2 = getDb();
+    logSync(db2, 'reservations', 'error', 0, e.message);
+  }
+
+  return result;
+}
+
+// ─── Process single reservation ───────────────────────────
+
+function processReservation(db: any, res: HostexReservation, result: SyncResult) {
+  // Skip cancelled
+  if (res.status === 'cancelled' || res.status === 'denied' || res.status === 'timeout') {
+    // If we have it in DB, mark as cancelled
+    const existing = db.prepare('SELECT id FROM reservations WHERE hostex_reservation_code = ?').get(res.reservation_code) as any;
+    if (existing) {
+      db.prepare("UPDATE reservations SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?").run(existing.id);
+      result.updated++;
+      result.synced++;
+    } else {
+      result.skipped++;
+    }
+    return;
+  }
+
+  // Map property to unit
+  const unitId = PROPERTY_MAP[res.property_id];
+  if (!unitId) {
+    result.skipped++;
+    return;
+  }
+
+  // Find or create guest
+  const guestId = findOrCreateGuest(db, res);
+
+  // Calculate financial data
+  const totalEur = res.rates?.total_rate?.amount || 0;
+  const commissionEur = res.rates?.total_commission?.amount || 0;
+  const netEur = totalEur - commissionEur;
+  const totalCzk = Math.round(totalEur * result.eurCzkRate);
+
+  // Detect payment
+  const paymentInfo = detectPaymentInfo(res);
+  
+  // Build notes with financial breakdown
+  const financialNote = buildFinancialNote(res, result.eurCzkRate, totalEur, commissionEur, netEur, totalCzk);
+
+  // Map status
+  const status = mapStatus(res);
+  const paymentStatus = paymentInfo.isPrepaid ? 'prepaid' : 'unpaid';
+
+  // Check if reservation already exists
+  const existing = db.prepare('SELECT id, status, payment_status FROM reservations WHERE hostex_reservation_code = ?')
+    .get(res.reservation_code) as any;
+
+  if (existing) {
+    // Update existing reservation
+    db.prepare(`
+      UPDATE reservations SET
+        check_in = ?, check_out = ?, nights = ?,
+        adults = ?, children = ?, infants = ?,
+        status = ?, payment_status = ?,
+        total_price = ?, source = ?,
+        hostex_channel_type = ?, hostex_channel_id = ?, hostex_listing_id = ?,
+        total_rate_eur = ?, commission_eur = ?, net_rate_eur = ?,
+        channel_remarks = ?, is_prepaid = ?,
+        notes = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      res.check_in_date, res.check_out_date, calcNights(res.check_in_date, res.check_out_date),
+      res.number_of_adults, res.number_of_children, res.number_of_infants,
+      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus, // Don't override manual 'paid'
+      totalCzk, mapChannelToSource(res.channel_type),
+      res.channel_type, res.channel_id, res.listing_id,
+      totalEur, commissionEur, netEur,
+      res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0,
+      financialNote,
+      existing.id
+    );
+    result.updated++;
+  } else {
+    // Create new reservation
+    const newId = `hx_${res.reservation_code.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
+    db.prepare(`
+      INSERT INTO reservations (
+        id, property_id, unit_id, guest_id, check_in, check_out, nights,
+        adults, children, infants, status, payment_status, source,
+        total_price, currency, notes,
+        hostex_reservation_code, hostex_stay_code, hostex_channel_type,
+        hostex_channel_id, hostex_listing_id,
+        total_rate_eur, commission_eur, net_rate_eur,
+        channel_remarks, is_prepaid
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, 'CZK', ?,
+        ?, ?, ?,
+        ?, ?,
+        ?, ?, ?,
+        ?, ?
+      )
+    `).run(
+      newId, PROPERTY_ID, unitId, guestId,
+      res.check_in_date, res.check_out_date, calcNights(res.check_in_date, res.check_out_date),
+      res.number_of_adults, res.number_of_children, res.number_of_infants,
+      status, paymentStatus, mapChannelToSource(res.channel_type),
+      totalCzk, financialNote,
+      res.reservation_code, res.stay_code, res.channel_type,
+      res.channel_id, res.listing_id,
+      totalEur, commissionEur, netEur,
+      res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0
+    );
+
+    // Auto-create payment for prepaid reservations
+    if (paymentInfo.isPrepaid && totalCzk > 0) {
+      createAutoPayment(db, newId, totalCzk, res.channel_type, res.booked_at);
+    }
+
+    result.created++;
+  }
+
+  result.synced++;
+}
+
+// ─── Guest management ─────────────────────────────────────
+
+function findOrCreateGuest(db: any, res: HostexReservation): string {
+  const guestData = res.guests?.[0];
+  const email = guestData?.email || res.guest_email || '';
+  const phone = guestData?.phone || res.guest_phone || '';
+  const name = guestData?.name || res.guest_name || 'Unknown';
+  const country = guestData?.country || '';
+
+  // Try to find existing guest by email or phone
+  let guest: any = null;
+  if (email && !email.includes('@guest.booking.com')) {
+    guest = db.prepare('SELECT id FROM guests WHERE email = ?').get(email);
+  }
+  if (!guest && phone) {
+    guest = db.prepare('SELECT id FROM guests WHERE phone = ?').get(phone);
+  }
+
+  if (guest) {
+    // Update existing guest with latest info
+    if (country) {
+      db.prepare("UPDATE guests SET country = ?, updated_at = datetime('now') WHERE id = ?").run(country, guest.id);
+    }
+    return guest.id;
+  }
+
+  // Create new guest
+  const { firstName, lastName } = splitGuestName(name);
+  const guestId = `hx_g_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+  db.prepare(`
+    INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, country)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(guestId, ORG_ID, firstName, lastName, email || null, phone || null, country || null);
+
+  return guestId;
+}
+
+// ─── Payment auto-creation ────────────────────────────────
+
+function createAutoPayment(db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
+  const payId = `hx_pay_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const method = 'booking_platform';
+  const paidAt = bookedAt ? bookedAt.split('T')[0] : new Date().toISOString().split('T')[0];
+  const notes = `Авто-оплата через ${channelType === 'airbnb' ? 'Airbnb' : channelType === 'booking.com' ? 'Booking.com' : channelType}`;
+
+  db.prepare(`
+    INSERT INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
+    VALUES (?, ?, ?, 'CZK', ?, 'full', 'completed', ?, ?, 1)
+  `).run(payId, reservationId, amountCzk, method, paidAt, notes);
+}
+
+// ─── Status mapping ───────────────────────────────────────
+
+function mapStatus(res: HostexReservation): string {
+  // stay_status: checkin_pending, stay_in_progress, stay_completed
+  if (res.stay_status === 'stay_completed') return 'checked_out';
+  if (res.stay_status === 'stay_in_progress') return 'checked_in';
+  if (res.status === 'accepted') return 'confirmed';
+  if (res.status === 'wait_accept' || res.status === 'wait_pay') return 'tentative';
+  if (res.status === 'cancelled' || res.status === 'denied') return 'cancelled';
+  return 'confirmed';
+}
+
+// ─── Financial note builder ───────────────────────────────
+
+function buildFinancialNote(
+  res: HostexReservation,
+  rate: number,
+  totalEur: number,
+  commissionEur: number,
+  netEur: number,
+  totalCzk: number
+): string {
+  const channel = res.custom_channel?.name || res.channel_type;
+  const lines = [
+    `📊 ${channel} | ${res.channel_id}`,
+    `💶 Всього: €${totalEur.toFixed(2)} (${totalCzk} CZK @ ${rate.toFixed(2)})`,
+  ];
+
+  if (commissionEur > 0) {
+    const commCzk = Math.round(commissionEur * rate);
+    const netCzk = Math.round(netEur * rate);
+    lines.push(`📉 Комісія: €${commissionEur.toFixed(2)} (${commCzk} CZK)`);
+    lines.push(`💰 Нетто: €${netEur.toFixed(2)} (${netCzk} CZK)`);
+  }
+
+  // Nightly breakdown from channel_remarks
+  const pricesMatch = res.channel_remarks?.match(/Prices:\s*(.+?)(?:\n|$)/);
+  if (pricesMatch) {
+    lines.push(`🌙 ${pricesMatch[1].trim()}`);
+  }
+
+  // Rate details
+  const cleaning = res.rates?.details?.find(d => d.type === 'CLEANING_FEE');
+  if (cleaning) {
+    lines.push(`🧹 Прибирання: €${cleaning.amount.toFixed(2)}`);
+  }
+
+  return lines.join('\n');
+}
+
+// ─── DB migrations for Hostex columns ─────────────────────
+
+function ensureHostexColumns(db: any) {
+  const cols = db.prepare("PRAGMA table_info(reservations)").all() as { name: string }[];
+  const colNames = cols.map((c: any) => c.name);
+
+  const newCols: [string, string][] = [
+    ['hostex_reservation_code', 'TEXT'],
+    ['hostex_stay_code', 'TEXT'],
+    ['hostex_channel_type', 'TEXT'],
+    ['hostex_channel_id', 'TEXT'],
+    ['hostex_listing_id', 'TEXT'],
+    ['total_rate_eur', 'REAL'],
+    ['commission_eur', 'REAL'],
+    ['net_rate_eur', 'REAL'],
+    ['channel_remarks', 'TEXT'],
+    ['is_prepaid', 'INTEGER DEFAULT 0'],
+  ];
+
+  for (const [name, type] of newCols) {
+    if (!colNames.includes(name)) {
+      db.exec(`ALTER TABLE reservations ADD COLUMN ${name} ${type}`);
+      console.log(`[Hostex] Added column reservations.${name}`);
+    }
+  }
+
+  // Index for fast lookups
+  db.exec('CREATE INDEX IF NOT EXISTS idx_reservations_hostex_code ON reservations(hostex_reservation_code)');
+
+  // Payments: add auto_created, add booking_platform method
+  const payCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
+  if (!payCols.some((c: any) => c.name === 'auto_created')) {
+    db.exec('ALTER TABLE payments ADD COLUMN auto_created INTEGER DEFAULT 0');
+    console.log('[Hostex] Added column payments.auto_created');
+  }
+
+  // Hostex sync log table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS hostex_sync_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sync_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      records_synced INTEGER DEFAULT 0,
+      error_message TEXT,
+      started_at TEXT,
+      completed_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Hostex property map table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS hostex_property_map (
+      hostex_property_id INTEGER PRIMARY KEY,
+      hostex_title TEXT,
+      unit_id TEXT NOT NULL,
+      channels TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+}
+
+function logSync(db: any, syncType: string, status: string, count: number, error?: string) {
+  db.prepare(`
+    INSERT INTO hostex_sync_log (sync_type, status, records_synced, error_message, started_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+  `).run(syncType, status, count, error || null);
+}
+
+// ─── Property map seeding ─────────────────────────────────
+
+export async function seedPropertyMap(): Promise<void> {
+  const db = getDb();
+  ensureHostexColumns(db);
+
+  const properties = await getProperties();
+  const upsert = db.prepare(`
+    INSERT OR REPLACE INTO hostex_property_map (hostex_property_id, hostex_title, unit_id, channels)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  for (const prop of properties) {
+    const unitId = PROPERTY_MAP[prop.id];
+    if (unitId) {
+      upsert.run(prop.id, prop.title, unitId, JSON.stringify(prop.channels));
+      console.log(`[Hostex] Mapped: ${prop.title} (${prop.id}) → ${unitId}`);
+    }
+  }
+}
+
+// ─── Get sync status ──────────────────────────────────────
+
+export function getSyncStatus(): { lastSync: any; recentLogs: any[] } {
+  const db = getDb();
+  try {
+    const lastSync = db.prepare('SELECT * FROM hostex_sync_log ORDER BY id DESC LIMIT 1').get();
+    const recentLogs = db.prepare('SELECT * FROM hostex_sync_log ORDER BY id DESC LIMIT 20').all();
+    return { lastSync, recentLogs };
+  } catch {
+    return { lastSync: null, recentLogs: [] };
+  }
+}

@@ -137,6 +137,9 @@ export default function BookingViewModal({
               <span>{b.check_in} → {b.check_out}</span>
               <span>{b.nights} н. · {b.adults} дор.{b.children > 0 ? ` + ${b.children} діт.` : ''}</span>
               <span className="badge" style={{ background: (sourceMap[b.source]?.color || '#6c7086') + '22', color: sourceMap[b.source]?.color }}>{sourceMap[b.source]?.label || b.source}</span>
+              {b.hostex_channel_type && (
+                <span className="badge" style={{ background: '#ff6b3522', color: '#ff6b35' }}>Hostex: {b.hostex_channel_type}</span>
+              )}
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -413,13 +416,19 @@ export default function BookingViewModal({
           {/* 📝 NOTES TAB */}
           {viewTab === 'notes' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {b.notes && (
+                <div style={{ padding: 16, background: 'rgba(59,130,246,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                  <div style={{ fontSize: 11, color: '#3b82f6', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>📋 Інформація (Hostex)</div>
+                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{b.notes}</div>
+                </div>
+              )}
               {b.internal_notes ? (
                 <div style={{ padding: 16, background: 'rgba(250,204,21,0.08)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(250,204,21,0.2)' }}>
-                  <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>📝 Примітки</div>
+                  <div style={{ fontSize: 11, color: '#facc15', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>📝 Внутрішні примітки</div>
                   <div style={{ fontSize: 14, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{b.internal_notes}</div>
                 </div>
               ) : (
-                <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Немає приміток</div>
+                !b.notes && <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-tertiary)' }}>Немає приміток</div>
               )}
               {b.guest_email && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>📧 {b.guest_email}</div>}
               {b.guest_phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}><Phone size={12} style={{ display: 'inline' }} /> {b.guest_phone}</div>}
