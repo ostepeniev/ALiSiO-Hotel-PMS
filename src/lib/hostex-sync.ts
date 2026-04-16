@@ -514,6 +514,72 @@ function ensureHostexColumns(db: any) {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  // Availability blocks table (for Hostex blocked/closed dates)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS availability_blocks (
+      id TEXT PRIMARY KEY,
+      unit_id TEXT NOT NULL,
+      date_from TEXT NOT NULL,
+      date_to TEXT NOT NULL,
+      reason TEXT DEFAULT 'blocked',
+      notes TEXT,
+      hostex_code TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // ── Migration 1: Backfill guest_page_token for existing Hostex bookings ──
+  // Bookings imported before our fix don't have a token — generate now.
+  try {
+    const missing = db.prepare(`
+      SELECT id, status FROM reservations
+      WHERE hostex_reservation_code IS NOT NULL
+        AND (guest_page_token IS NULL OR guest_page_token = '')
+        AND status IN ('confirmed', 'checked_in', 'tentative')
+    `).all() as { id: string; status: string }[];
+
+    if (missing.length > 0) {
+      const upd = db.prepare("UPDATE reservations SET guest_page_token = ? WHERE id = ?");
+      for (const r of missing) {
+        upd.run(generateGuestToken(), r.id);
+      }
+      console.log(`[Hostex] Backfilled guest_page_token for ${missing.length} existing Hostex bookings`);
+    }
+  } catch (e: any) {
+    console.warn('[Hostex] guest_page_token backfill note:', e.message);
+  }
+
+  // ── Migration 2: Move blocked-channel reservations → availability_blocks ──
+  // Old sync created reservations for owner/manual closures — clean them up.
+  try {
+    const BLOCKED_TYPES = ['owner', 'manual', 'owner_reservation', 'blocked', 'maintenance'];
+    const placeholders = BLOCKED_TYPES.map(() => '?').join(', ');
+    const blockedReservations = db.prepare(`
+      SELECT id, unit_id, check_in, check_out, notes, channel_remarks, hostex_reservation_code
+      FROM reservations
+      WHERE hostex_reservation_code IS NOT NULL
+        AND hostex_channel_type IN (${placeholders})
+    `).all(...BLOCKED_TYPES) as any[];
+
+    if (blockedReservations.length > 0) {
+      const insertBlock = db.prepare(`
+        INSERT OR IGNORE INTO availability_blocks (id, unit_id, date_from, date_to, reason, notes, hostex_code)
+        VALUES (?, ?, ?, ?, 'blocked', ?, ?)
+      `);
+      const deleteRes = db.prepare('DELETE FROM reservations WHERE id = ?');
+
+      for (const r of blockedReservations) {
+        const blockId = `hx_block_${(r.hostex_reservation_code || r.id).replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
+        const notes = r.notes || r.channel_remarks || 'Закрито в Hostex';
+        insertBlock.run(blockId, r.unit_id, r.check_in, r.check_out, notes, r.hostex_reservation_code);
+        deleteRes.run(r.id);
+      }
+      console.log(`[Hostex] Migrated ${blockedReservations.length} blocked reservations → availability_blocks`);
+    }
+  } catch (e: any) {
+    console.warn('[Hostex] Blocked reservation migration note:', e.message);
+  }
 }
 
 function logSync(db: any, syncType: string, status: string, count: number, error?: string) {
