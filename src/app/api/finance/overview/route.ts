@@ -24,12 +24,11 @@ export async function GET(request: NextRequest) {
       WHERE e.month = ? AND ec.std_group IN ('COGS', 'OPEX', 'Taxes') AND ec.include_in_pnl = 1
     `).get(month) as any;
 
-    // CAPEX spend
+    // CAPEX spend from capex_items (consistent with P&L)
     const capexRow = db.prepare(`
-      SELECT COALESCE(SUM(ABS(e.amount)), 0) as total
-      FROM expenses e
-      JOIN expense_categories ec ON e.category_id = ec.id
-      WHERE e.month = ? AND ec.is_capex = 1
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM capex_items
+      WHERE month = ?
     `).get(month) as any;
 
     const revenue = revenueRow.total;
@@ -73,7 +72,7 @@ export async function GET(request: NextRequest) {
       return { month: m, revenue: rev.total, expenses: exp.total, ebitda: rev.total - exp.total };
     });
 
-    // Breakdown by BU
+    // Breakdown by BU (expenses + accruals)
     const buBreakdown = db.prepare(`
       SELECT bu.id, bu.name,
              COALESCE(SUM(CASE WHEN ec.std_group = 'Revenue' THEN e.amount ELSE 0 END), 0) as revenue,
@@ -85,7 +84,19 @@ export async function GET(request: NextRequest) {
       WHERE bu.is_active = 1 AND bu.is_shared = 0
       GROUP BY bu.id
       ORDER BY bu.sort_order
-    `).all(month);
+    `).all(month) as any[];
+
+    // Add accruals to BU breakdown
+    const buAccruals = db.prepare(`
+      SELECT a.business_unit_id, COALESCE(SUM(ABS(a.amount)), 0) as total
+      FROM accruals a
+      WHERE a.month = ? AND a.status IN ('pending', 'paid')
+      GROUP BY a.business_unit_id
+    `).all(month) as any[];
+    for (const acc of buAccruals) {
+      const bu = buBreakdown.find((b: any) => b.id === acc.business_unit_id);
+      if (bu) (bu as any).expenses += acc.total;
+    }
 
     // Alerts  
     const reviewRows = db.prepare(`SELECT COUNT(*) as cnt FROM expenses WHERE needs_review = 1`).get() as any;

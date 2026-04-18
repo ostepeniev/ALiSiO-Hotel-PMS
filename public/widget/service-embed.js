@@ -294,6 +294,12 @@
           description: description,
           reservation_id: RESERVATION_ID || undefined,
           return_path: window.location.pathname,
+          // Service booking context for preliminary order + TG notification
+          service_id: serviceId,
+          service_date: state.date,
+          start_hour: state.startHour,
+          hours: state.hours,
+          addons: (SERVICE_TYPE === 'sauna' && state.brooms > 0) ? [{ id: 'addon_broom', quantity: state.brooms }] : undefined,
         })
       });
       if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Payment init failed'); }
@@ -350,45 +356,9 @@
   }
 
   async function finalizeBookingAfterPayment(bookingData, paymentSessionId) {
-    state.loading = true; state.error = null; render();
-    try {
-      if (bookingData.serviceType === 'breakfast') {
-        var items = [];
-        Object.keys(bookingData.itemQty).forEach(function(id) {
-          if (bookingData.itemQty[id] > 0) items.push({ menuItemId: id, quantity: bookingData.itemQty[id] });
-        });
-        var body = { action: 'book-breakfast', items: items };
-        if (bookingData.reservationId) body.reservationId = bookingData.reservationId;
-        body.paymentId = paymentSessionId;
-        var res = await fetch(API_BASE + '/api/booking/services', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(body)
-        });
-        if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
-      } else {
-        var body2 = {
-          action: 'book-slots',
-          serviceId: bookingData.serviceId,
-          date: bookingData.date,
-          startHour: bookingData.startHour,
-          hours: bookingData.hours,
-          persons: 1,
-        };
-        if (bookingData.reservationId) body2.reservationId = bookingData.reservationId;
-        body2.paymentId = paymentSessionId;
-        if (bookingData.serviceType === 'sauna' && bookingData.brooms > 0) {
-          body2.addons = [{ id: 'addon_broom', quantity: bookingData.brooms }];
-        }
-        var res2 = await fetch(API_BASE + '/api/booking/services', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(body2)
-        });
-        if (!res2.ok) { var err2 = await res2.json(); throw new Error(err2.error || 'Failed'); }
-      }
-      state.view = 'success';
-    } catch(e) {
-      state.error = e.message || t.errorOccurred;
-    }
+    // The checkout-session API already created a preliminary order,
+    // and payment-return already confirmed it. Just show success.
+    state.view = 'success';
     state.loading = false; render();
   }
 

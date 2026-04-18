@@ -55,8 +55,7 @@ export async function GET(request: NextRequest) {
       ORDER BY sort_order
     `).all() as any[];
 
-    // Get revenue from payments broken down by property category → BU mapping
-    // For now, map categories to BUs: glamping → bu_glamping, resort → bu_budova_fd, camping → bu_camping
+    // Get accommodation revenue from payments (type != 'service' and != 'refund')
     const paymentsByCategory = db.prepare(`
       SELECT c.type as category_type,
              COALESCE(SUM(CASE WHEN p.type != 'refund' THEN p.amount ELSE -p.amount END), 0) as total
@@ -65,6 +64,7 @@ export async function GET(request: NextRequest) {
       JOIN units u ON r.unit_id = u.id
       JOIN categories c ON u.category_id = c.id
       WHERE p.status = 'completed' AND strftime('%Y-%m', p.paid_at) = ?
+        AND p.type != 'service'
       GROUP BY c.type
     `).all(month) as any[];
 
@@ -73,6 +73,25 @@ export async function GET(request: NextRequest) {
       if (row.category_type === 'glamping') revByBU['bu_glamping'] = row.total;
       else if (row.category_type === 'resort') revByBU['bu_budova_fd'] = row.total;
       else if (row.category_type === 'camping') revByBU['bu_camping'] = row.total;
+    }
+
+    // Get service revenue from payments (type = 'service') — map to P&L lines via notes
+    const servicePayments = db.prepare(`
+      SELECT p.amount, p.notes
+      FROM payments p
+      WHERE p.status = 'completed' AND p.type = 'service'
+        AND strftime('%Y-%m', p.paid_at) = ?
+    `).all(month) as any[];
+
+    // Service revenue buckets — mapped to P&L lines
+    const serviceRevenue: Record<string, number> = {};
+    for (const sp of servicePayments) {
+      const notes = (sp.notes || '').toLowerCase();
+      let pnlLine = 'Інші доходи';
+      if (notes.includes('sauna') || notes.includes('svc_sauna') || notes.includes('сауна')) pnlLine = 'Сауна';
+      else if (notes.includes('breakfast') || notes.includes('svc_breakfast') || notes.includes('сніданок')) pnlLine = 'Сніданки';
+      else if (notes.includes('restaurant') || notes.includes('ресторан') || notes.includes('menu')) pnlLine = 'Ресторан';
+      serviceRevenue[pnlLine] = (serviceRevenue[pnlLine] || 0) + sp.amount;
     }
 
     // Get expense amounts by pnl_line and BU
@@ -155,12 +174,17 @@ export async function GET(request: NextRequest) {
       let total = 0;
 
       if (line.type === 'direct' && line.section === 'Revenue') {
-        // Revenue: from payments + expense entries with Revenue group
+        // Revenue: from payments + service revenue + expense entries
         for (const bu of bus) {
           let val = 0;
-          // Check if this pnl_line is "Проживання" — use payment data
+          // Accommodation revenue — from payments mapped by category
           if (line.key === 'Проживання') {
             val = revByBU[bu.id] || 0;
+          }
+          // Service revenue (Сауна, Сніданки, Ресторан, Інші доходи) — from Teya payments
+          // Service revenue is not BU-specific yet, distribute equally or to first BU
+          if (serviceRevenue[line.key] && bu === bus[0]) {
+            val += serviceRevenue[line.key];
           }
           // Also add any direct revenue expense entries
           const expMatch = expByLineAndBU.find(e => e.pnl_line === line.key && e.business_unit_id === bu.id);

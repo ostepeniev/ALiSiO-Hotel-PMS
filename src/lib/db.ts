@@ -223,11 +223,12 @@ function initSchema(database: any) {
       reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
       amount REAL NOT NULL,
       currency TEXT NOT NULL DEFAULT 'CZK',
-      method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'bank_transfer', 'invoice', 'online')),
-      type TEXT NOT NULL CHECK (type IN ('deposit', 'full', 'partial', 'refund')),
+      method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'bank_transfer', 'invoice', 'online', 'booking_platform')),
+      type TEXT NOT NULL CHECK (type IN ('deposit', 'full', 'partial', 'refund', 'service')),
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
       paid_at TEXT,
       notes TEXT,
+      auto_created INTEGER DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -2052,6 +2053,56 @@ function runMigrations(database: any) {
     database.exec('CREATE INDEX IF NOT EXISTS idx_ct_hash ON content_translations(text_hash)');
     database.exec('CREATE INDEX IF NOT EXISTS idx_ct_lang ON content_translations(text_hash, lang)');
   } catch { /* ok */ }
+
+  // ═══════════════════════════════════════════════════════
+  // CRITICAL FIX: Recreate payments table with extended CHECK constraints
+  // Old table rejected type='service' (Teya) and method='booking_platform' (Hostex)
+  // causing INSERT OR IGNORE to silently discard payment records
+  // ═══════════════════════════════════════════════════════
+  try {
+    // Check if payments table has restrictive CHECK by trying an insert with 'service' type
+    const testId = '_check_test_' + Date.now();
+    const testRes = database.prepare("SELECT id FROM reservations LIMIT 1").get() as any;
+    if (testRes) {
+      try {
+        database.prepare(
+          "INSERT INTO payments (id, reservation_id, amount, currency, method, type, status) VALUES (?, ?, 0, 'CZK', 'online', 'service', 'pending')"
+        ).run(testId, testRes.id);
+        // If it succeeded, constraint is already OK — clean up
+        database.prepare("DELETE FROM payments WHERE id = ?").run(testId);
+      } catch {
+        // CHECK constraint blocked 'service' type — need to recreate table
+        console.log('[DB] Recreating payments table with extended CHECK constraints...');
+        database.exec(`
+          CREATE TABLE payments_new (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'CZK',
+            method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'bank_transfer', 'invoice', 'online', 'booking_platform')),
+            type TEXT NOT NULL CHECK (type IN ('deposit', 'full', 'partial', 'refund', 'service')),
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
+            paid_at TEXT,
+            notes TEXT,
+            auto_created INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          )
+        `);
+        // Copy all existing data
+        const cols = (database.prepare("PRAGMA table_info(payments)").all() as any[]).map((c: any) => c.name);
+        const hasAutoCreated = cols.includes('auto_created');
+        const selectCols = hasAutoCreated
+          ? 'id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created, created_at'
+          : 'id, reservation_id, amount, currency, method, type, status, paid_at, notes, 0, created_at';
+        database.exec(`INSERT INTO payments_new (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created, created_at) SELECT ${selectCols} FROM payments`);
+        database.exec('DROP TABLE payments');
+        database.exec('ALTER TABLE payments_new RENAME TO payments');
+        console.log('[DB] Payments table recreated with service/booking_platform support');
+      }
+    }
+  } catch (e: any) {
+    console.error('[DB] Payments migration error:', e.message);
+  }
 }
 
 // Generate a random 12-char token for guest pages
