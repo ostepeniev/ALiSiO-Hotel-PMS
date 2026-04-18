@@ -14,6 +14,10 @@ import {
   Users,
   Loader2,
   Flame,
+  Check,
+  X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -46,12 +50,12 @@ const CLEAN_MAP: Record<string, { label: string; badge: string }> = {
   in_progress: { label: 'Прибирається', badge: 'badge-warning' },
 };
 
-const PAY_MAP: Record<string, { label: string; badge: string }> = {
+const STATUS_ORDER_MAP: Record<string, { label: string; badge: string }> = {
+  pending: { label: 'Очікує оплати', badge: 'badge-warning' },
+  confirmed: { label: 'Підтверджено', badge: 'badge-info' },
   paid: { label: 'Оплачено', badge: 'badge-success' },
-  pending: { label: 'Очікує', badge: 'badge-warning' },
-  none: { label: 'Без оплати', badge: 'badge-info' },
+  completed: { label: 'Виконано', badge: 'badge-primary' },
   cancelled: { label: 'Скасовано', badge: 'badge-danger' },
-  failed: { label: 'Помилка', badge: 'badge-danger' },
 };
 
 interface ServiceOrder {
@@ -79,19 +83,50 @@ export default function DashboardPage() {
 function DashboardDesktop() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
+  const [soDate, setSoDate] = useState(new Date().toISOString().split('T')[0]);
+  const [soPeriod, setSoPeriod] = useState<'day'|'week'|'all'>('day');
   const [loading, setLoading] = useState(true);
   const onMenuClick = useMobileMenu();
+
+  const loadServiceOrders = (date: string, period: string) => {
+    fetch(`/api/service-orders?date=${date}&period=${period}`)
+      .then(r => r.json())
+      .then(d => setServiceOrders(d.orders || []))
+      .catch(console.error);
+  };
 
   useEffect(() => {
     Promise.all([
       fetch('/api/dashboard').then(r => r.json()),
-      fetch('/api/service-orders?period=week').then(r => r.json()).catch(() => ({ orders: [] })),
+      fetch(`/api/service-orders?date=${soDate}&period=${soPeriod}`).then(r => r.json()).catch(() => ({ orders: [] })),
     ]).then(([dashData, soData]) => {
       setData(dashData);
       setServiceOrders(soData.orders || []);
     }).catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDateChange = (offset: number) => {
+    const d = new Date(soDate);
+    d.setDate(d.getDate() + offset);
+    const newDate = d.toISOString().split('T')[0];
+    setSoDate(newDate);
+    loadServiceOrders(newDate, soPeriod);
+  };
+
+  const handlePeriodChange = (p: 'day'|'week'|'all') => {
+    setSoPeriod(p);
+    loadServiceOrders(soDate, p);
+  };
+
+  const handleOrderAction = async (id: string, action: 'complete' | 'cancel' | 'reopen') => {
+    await fetch('/api/service-orders', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, action }),
+    });
+    loadServiceOrders(soDate, soPeriod);
+  };
 
   if (loading || !data) {
     return (
@@ -149,22 +184,48 @@ function DashboardDesktop() {
         </div>
 
         {/* Service Orders */}
-        {serviceOrders.length > 0 && (
           <div className="card" style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Flame size={16} style={{ color: '#f59e0b' }} /> Замовлення послуг
-              <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: 10 }}>
-                {serviceOrders.length}
-              </span>
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                <Flame size={16} style={{ color: '#f59e0b' }} /> Замовлення послуг
+                {serviceOrders.length > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: 10 }}>
+                    {serviceOrders.length}
+                  </span>
+                )}
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {/* Period selector */}
+                {(['day', 'week', 'all'] as const).map(p => (
+                  <button key={p} onClick={() => handlePeriodChange(p)}
+                    style={{ padding: '3px 10px', fontSize: 11, borderRadius: 6, border: 'none', cursor: 'pointer',
+                      background: soPeriod === p ? 'var(--accent)' : 'var(--surface-2)', color: soPeriod === p ? '#fff' : 'var(--text-secondary)' }}>
+                    {p === 'day' ? 'День' : p === 'week' ? 'Тиждень' : 'Все'}
+                  </button>
+                ))}
+                {/* Date nav */}
+                <button onClick={() => handleDateChange(-1)} style={{ padding: '3px 6px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  <ChevronLeft size={14} />
+                </button>
+                <input type="date" value={soDate} onChange={e => { setSoDate(e.target.value); loadServiceOrders(e.target.value, soPeriod); }}
+                  style={{ padding: '3px 8px', fontSize: 11, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-primary)' }} />
+                <button onClick={() => handleDateChange(1)} style={{ padding: '3px 6px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+            {serviceOrders.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-tertiary)' }}>Немає замовлень на цю дату</div>
+            ) : (
+            <>
             <div className="desktop-only">
               <table className="table">
                 <thead>
-                  <tr><th>Послуга</th><th>Гість</th><th>Дата / час</th><th>Юніт</th><th>Сума</th><th>Оплата</th></tr>
+                  <tr><th>Послуга</th><th>Гість</th><th>Дата / час</th><th>Юніт</th><th>Сума</th><th>Статус</th><th></th></tr>
                 </thead>
                 <tbody>
                   {serviceOrders.map(o => (
-                    <tr key={o.id}>
+                    <tr key={o.id} style={{ opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
                       <td style={{ fontWeight: 600 }}>{o.serviceName}</td>
                       <td>{o.guestName || '—'}</td>
                       <td>
@@ -174,9 +235,30 @@ function DashboardDesktop() {
                       <td>{o.unitName ? <span className="badge badge-primary">{o.unitName}</span> : '—'}</td>
                       <td style={{ fontWeight: 600 }}>{o.totalPrice} Kč</td>
                       <td>
-                        <span className={`badge ${PAY_MAP[o.paymentStatus]?.badge || 'badge-info'}`}>
-                          {PAY_MAP[o.paymentStatus]?.label || o.paymentStatus}
+                        <span className={`badge ${STATUS_ORDER_MAP[o.status]?.badge || 'badge-info'}`}>
+                          {STATUS_ORDER_MAP[o.status]?.label || o.status}
                         </span>
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {o.status === 'paid' || o.status === 'confirmed' ? (
+                          <button onClick={() => handleOrderAction(o.id, 'complete')}
+                            title="Відмітити як виконано"
+                            style={{ padding: '4px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'rgba(52,211,153,0.15)', color: 'var(--accent-success)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Check size={12} /> Виконано
+                          </button>
+                        ) : o.status === 'completed' ? (
+                          <button onClick={() => handleOrderAction(o.id, 'reopen')}
+                            title="Повернути"
+                            style={{ padding: '4px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'var(--surface-2)', color: 'var(--text-tertiary)', fontSize: 11 }}>
+                            ↩ Повернути
+                          </button>
+                        ) : o.status === 'pending' ? (
+                          <button onClick={() => handleOrderAction(o.id, 'cancel')}
+                            title="Скасувати"
+                            style={{ padding: '4px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: 'var(--accent-danger)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <X size={12} /> Скасувати
+                          </button>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -186,7 +268,7 @@ function DashboardDesktop() {
             <div className="mobile-only">
               <div className="card-list">
                 {serviceOrders.map(o => (
-                  <div key={o.id} className="dashboard-event-card">
+                  <div key={o.id} className="dashboard-event-card" style={{ opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
                     <div className="dashboard-event-card-icon" style={{ background: 'rgba(245,158,11,0.15)' }}>
                       <Flame size={18} style={{ color: '#f59e0b' }} />
                     </div>
@@ -199,16 +281,23 @@ function DashboardDesktop() {
                     </div>
                     <div className="dashboard-event-card-right">
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{o.totalPrice} Kč</div>
-                      <span className={`badge ${PAY_MAP[o.paymentStatus]?.badge || 'badge-info'}`} style={{ fontSize: 10, padding: '1px 6px' }}>
-                        {PAY_MAP[o.paymentStatus]?.label || o.paymentStatus}
+                      <span className={`badge ${STATUS_ORDER_MAP[o.status]?.badge || 'badge-info'}`} style={{ fontSize: 10, padding: '1px 6px' }}>
+                        {STATUS_ORDER_MAP[o.status]?.label || o.status}
                       </span>
+                      {(o.status === 'paid' || o.status === 'confirmed') && (
+                        <button onClick={() => handleOrderAction(o.id, 'complete')}
+                          style={{ padding: '2px 6px', borderRadius: 4, border: 'none', cursor: 'pointer', background: 'rgba(52,211,153,0.15)', color: 'var(--accent-success)', fontSize: 10, marginTop: 4 }}>
+                          <Check size={10} /> ✓
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+            </>
+            )}
           </div>
-        )}
 
         {/* Tables */}
         <div className="dashboard-tables-grid">

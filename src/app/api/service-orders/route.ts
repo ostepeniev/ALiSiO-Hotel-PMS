@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 
 /**
@@ -7,20 +7,26 @@ import { getDb } from '@/lib/db';
  * 
  * Returns service orders for the PMS dashboard.
  * Query params:
- *   period: 'today' | 'week' | 'all' (default: 'week')
+ *   date: YYYY-MM-DD (default: today)
+ *   period: 'day' | 'week' | 'all' (default: 'day')
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const db = getDb();
     const url = new URL(req.url);
-    const period = url.searchParams.get('period') || 'week';
+    const dateParam = url.searchParams.get('date') || new Date().toISOString().split('T')[0];
+    const period = url.searchParams.get('period') || 'day';
+
+    // Ensure completed_at column exists
+    try { db.prepare("ALTER TABLE booking_service_orders ADD COLUMN completed_at TEXT DEFAULT NULL").run(); } catch { /* exists */ }
 
     let dateFilter = '';
-    if (period === 'today') {
-      dateFilter = "AND bso.service_date = date('now')";
+    if (period === 'day') {
+      dateFilter = `AND bso.service_date = '${dateParam}'`;
     } else if (period === 'week') {
-      dateFilter = "AND bso.service_date >= date('now') AND bso.service_date <= date('now', '+7 days')";
+      dateFilter = `AND bso.service_date >= '${dateParam}' AND bso.service_date <= date('${dateParam}', '+7 days')`;
     }
+    // period === 'all' → no filter
 
     // Get booking_service_orders (from widget / booking page)
     const widgetOrders = db.prepare(`
@@ -28,7 +34,8 @@ export async function GET(req: Request) {
         bso.id, bso.reservation_id, bso.service_id, bso.quantity,
         bso.service_date, bso.options_json, bso.unit_price, bso.total_price,
         bso.status, bso.payment_status, bso.promo_code, bso.created_at,
-        ads.name as service_name, ads.name_en,
+        bso.completed_at,
+        ads.name as service_name, ads.name_en, ads.service_type,
         g.first_name, g.last_name,
         u.name as unit_name
       FROM booking_service_orders bso
@@ -40,25 +47,7 @@ export async function GET(req: Request) {
       ORDER BY bso.service_date ASC, bso.created_at DESC
     `).all() as any[];
 
-    // Get service_orders (from guest page)
-    const guestOrders = db.prepare(`
-      SELECT 
-        so.id, so.reservation_id, so.service_id, so.quantity,
-        so.total_price, so.status, so.payment_status, so.created_at,
-        ads.name as service_name, ads.name_en,
-        g.first_name, g.last_name,
-        u.name as unit_name,
-        r.check_in, r.check_out
-      FROM service_orders so
-      JOIN additional_services ads ON so.service_id = ads.id
-      JOIN reservations r ON so.reservation_id = r.id
-      JOIN guests g ON r.guest_id = g.id
-      LEFT JOIN units u ON r.unit_id = u.id
-      ORDER BY so.created_at DESC
-      LIMIT 20
-    `).all() as any[];
-
-    // Format widget orders
+    // Compute unified status for each order
     const orders = widgetOrders.map(o => {
       let startHour = null, endHour = null;
       if (o.options_json) {
@@ -74,13 +63,15 @@ export async function GET(req: Request) {
         reservationId: o.reservation_id,
         serviceId: o.service_id,
         serviceName: o.name_en || o.service_name,
+        serviceType: o.service_type,
         serviceDate: o.service_date,
         startHour,
         endHour,
         quantity: o.quantity,
         totalPrice: o.total_price,
-        status: o.status,
+        status: computeStatus(o),
         paymentStatus: o.payment_status,
+        completedAt: o.completed_at,
         promoCode: o.promo_code,
         guestName: o.first_name ? `${o.first_name} ${o.last_name}` : null,
         unitName: o.unit_name,
@@ -88,20 +79,47 @@ export async function GET(req: Request) {
       };
     });
 
-    // Format guest orders
+    // Also get guest-page service_orders for the date range
+    let soDateFilter = '';
+    if (period === 'day') {
+      soDateFilter = `AND so.created_at >= '${dateParam}' AND so.created_at < date('${dateParam}', '+1 day')`;
+    } else if (period === 'week') {
+      soDateFilter = `AND so.created_at >= '${dateParam}' AND so.created_at < date('${dateParam}', '+7 days')`;
+    }
+
+    const guestOrders = db.prepare(`
+      SELECT 
+        so.id, so.reservation_id, so.service_id, so.quantity,
+        so.total_price, so.status, so.payment_status, so.created_at,
+        ads.name as service_name, ads.name_en, ads.service_type,
+        g.first_name, g.last_name,
+        u.name as unit_name,
+        r.check_in
+      FROM service_orders so
+      JOIN additional_services ads ON so.service_id = ads.id
+      JOIN reservations r ON so.reservation_id = r.id
+      JOIN guests g ON r.guest_id = g.id
+      LEFT JOIN units u ON r.unit_id = u.id
+      WHERE 1=1 ${soDateFilter}
+      ORDER BY so.created_at DESC
+      LIMIT 50
+    `).all() as any[];
+
     const gOrders = guestOrders.map(o => ({
       id: o.id,
       source: 'guest_page',
       reservationId: o.reservation_id,
       serviceId: o.service_id,
       serviceName: o.name_en || o.service_name,
+      serviceType: o.service_type,
       serviceDate: o.check_in,
       startHour: null,
       endHour: null,
       quantity: o.quantity,
       totalPrice: o.total_price,
-      status: o.status,
+      status: computeStatus(o),
       paymentStatus: o.payment_status,
+      completedAt: null,
       promoCode: null,
       guestName: `${o.first_name} ${o.last_name}`,
       unitName: o.unit_name,
@@ -111,10 +129,94 @@ export async function GET(req: Request) {
     return NextResponse.json({
       orders: [...orders, ...gOrders],
       total: orders.length + gOrders.length,
+      date: dateParam,
+      period,
     });
 
   } catch (error: any) {
     console.error('GET /api/service-orders error:', error?.message);
     return NextResponse.json({ error: 'Failed to load service orders' }, { status: 500 });
   }
+}
+
+/**
+ * PATCH /api/service-orders
+ * 
+ * Update service order status (mark as completed, cancel, etc.)
+ * Body: { id: string, action: 'complete' | 'cancel' | 'reopen' }
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await req.json();
+    const { id, action } = body;
+
+    if (!id || !action) {
+      return NextResponse.json({ error: 'id and action required' }, { status: 400 });
+    }
+
+    // Try both tables
+    const isBSO = db.prepare('SELECT id FROM booking_service_orders WHERE id = ?').get(id);
+    const isSO = db.prepare('SELECT id FROM service_orders WHERE id = ?').get(id);
+
+    if (!isBSO && !isSO) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    switch (action) {
+      case 'complete': {
+        if (isBSO) {
+          db.prepare("UPDATE booking_service_orders SET status = 'completed', completed_at = datetime('now') WHERE id = ?").run(id);
+        }
+        if (isSO) {
+          db.prepare("UPDATE service_orders SET status = 'completed' WHERE id = ?").run(id);
+        }
+        break;
+      }
+      case 'cancel': {
+        if (isBSO) {
+          db.prepare("UPDATE booking_service_orders SET status = 'cancelled', payment_status = 'cancelled' WHERE id = ?").run(id);
+          // Release time slots
+          db.prepare("UPDATE service_time_slots SET booked_count = MAX(0, booked_count - 1) WHERE id IN (SELECT time_slot_id FROM booking_service_orders WHERE id = ?)").run(id);
+        }
+        if (isSO) {
+          db.prepare("UPDATE service_orders SET status = 'cancelled', payment_status = 'cancelled' WHERE id = ?").run(id);
+        }
+        break;
+      }
+      case 'reopen': {
+        if (isBSO) {
+          db.prepare("UPDATE booking_service_orders SET status = 'confirmed', completed_at = NULL WHERE id = ?").run(id);
+        }
+        if (isSO) {
+          db.prepare("UPDATE service_orders SET status = 'confirmed' WHERE id = ?").run(id);
+        }
+        break;
+      }
+      default:
+        return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+    }
+
+    console.log(`[Service Orders] ${action} order ${id}`);
+    return NextResponse.json({ success: true, id, action });
+
+  } catch (error: any) {
+    console.error('PATCH /api/service-orders error:', error?.message);
+    return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
+  }
+}
+
+/**
+ * Compute unified status from order data.
+ * Priority: completed > paid > pending > cancelled
+ */
+function computeStatus(order: any): string {
+  if (order.completed_at || order.status === 'completed') return 'completed';
+  if (order.status === 'cancelled' || order.payment_status === 'cancelled') return 'cancelled';
+  if (order.payment_status === 'failed') return 'cancelled';
+  if (order.payment_status === 'paid') return 'paid';
+  if (order.payment_status === 'pending') return 'pending';
+  // none / no payment required
+  if (order.status === 'confirmed') return 'confirmed';
+  return 'pending';
 }
