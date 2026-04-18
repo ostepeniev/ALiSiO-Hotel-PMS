@@ -13,6 +13,7 @@ import {
   CalendarDays,
   Users,
   Loader2,
+  Flame,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -45,6 +46,30 @@ const CLEAN_MAP: Record<string, { label: string; badge: string }> = {
   in_progress: { label: 'Прибирається', badge: 'badge-warning' },
 };
 
+const PAY_MAP: Record<string, { label: string; badge: string }> = {
+  paid: { label: 'Оплачено', badge: 'badge-success' },
+  pending: { label: 'Очікує', badge: 'badge-warning' },
+  none: { label: 'Без оплати', badge: 'badge-info' },
+  cancelled: { label: 'Скасовано', badge: 'badge-danger' },
+  failed: { label: 'Помилка', badge: 'badge-danger' },
+};
+
+interface ServiceOrder {
+  id: string;
+  source: string;
+  serviceId: string;
+  serviceName: string;
+  serviceDate: string;
+  startHour: number | null;
+  endHour: number | null;
+  totalPrice: number;
+  status: string;
+  paymentStatus: string;
+  guestName: string | null;
+  unitName: string | null;
+  createdAt: string;
+}
+
 export default function DashboardPage() {
   const { isMobile } = useDevice();
   if (isMobile) return <MobileDashboard />;
@@ -53,14 +78,18 @@ export default function DashboardPage() {
 
 function DashboardDesktop() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const onMenuClick = useMobileMenu();
 
   useEffect(() => {
-    fetch('/api/dashboard')
-      .then(r => r.json())
-      .then(d => setData(d))
-      .catch(console.error)
+    Promise.all([
+      fetch('/api/dashboard').then(r => r.json()),
+      fetch('/api/service-orders?period=week').then(r => r.json()).catch(() => ({ orders: [] })),
+    ]).then(([dashData, soData]) => {
+      setData(dashData);
+      setServiceOrders(soData.orders || []);
+    }).catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
@@ -118,6 +147,68 @@ function DashboardDesktop() {
             </div>
           </div>
         </div>
+
+        {/* Service Orders */}
+        {serviceOrders.length > 0 && (
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Flame size={16} style={{ color: '#f59e0b' }} /> Замовлення послуг
+              <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '2px 8px', borderRadius: 10 }}>
+                {serviceOrders.length}
+              </span>
+            </h3>
+            <div className="desktop-only">
+              <table className="table">
+                <thead>
+                  <tr><th>Послуга</th><th>Гість</th><th>Дата / час</th><th>Юніт</th><th>Сума</th><th>Оплата</th></tr>
+                </thead>
+                <tbody>
+                  {serviceOrders.map(o => (
+                    <tr key={o.id}>
+                      <td style={{ fontWeight: 600 }}>{o.serviceName}</td>
+                      <td>{o.guestName || '—'}</td>
+                      <td>
+                        {o.serviceDate}
+                        {o.startHour != null && <span style={{ color: 'var(--text-tertiary)', marginLeft: 4 }}>{o.startHour}:00–{o.endHour}:00</span>}
+                      </td>
+                      <td>{o.unitName ? <span className="badge badge-primary">{o.unitName}</span> : '—'}</td>
+                      <td style={{ fontWeight: 600 }}>{o.totalPrice} Kč</td>
+                      <td>
+                        <span className={`badge ${PAY_MAP[o.paymentStatus]?.badge || 'badge-info'}`}>
+                          {PAY_MAP[o.paymentStatus]?.label || o.paymentStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-only">
+              <div className="card-list">
+                {serviceOrders.map(o => (
+                  <div key={o.id} className="dashboard-event-card">
+                    <div className="dashboard-event-card-icon" style={{ background: 'rgba(245,158,11,0.15)' }}>
+                      <Flame size={18} style={{ color: '#f59e0b' }} />
+                    </div>
+                    <div className="dashboard-event-card-info">
+                      <div className="dashboard-event-card-name">{o.serviceName}</div>
+                      <div className="dashboard-event-card-detail">
+                        {o.guestName || 'Клієнт'}
+                        {o.startHour != null && ` · ${o.startHour}:00–${o.endHour}:00`}
+                      </div>
+                    </div>
+                    <div className="dashboard-event-card-right">
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{o.totalPrice} Kč</div>
+                      <span className={`badge ${PAY_MAP[o.paymentStatus]?.badge || 'badge-info'}`} style={{ fontSize: 10, padding: '1px 6px' }}>
+                        {PAY_MAP[o.paymentStatus]?.label || o.paymentStatus}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tables */}
         <div className="dashboard-tables-grid">

@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+
+const SLOT_TTL_MINUTES = 15; // Temporary slot lock duration
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -45,6 +48,15 @@ export async function GET(request: NextRequest) {
 
       // For slot_booking services (sauna), return existing booked slots
       if (service.service_type === 'slot_booking' && existingTables.has('service_time_slots')) {
+        // Clean up expired temporary locks first
+        db.prepare(`
+          UPDATE service_time_slots
+          SET booked_count = MAX(0, booked_count - 1), booking_session_id = NULL
+          WHERE booking_session_id IS NOT NULL
+            AND notes IS NULL
+            AND created_at < datetime('now', '-' || ? || ' minutes')
+        `).run(SLOT_TTL_MINUTES);
+
         const bookedSlots = db.prepare(`
           SELECT date, start_time, end_time, booked_count, max_capacity
           FROM service_time_slots
@@ -234,14 +246,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Store booking_session_id for temporary lock
+      if (paymentId) {
+        for (const sid of slotIds) {
+          db.prepare('UPDATE service_time_slots SET booking_session_id = ? WHERE id = ?').run(paymentId, sid);
+        }
+      }
+
       // Create booking_service_order
-      if (existingTables.has('booking_service_orders') && reservationId) {
+      if (existingTables.has('booking_service_orders')) {
         const orderId = `bso_${Date.now()}`;
         db.prepare(`
           INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status, promo_code)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
         `).run(
-          orderId, reservationId, serviceId, hours, date, slotIds[0],
+          orderId, reservationId || null, serviceId, hours, date, slotIds[0],
           JSON.stringify({ persons: persons || 1, addons: addonDetails, hours, startHour }),
           pricePerHour, totalPrice,
           paymentId || null,
@@ -249,6 +268,33 @@ export async function POST(request: NextRequest) {
           appliedPromo
         );
       }
+
+      // ── Telegram notification: new slot booking ──
+      try {
+        const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+        let guestInfo = 'Зовнішній клієнт';
+        if (reservationId) {
+          const guest = db.prepare(`
+            SELECT g.first_name, g.last_name, u.name as unit_name
+            FROM reservations r
+            JOIN guests g ON r.guest_id = g.id
+            LEFT JOIN units u ON r.unit_id = u.id
+            WHERE r.id = ?
+          `).get(reservationId) as any;
+          if (guest) guestInfo = `${esc(guest.first_name)} ${esc(guest.last_name)}${guest.unit_name ? ' · ' + esc(guest.unit_name) : ''}`;
+        }
+        const svcName = service.name_en || service.name;
+        const payStatus = paymentId ? '💳 Очікує оплати' : '✅ Без оплати';
+        const text = [
+          `📦 <b>Нове замовлення: ${esc(svcName)}</b>`,
+          ``,
+          `👤 ${guestInfo}`,
+          `📅 ${date}, ${startHour}:00–${startHour + hours}:00`,
+          `💰 ${totalPrice} CZK`,
+          payStatus,
+        ].join('\n');
+        sendTelegramMessage(text).catch(() => {});
+      } catch { /* non-critical */ }
 
       return NextResponse.json({
         success: true,

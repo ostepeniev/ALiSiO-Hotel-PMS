@@ -1,18 +1,25 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 /**
  * GET /api/booking/payment-return
  * 
  * Handles redirect from Teya Hosted Checkout after payment.
- * On success: updates reservation status to 'confirmed' and payment_status to 'paid'.
- * Redirects guest back with payment result.
+ * This is a FALLBACK — the webhook should also handle this, but
+ * in case the webhook fails (as it did), this ensures payment is confirmed.
  * 
- * Query params:
- *   session_id    - Teya checkout session ID
- *   status        - "success" or "cancel"
- *   return        - URL path to redirect back to
- *   reservation_id - Reservation ID to update (optional, also checked via metadata)
+ * On success:
+ *   - Updates reservation status to 'confirmed' / payment_status to 'paid'
+ *   - Updates booking_service_orders payment_status to 'paid'
+ *   - Confirms service_time_slots permanently
+ *   - Records in payments table
+ *   - Sends Telegram notification
+ * 
+ * On cancel:
+ *   - Releases temporary slot locks
+ *   - Sends Telegram notification
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -22,31 +29,191 @@ export async function GET(req: Request) {
 
   console.log(`[Payment Return] session=${sessionId}, status=${status}, return=${returnPath}`);
 
-  // On successful payment, update reservation status
-  if (status === 'success') {
-    try {
-      const db = getDb();
+  const db = getDb();
 
-      // Try to find reservation_id from return path (e.g. /booking?success=r_12345)
+  if (status === 'success' && sessionId) {
+    try {
+      // 1) Update booking_service_orders (widget sauna/breakfast)
+      const bsoResult = db.prepare(`
+        UPDATE booking_service_orders 
+        SET payment_status = 'paid'
+        WHERE payment_id = ? AND payment_status IN ('pending', 'none')
+      `).run(sessionId);
+
+      // 2) Update service_orders (guest page)
+      const soResult = db.prepare(`
+        UPDATE service_orders 
+        SET payment_status = 'paid', status = 'confirmed'
+        WHERE payment_id = ? AND payment_status IN ('pending', 'none')
+      `).run(sessionId);
+
+      // 3) Update reservations (booking page)
       const returnUrl = new URL(returnPath, url.origin);
       const reservationId = returnUrl.searchParams.get('success');
-
+      let resResult = { changes: 0 };
       if (reservationId) {
-        const updated = db.prepare(`
+        resResult = db.prepare(`
           UPDATE reservations 
           SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now')
           WHERE id = ? AND status = 'tentative'
         `).run(reservationId);
-
-        console.log(`[Payment Return] Updated reservation ${reservationId}: changes=${updated.changes}`);
       }
-    } catch (err) {
-      console.error('[Payment Return] DB update error:', err);
-      // Don't block redirect on DB error
+
+      // 4) Confirm service_time_slots permanently
+      db.prepare(`
+        UPDATE service_time_slots
+        SET booking_session_id = NULL, notes = 'paid'
+        WHERE booking_session_id = ?
+      `).run(sessionId);
+
+      console.log(`[Payment Return] Confirmed:`, {
+        bsoOrders: bsoResult.changes,
+        serviceOrders: soResult.changes,
+        reservations: resResult.changes,
+      });
+
+      // 5) Record in payments table (if not already done by webhook)
+      if (bsoResult.changes > 0 || soResult.changes > 0) {
+        try {
+          const order = db.prepare(`
+            SELECT reservation_id, total_price, service_id, options_json, service_date
+            FROM booking_service_orders WHERE payment_id = ?
+            UNION ALL
+            SELECT reservation_id, total_price, service_id, NULL, NULL
+            FROM service_orders WHERE payment_id = ?
+            LIMIT 1
+          `).get(sessionId, sessionId) as any;
+
+          if (order) {
+            const payId = `pay_return_${Date.now()}`;
+            let notes = `Online: ${order.service_id}`;
+            if (order.options_json) {
+              try {
+                const opts = JSON.parse(order.options_json);
+                notes += ` ${order.service_date || ''} ${opts.startHour || ''}:00–${(opts.startHour || 0) + (opts.hours || 0)}:00`;
+              } catch { /* ignore */ }
+            }
+            db.prepare(`
+              INSERT OR IGNORE INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
+              VALUES (?, ?, ?, 'CZK', 'online', 'service', 'completed', datetime('now'), ?, 1)
+            `).run(payId, order.reservation_id, order.total_price, notes);
+            console.log('[Payment Return] Payment recorded:', payId, order.total_price);
+          }
+        } catch (e: any) {
+          console.error('[Payment Return] Payment record error:', e.message);
+        }
+      }
+
+      // 6) Telegram notification
+      if (bsoResult.changes > 0 || soResult.changes > 0) {
+        try {
+          const order = db.prepare(`
+            SELECT bso.total_price, bso.service_date, bso.options_json, bso.service_id,
+                   ads.name as service_name, ads.name_en,
+                   g.first_name, g.last_name,
+                   u.name as unit_name
+            FROM booking_service_orders bso
+            JOIN additional_services ads ON bso.service_id = ads.id
+            LEFT JOIN reservations r ON bso.reservation_id = r.id
+            LEFT JOIN guests g ON r.guest_id = g.id
+            LEFT JOIN units u ON r.unit_id = u.id
+            WHERE bso.payment_id = ?
+            UNION ALL
+            SELECT so.total_price, NULL, NULL, so.service_id,
+                   ads2.name, ads2.name_en,
+                   g2.first_name, g2.last_name,
+                   u2.name
+            FROM service_orders so
+            JOIN additional_services ads2 ON so.service_id = ads2.id
+            JOIN reservations r2 ON so.reservation_id = r2.id
+            JOIN guests g2 ON r2.guest_id = g2.id
+            JOIN units u2 ON r2.unit_id = u2.id
+            WHERE so.payment_id = ?
+            LIMIT 1
+          `).get(sessionId, sessionId) as any;
+
+          if (order) {
+            const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+            let timeInfo = '';
+            if (order.options_json) {
+              try {
+                const opts = JSON.parse(order.options_json);
+                timeInfo = `\n⏰ ${order.service_date} ${opts.startHour}:00–${opts.startHour + opts.hours}:00`;
+              } catch { /* ignore */ }
+            }
+            const guestName = order.first_name ? `${esc(order.first_name)} ${esc(order.last_name)}` : 'Зовнішній клієнт';
+            const text = [
+              `💳 <b>Оплата підтверджена</b>`,
+              ``,
+              `👤 ${guestName}`,
+              order.unit_name ? `🏠 ${esc(order.unit_name)}` : '',
+              `✨ ${esc(order.name_en || order.service_name)}${timeInfo}`,
+              `💰 ${order.total_price} CZK — ✅ Оплачено`,
+            ].filter(Boolean).join('\n');
+            sendTelegramMessage(text).catch(() => {});
+          }
+        } catch { /* non-critical */ }
+      }
+
+    } catch (err: any) {
+      console.error('[Payment Return] Error:', err.message);
+    }
+
+  } else if (status === 'cancel' && sessionId) {
+    try {
+      // Release temporary slot locks
+      const released = db.prepare(`
+        UPDATE service_time_slots
+        SET booked_count = MAX(0, booked_count - 1), booking_session_id = NULL
+        WHERE booking_session_id = ?
+      `).run(sessionId);
+
+      // Update order status
+      db.prepare(`
+        UPDATE booking_service_orders 
+        SET payment_status = 'cancelled'
+        WHERE payment_id = ? AND payment_status = 'pending'
+      `).run(sessionId);
+
+      db.prepare(`
+        UPDATE service_orders 
+        SET payment_status = 'cancelled'
+        WHERE payment_id = ? AND payment_status = 'pending'
+      `).run(sessionId);
+
+      console.log(`[Payment Return] Cancelled, slots released:`, released.changes);
+
+      // Telegram: cancellation notification
+      try {
+        const order = db.prepare(`
+          SELECT ads.name_en, ads.name as service_name, bso.service_date, bso.total_price, bso.options_json,
+                 g.first_name, g.last_name
+          FROM booking_service_orders bso
+          JOIN additional_services ads ON bso.service_id = ads.id
+          LEFT JOIN reservations r ON bso.reservation_id = r.id
+          LEFT JOIN guests g ON r.guest_id = g.id
+          WHERE bso.payment_id = ?
+          LIMIT 1
+        `).get(sessionId) as any;
+        if (order) {
+          const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+          const guestName = order.first_name ? `${esc(order.first_name)} ${esc(order.last_name)}` : 'Клієнт';
+          const text = [
+            `❌ <b>Оплату скасовано</b>`,
+            ``,
+            `👤 ${guestName}`,
+            `✨ ${esc(order.name_en || order.service_name)}`,
+            `💰 ${order.total_price} CZK`,
+          ].join('\n');
+          sendTelegramMessage(text).catch(() => {});
+        }
+      } catch { /* non-critical */ }
+    } catch (err: any) {
+      console.error('[Payment Return] Cancel error:', err.message);
     }
   }
 
-  // Build redirect URL with payment result params
+  // Build redirect URL
   const separator = returnPath.includes('?') ? '&' : '?';
   const redirectUrl = `${returnPath}${separator}payment_status=${status}&session_id=${sessionId}`;
 
