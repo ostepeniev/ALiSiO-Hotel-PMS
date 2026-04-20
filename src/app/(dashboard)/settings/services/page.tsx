@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Trash2, GripVertical, ToggleLeft, ToggleRight } from 'lucide-react';
+import { ImageUploadField } from '@/components/ui/ImageUploadField';
 
 const SERVICE_TYPES = [
   { value: 'simple', label: 'Просте замовлення' },
@@ -30,7 +31,7 @@ export default function ServicesSettingsPage() {
   const [newForm, setNewForm] = useState({
     name: '', name_en: '', description: '', price: 0, currency: 'CZK',
     unit_label: '', icon: '✨', category: 'other', service_type: 'simple',
-    duration_minutes: 0, sort_order: 99, name_cs: '', name_de: '',
+    duration_minutes: 0, sort_order: 99, name_cs: '', name_de: '', photo_url: '',
   });
   const [toast, setToast] = useState<string | null>(null);
 
@@ -55,7 +56,7 @@ export default function ServicesSettingsPage() {
       });
       if (res.ok) {
         showToast('Послугу створено!');
-        setNewForm({ name: '', name_en: '', description: '', price: 0, currency: 'CZK', unit_label: '', icon: '✨', category: 'other', service_type: 'simple', duration_minutes: 0, sort_order: 99, name_cs: '', name_de: '' });
+        setNewForm({ name: '', name_en: '', description: '', price: 0, currency: 'CZK', unit_label: '', icon: '✨', category: 'other', service_type: 'simple', duration_minutes: 0, sort_order: 99, name_cs: '', name_de: '', photo_url: '' });
         setShowNew(false);
         fetchServices();
       }
@@ -104,7 +105,7 @@ export default function ServicesSettingsPage() {
       price: svc.price, currency: svc.currency, unit_label: svc.unit_label || '',
       icon: svc.icon, category: svc.category, service_type: svc.service_type,
       duration_minutes: svc.duration_minutes || 0, sort_order: svc.sort_order,
-      name_cs: svc.name_cs || '', name_de: svc.name_de || '',
+      name_cs: svc.name_cs || '', name_de: svc.name_de || '', photo_url: svc.photo_url || '',
     });
   };
 
@@ -153,7 +154,11 @@ export default function ServicesSettingsPage() {
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <GripVertical size={16} style={{ color: 'var(--text-tertiary)', cursor: 'grab', flexShrink: 0 }} />
-                <span style={{ fontSize: 26, flexShrink: 0 }}>{svc.icon}</span>
+                {svc.photo_url ? (
+                  <img src={svc.photo_url} alt={svc.name} style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
+                ) : (
+                  <span style={{ fontSize: 26, flexShrink: 0 }}>{svc.icon}</span>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>
                     {svc.name}
@@ -270,6 +275,16 @@ function ServiceForm({ form, setForm }: { form: any; setForm: (f: any) => void }
       <div>
         <label className="form-label">Порядок</label>
         <input className="form-input" type="number" value={form.sort_order} onChange={e => setForm({ ...form, sort_order: Number(e.target.value) })} />
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <ImageUploadField
+          label="📸 Фото послуги"
+          value={form.photo_url || ''}
+          onChange={url => setForm({ ...form, photo_url: url })}
+          folder="services"
+          aspectRatio="16/9"
+          placeholder="https://... або завантажте фото"
+        />
       </div>
       <div>
         <label className="form-label">Назва (чеськ)</label>

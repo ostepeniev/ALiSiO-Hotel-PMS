@@ -87,10 +87,28 @@ function splitGuestName(fullName: string): { firstName: string; lastName: string
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
+// ─── Date normalization ───────────────────────────────────
+// Hostex sometimes sends datetime strings like "2026-04-20T22:00:00Z" (UTC midnight Czech time)
+// We always normalize to plain YYYY-MM-DD in Czech timezone
+function normalizeHostexDate(dateStr: string): string {
+  if (!dateStr) return dateStr;
+  // Already plain date
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // Datetime string — convert to Czech local date
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
+    }
+  } catch { /* ignore */ }
+  // Fallback: take first 10 chars
+  return dateStr.substring(0, 10);
+}
+
 // ─── Calculate nights ─────────────────────────────────────
 function calcNights(checkIn: string, checkOut: string): number {
-  const d1 = new Date(checkIn);
-  const d2 = new Date(checkOut);
+  const d1 = new Date(normalizeHostexDate(checkIn) + 'T12:00:00');
+  const d2 = new Date(normalizeHostexDate(checkOut) + 'T12:00:00');
   return Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
@@ -224,7 +242,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
-      res.check_in_date, res.check_out_date, calcNights(res.check_in_date, res.check_out_date),
+      normalizeHostexDate(res.check_in_date), normalizeHostexDate(res.check_out_date), calcNights(res.check_in_date, res.check_out_date),
       res.number_of_adults, res.number_of_children, res.number_of_infants,
       status, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
       totalCzk, mapChannelToSource(res.channel_type),
@@ -271,7 +289,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       )
     `).run(
       newId, PROPERTY_ID, unitId, guestId,
-      res.check_in_date, res.check_out_date, calcNights(res.check_in_date, res.check_out_date),
+      normalizeHostexDate(res.check_in_date), normalizeHostexDate(res.check_out_date), calcNights(res.check_in_date, res.check_out_date),
       res.number_of_adults, res.number_of_children, res.number_of_infants,
       status, paymentStatus, mapChannelToSource(res.channel_type),
       totalCzk, financialNote, guestPageToken,

@@ -557,13 +557,20 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           {/* ── HOUSE RULES ── */}
           {rules.length > 0 && (
             <div className="gp-section">
-              <div className="gp-rules-compact">
-                <div className="gp-rules-title">{t.houseRules}</div>
-                <div className="gp-rules-text">
-                  {rules.map((rule: any, i: number) => {
-                    return <span key={i}>{rule.icon} {tc(rule.text)}{i < rules.length - 1 ? ' · ' : ''}</span>;
-                  })}
-                </div>
+              <div className="gp-section-title">{t.houseRules}</div>
+              <div className="gp-list-card" style={{ padding: '4px 16px' }}>
+                {rules.map((rule: any, i: number) => (
+                  <details key={i} className="gp-rule-item">
+                    <summary className="gp-rule-summary">
+                      <span className="gp-rule-icon">{rule.icon}</span>
+                      <span className="gp-rule-label">{tc(rule.text)}</span>
+                      <span className="gp-rule-chevron">›</span>
+                    </summary>
+                    {rule.detail && (
+                      <div className="gp-rule-detail">{tc(rule.detail)}</div>
+                    )}
+                  </details>
+                ))}
               </div>
             </div>
           )}
@@ -572,7 +579,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           {faqItems.length > 0 && (
             <div className="gp-section">
               <div className="gp-section-title">{t.faqTitle}</div>
-              <div className="gp-list-card" style={{ padding: 16 }}>
+              <div className="gp-list-card" style={{ padding: '4px 16px' }}>
                 {faqItems.map((faq: any, i: number) => (
                   <details key={i} className="gp-faq-item">
                     <summary className="gp-faq-q">{tc(faq.q || '')}</summary>
@@ -602,16 +609,24 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             const isOrdered = data.orderedServices?.some((o: any) => o.service_id === svc.id);
             const wType = getWidgetType(svc);
             return (
-              <button key={svc.id} className="gp-service-card"
+              <button key={svc.id}
+                className={svc.photo_url ? 'gp-service-card gp-service-card--photo' : 'gp-service-card'}
                 onClick={() => {
                   if (wType) { setWidgetService(wType); }
                   else { setSelectedService(svc); setSheet('service'); }
                 }}>
-                <div className="gp-service-emoji">{svc.icon || '✨'}</div>
+                {svc.photo_url ? (
+                  <div className="gp-service-photo">
+                    <img src={svc.photo_url} alt={svcField(svc, 'name')} />
+                    {isOrdered && <span className="gp-service-badge">✅</span>}
+                  </div>
+                ) : (
+                  <div className="gp-service-emoji">{svc.icon || '✨'}</div>
+                )}
                 <div className="gp-service-info">
                   <div className="gp-service-name">
                     {svcField(svc, 'name')}
-                    {isOrdered && ' ✅'}
+                    {!svc.photo_url && isOrdered && ' ✅'}
                   </div>
                   <div className="gp-service-desc">{svcField(svc, 'description')}</div>
                 </div>
@@ -651,6 +666,29 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           <div className="gp-tab-title">{t.exploreTitle}</div>
           <div className="gp-tab-subtitle">{t.exploreSubtitle}</div>
 
+          {/* Photo carousel for items that have photos */}
+          {(() => {
+            const withPhoto = usefulInfoList.filter((info: any) => info.photo_url);
+            if (withPhoto.length === 0) return null;
+            return (
+              <div className="gp-carousel">
+                {withPhoto.map((info: any, i: number) => (
+                  <div key={i} className="gp-carousel-card">
+                    <img src={info.photo_url} alt={tc(info.title)} className="gp-carousel-img" />
+                    <div className="gp-carousel-overlay">
+                      <div className="gp-carousel-title">{info.icon} {tc(info.title)}</div>
+                      {info.url && (
+                        <a href={info.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                          <div className="gp-carousel-nav">🗺 {t.navigate}</div>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           {usefulInfoList.length > 0 ? usefulInfoList.map((info: any, i: number) => {
             return (
               <div key={i} className="gp-explore-card">
@@ -658,7 +696,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <div className="gp-explore-desc">{tc(info.desc)}</div>
                 {info.url && (
                   <a href={info.url} target="_blank" rel="noopener noreferrer">
-                    <button className="gp-explore-cta">{t.navigate} →</button>
+                    <button className="gp-navigate-btn">🗺 {t.navigate}</button>
                   </a>
                 )}
               </div>
@@ -670,13 +708,13 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             </div>
           )}
 
-          {/* Static explore items from config */}
+          {/* Static: How to get here */}
           {cfg?.maps_url && (
             <div className="gp-explore-card">
               <div className="gp-explore-title">📍 {t.howToGetHere}</div>
               <div className="gp-explore-desc">{r.property_address || 'Loketská, Radošov, Karlovy Vary'}</div>
               <a href={cfg.maps_url} target="_blank" rel="noopener noreferrer">
-                <button className="gp-explore-cta">{t.navigate} →</button>
+                <button className="gp-navigate-btn">🗺 {t.navigate}</button>
               </a>
             </div>
           )}

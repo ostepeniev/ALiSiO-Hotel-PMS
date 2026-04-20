@@ -68,6 +68,7 @@ export function extractServiceTexts(services: any[]): string[] {
   const texts = new Set<string>();
   const add = (t: any) => { if (t && typeof t === 'string' && t.trim().length > 1) texts.add(t.trim()); };
   for (const s of services) {
+    add(s.name);          // Ukrainian name → translated via content_translations
     add(s.description);
     add(s.unit_label);
   }
@@ -211,7 +212,7 @@ export async function retranslateAll(force = false): Promise<{ translated: numbe
 
   // Collect service texts
   try {
-    const svcs = db.prepare('SELECT description, unit_label FROM additional_services WHERE is_active=1').all() as any[];
+    const svcs = db.prepare('SELECT name, description, unit_label FROM additional_services WHERE is_active=1').all() as any[];
     allTexts = [...allTexts, ...extractServiceTexts(svcs)];
   } catch { /* table may not exist */ }
 

@@ -60,13 +60,43 @@ export function parseICal(text: string): ICalEvent[] {
 
 /**
  * Parse a DTSTART or DTEND line value to YYYY-MM-DD.
- * Handles: DTSTART;VALUE=DATE:20260523 or DTSTART:20260523T150000Z
+ * Handles:
+ *   DTSTART;VALUE=DATE:20260523       → "2026-05-23"
+ *   DTSTART:20260420T220000Z          → "2026-04-21" (UTC 22:00 = midnight Czech UTC+2)
+ *   DTSTART;TZID=Europe/Prague:20260421T000000 → "2026-04-21"
  */
 function parseDateValue(line: string): string {
   const colonIdx = line.lastIndexOf(':');
   if (colonIdx < 0) return '';
   const raw = line.substring(colonIdx + 1).trim();
-  // Extract just the date part (YYYYMMDD)
+
+  // Pure date (no time component): YYYYMMDD
+  if (/^\d{8}$/.test(raw)) {
+    const d = raw;
+    return `${d.substring(0, 4)}-${d.substring(4, 6)}-${d.substring(6, 8)}`;
+  }
+
+  // Datetime with potential timezone: YYYYMMDDTHHMMSSZ
+  if (raw.length >= 15 && raw.includes('T')) {
+    // Parse as proper Date and convert to Czech local date
+    let iso = raw;
+    // Convert compact format to ISO 8601: 20260420T220000Z → 2026-04-20T22:00:00Z
+    if (!iso.includes('-')) {
+      iso = `${iso.substring(0, 4)}-${iso.substring(4, 6)}-${iso.substring(6, 8)}T${iso.substring(9, 11)}:${iso.substring(11, 13)}:${iso.substring(13, 15)}`;
+      if (raw.endsWith('Z')) iso += 'Z';
+    }
+    // Get the date in Czech timezone (Europe/Prague = UTC+1/+2)
+    try {
+      const d = new Date(iso);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' }); // sv-SE gives YYYY-MM-DD
+      }
+    } catch { /* fall through */ }
+    // Fallback: extract just date part
+    return `${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)}`;
+  }
+
+  // Fallback for any other format
   const dateStr = raw.replace(/[TZ].*/g, '');
   if (dateStr.length >= 8) {
     return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;

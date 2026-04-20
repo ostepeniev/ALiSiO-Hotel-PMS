@@ -79,11 +79,11 @@ async function syncChannel(db: any, channel: any) {
       ).get(externalUid) as any;
 
       if (existing) {
-        // Update dates if changed
+        // Always update dates — the parser may have been fixed since last sync
+        const nights = Math.max(1, Math.round(
+          (new Date(event.dtend).getTime() - new Date(event.dtstart).getTime()) / 86400000
+        ));
         if (existing.check_in !== event.dtstart || existing.check_out !== event.dtend) {
-          const nights = Math.max(1, Math.round(
-            (new Date(event.dtend).getTime() - new Date(event.dtstart).getTime()) / 86400000
-          ));
           db.prepare(`
             UPDATE reservations SET check_in = ?, check_out = ?, nights = ?, updated_at = datetime('now')
             WHERE id = ?
