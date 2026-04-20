@@ -194,36 +194,45 @@ export async function getReservations(params?: {
 }
 
 /**
- * Get all reservations via sequential pagination — both accepted and cancelled.
- * Hostex API only returns 'accepted' reservations by default (ignores page param, returns same 20).
- * We must explicitly fetch cancelled ones too to have a complete picture.
+ * Get all reservations by fetching per property_id.
+ *
+ * Hostex API has a hard limit of ~20 records per response regardless of per_page/page params.
+ * Without property_id filter it returns only the 20 most-recently-updated records globally.
+ * Fetching per property (6 properties × up to 20) gives the full picture.
+ * Deduplicates by reservation_code.
  */
 export async function getAllReservations(): Promise<HostexReservation[]> {
   const all = new Map<string, HostexReservation>();
-  const PER_PAGE = 100;
 
-  // Cutoff: skip very old cancelled reservations (>90 days ago)
+  // Cutoff: skip very old reservations (checked out >90 days ago)
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 90);
   const cutoffStr = cutoff.toISOString().split('T')[0];
 
-  // Fetch both statuses — Hostex ignores page param so one call per status is enough
-  for (const status of ['', 'cancelled']) {
+  // All known Hostex property IDs (from /properties endpoint)
+  // We fetch each property individually to bypass the global 20-record cap
+  let propertyIds: number[] = [];
+  try {
     await rateLimitWait();
-    const path = status
-      ? `/reservations?per_page=${PER_PAGE}&status=${status}`
-      : `/reservations?per_page=${PER_PAGE}`;
-    const result = await getReservations(
-      status ? { per_page: PER_PAGE, status } : { per_page: PER_PAGE }
-    );
+    const props = await getProperties();
+    propertyIds = props.map(p => p.id);
+    console.log(`[Hostex] Found ${propertyIds.length} properties: ${propertyIds.join(', ')}`);
+  } catch (e: any) {
+    console.error('[Hostex] Failed to fetch properties:', e.message);
+    // Fallback to known IDs
+    propertyIds = [12446083, 12558043, 12590381, 12590382, 12446084, 12565124];
+  }
 
+  for (const propertyId of propertyIds) {
+    await rateLimitWait();
+    const result = await getReservations({ property_id: propertyId, per_page: 50 });
     let added = 0;
     for (const r of result.reservations) {
-      if (r.check_out_date < cutoffStr) continue; // skip very old
+      if (r.check_out_date < cutoffStr) continue;
       all.set(r.reservation_code, r);
       added++;
     }
-    console.log(`[Hostex] Status="${status || 'default'}": ${result.reservations.length} returned, ${added} added`);
+    console.log(`[Hostex] Property ${propertyId}: ${result.reservations.length} returned, ${added} added`);
   }
 
   const reservations = Array.from(all.values());

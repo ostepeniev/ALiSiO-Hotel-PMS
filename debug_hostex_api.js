@@ -17,32 +17,26 @@ function hostexGet(path) {
   });
 }
 
-const MISSING = ['Liliana', 'Borziak', 'Stefanie', 'Fischer', 'Vera Michel', 'Liubushkina', 'Irina', 'Iryna', 'Michel'];
+const PROPERTY_IDS = [12446083, 12558043, 12590381, 12590382, 12446084, 12565124];
+const MISSING = ['Franziska', 'Benjamin', 'Stefanie', 'Ирина', 'Vera', 'Ann-Kathrin', 'Liliana', 'Alina', 'Nikolas', 'KSENIIA'];
 
 async function main() {
-  // Try all status combinations
-  const statuses = ['accepted', 'cancelled', 'wait_accept', 'wait_pay', 'denied', 'timeout', ''];
-  
-  for (const status of statuses) {
-    const url = status ? `/reservations?per_page=50&status=${status}` : '/reservations?per_page=50';
-    const res = await hostexGet(url);
+  const all = new Map();
+
+  for (const propId of PROPERTY_IDS) {
+    await new Promise(r => setTimeout(r, 150));
+    const res = await hostexGet(`/reservations?per_page=50&property_id=${propId}`);
     const list = res.data?.reservations || [];
-    const found = list.filter(r => MISSING.some(n => r.guest_name?.toLowerCase().includes(n.toLowerCase())));
-    console.log(`Status "${status || 'none'}": ${list.length} results, found=${found.length}`);
-    if (found.length) found.forEach(r => console.log('  FOUND:', r.guest_name, r.check_in_date, r.status));
-    
-    // Show all names for cancelled
-    if (status === 'cancelled') {
-      console.log('  ALL CANCELLED:', list.map(r => r.guest_name + ' ' + r.check_in_date).join(', '));
-    }
-    await new Promise(r => setTimeout(r, 200));
+    console.log(`Property ${propId}: ${list.length} results`);
+    list.forEach(r => {
+      all.set(r.reservation_code, r);
+      const isMissing = MISSING.some(n => r.guest_name?.toLowerCase().includes(n.toLowerCase()));
+      if (isMissing) console.log(`  *** FOUND MISSING: ${r.guest_name} | ${r.check_in_date} | ${r.status}`);
+    });
   }
 
-  // Check Hostex API docs - try stays endpoint
-  console.log('\n=== TRY /stays endpoint ===');
-  const stays = await hostexGet('/stays?per_page=50');
-  console.log('Stays count:', stays.data?.stays?.length, 'error:', stays.error_msg);
-  (stays.data?.stays || []).slice(0, 5).forEach(s => console.log(' ', s));
+  console.log(`\nTotal unique across all properties: ${all.size}`);
+  all.forEach(r => console.log(`  ${r.check_in_date} | ${r.guest_name} | pid=${r.property_id} | ${r.status}`));
 }
 
 main().catch(console.error);

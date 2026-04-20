@@ -62,13 +62,22 @@ export async function generateAutoResponse(opts: {
       WHERE l.id = ?
     `).get(opts.leadId) as any;
 
-    // Get custom prompt for this stage
-    const customPrompt = db.prepare(`
+    // Get MASTER prompt (stage='new') — always contains all pricing & rules
+    const masterPrompt = db.prepare(`
+      SELECT system_prompt, context_instructions
+      FROM crm_prompt_configs
+      WHERE stage = 'new' AND is_active = 1
+      ORDER BY version DESC LIMIT 1
+    `).get() as any;
+
+    // Get STAGE-SPECIFIC prompt (supplementary instructions for current stage)
+    const currentStage = lead?.stage || 'new';
+    const stagePrompt = currentStage !== 'new' ? db.prepare(`
       SELECT system_prompt, context_instructions
       FROM crm_prompt_configs
       WHERE stage = ? AND is_active = 1
       ORDER BY version DESC LIMIT 1
-    `).get(lead?.stage || 'new') as any;
+    `).get(currentStage) as any : null;
 
     // Get property info
     const property = db.prepare('SELECT name, city, country, check_in_time, check_out_time FROM properties LIMIT 1').get() as any;
@@ -90,7 +99,8 @@ export async function generateAutoResponse(opts: {
     const systemPrompt = buildAutoResponsePrompt({
       property,
       lead,
-      customPrompt,
+      masterPrompt,
+      stagePrompt,
       history: historyText,
       language: opts.language,
     });
@@ -152,20 +162,25 @@ export async function generateAutoResponse(opts: {
 }
 
 /* ────────────────────────────────────────────────────────
-   Build prompt — always generate in Ukrainian first
+   Build prompt — Master Quote (prices) + Stage supplement
+   
+   Architecture:
+   1. System context (property, date, language rules)
+   2. MASTER PROMPT — full pricing & calculation rules (always)
+   3. STAGE PROMPT — behavioral instructions for current stage (if available)
+   4. Lead context (name, dates, reservation)
+   5. Conversation history
    ──────────────────────────────────────────────────────── */
 function buildAutoResponsePrompt(opts: {
   property: any;
   lead: any;
-  customPrompt: any;
+  masterPrompt: any;
+  stagePrompt: any;
   history: string;
   language: string;
 }): string {
-  const { property, lead, customPrompt, history } = opts;
+  const { property, lead, masterPrompt, stagePrompt, history } = opts;
   const today = new Date().toISOString().split('T')[0];
-
-  const stageInstructions = customPrompt?.system_prompt || '';
-  const contextInstructions = customPrompt?.context_instructions || '';
 
   // Determine property name based on lead context
   const notes = (lead?.notes || '').toLowerCase();
@@ -178,7 +193,8 @@ function buildAutoResponsePrompt(opts: {
     propertyName = 'Camping Kemp Carlsbad';
   }
 
-  return `Ти — професійний рецепціоніст "${propertyName}".
+  // --- 1. System context ---
+  const systemContext = `Ти — професійний рецепціоніст "${propertyName}".
 Розташування: ${property?.city || 'Luhačovice'}, ${property?.country || 'Czech Republic'}.
 Check-in: ${property?.check_in_time || '14:00'}, Check-out: ${property?.check_out_time || '11:00'}.
 Сьогодні: ${today}.
@@ -192,8 +208,28 @@ Check-in: ${property?.check_in_time || '14:00'}, Check-out: ${property?.check_ou
 - НЕ додавай привітання типу "Шановний..." — це буде додано потім.
 - НЕ додавай підпис — він додається автоматично.
 - Якщо пишуть про ціни — відповідай конкретно, якщо є дані.
-- Якщо питають про наявність — відповідай що перевіриш та зв'яжешся.
+- Якщо питають про наявність — відповідай що перевіриш та зв'яжешся.`;
 
+  // --- 2. Master prompt (pricing & rules) — ALWAYS included ---
+  const masterSection = masterPrompt?.system_prompt
+    ? `\n## ПРАЙСИ ТА ПРАВИЛА РОЗРАХУНКУ\n${masterPrompt.system_prompt}\n`
+    : '';
+
+  const masterContext = masterPrompt?.context_instructions
+    ? `\n## SELF-CHECK\n${masterPrompt.context_instructions}\n`
+    : '';
+
+  // --- 3. Stage-specific supplement (behavioral) ---
+  const stageSection = stagePrompt?.system_prompt
+    ? `\n## ІНСТРУКЦІЇ ДЛЯ ПОТОЧНОГО ЕТАПУ (${lead?.stage || 'new'})\n${stagePrompt.system_prompt}\n`
+    : '';
+
+  const stageContext = stagePrompt?.context_instructions
+    ? `\n## ДОДАТКОВИЙ КОНТЕКСТ ЕТАПУ\n${stagePrompt.context_instructions}\n`
+    : '';
+
+  // --- 4. Lead context ---
+  const leadContext = `
 ## Контекст ліда
 - Ім'я: ${lead?.first_name || 'Невідомий'} ${lead?.last_name || ''}
 - Email: ${lead?.email || 'N/A'}
@@ -201,16 +237,19 @@ Check-in: ${property?.check_in_time || '14:00'}, Check-out: ${property?.check_ou
 - Заїзд: ${lead?.check_in_date || 'Не вказано'}
 - Виїзд: ${lead?.check_out_date || 'Не вказано'}
 - Дорослих: ${lead?.adults || 0}, Дітей: ${lead?.children || 0}
-${lead?.reservation_status ? `- Статус бронювання: ${lead.reservation_status}, Оплата: ${lead.payment_status}, Ціна: ${lead.total_price}` : ''}
+${lead?.reservation_status ? `- Статус бронювання: ${lead.reservation_status}, Оплата: ${lead.payment_status}, Ціна: ${lead.total_price}` : ''}`;
 
-${stageInstructions ? `## Інструкції для етапу\n${stageInstructions}\n` : ''}
-${contextInstructions ? `## Додатковий контекст\n${contextInstructions}\n` : ''}
-
+  // --- 5. History + task ---
+  const historySection = `
 ## Історія переписки
 ${history || 'Це перше повідомлення від гостя.'}
 
 ## ЗАДАЧА
 Згенеруй ПОВНУ відповідь на повідомлення гостя УКРАЇНСЬКОЮ мовою. Не обрізай текст.`;
+
+  return [systemContext, masterSection, stageSection, stageContext, leadContext, masterContext, historySection]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /* ────────────────────────────────────────────────────────
