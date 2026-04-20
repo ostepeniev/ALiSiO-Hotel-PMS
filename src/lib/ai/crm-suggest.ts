@@ -80,14 +80,21 @@ function buildLeadContext(leadId: string, conversationId: string): LeadContext {
     LIMIT 5
   `).all(leadId) as any[];
 
-  // Custom prompt for this stage
-  const customPrompt = db.prepare(`
+  // MASTER prompt (stage='new') — always contains all pricing & rules
+  const masterPrompt = db.prepare(`
+    SELECT system_prompt, context_instructions, temperature, model
+    FROM crm_prompt_configs
+    WHERE stage = 'new' AND is_active = 1
+    ORDER BY version DESC LIMIT 1
+  `).get() as any | null;
+
+  // Stage-specific prompt (supplementary behavioral instructions)
+  const stagePrompt = lead.stage !== 'new' ? db.prepare(`
     SELECT system_prompt, context_instructions, temperature, model
     FROM crm_prompt_configs
     WHERE stage = ? AND is_active = 1
-    ORDER BY version DESC
-    LIMIT 1
-  `).get(lead.stage) as any | null;
+    ORDER BY version DESC LIMIT 1
+  `).get(lead.stage) as any | null : null;
 
   // Property info
   const propertyInfo = db.prepare(`
@@ -96,7 +103,7 @@ function buildLeadContext(leadId: string, conversationId: string): LeadContext {
     LIMIT 1
   `).get() as any;
 
-  return { lead, messages, stageHistory, customPrompt, propertyInfo };
+  return { lead, messages, stageHistory, masterPrompt, stagePrompt, propertyInfo };
 }
 
 /* ────────────────────────────────────────────────────────
@@ -125,9 +132,10 @@ function buildSystemPrompt(ctx: LeadContext): string {
     else languageHint = 'Reply in the same language the guest used in their messages. If unclear, use English.';
   }
 
-  // Stage-specific instructions
-  const stagePrompt = customPrompt?.system_prompt || DEFAULT_STAGE_PROMPTS[lead.stage] || '';
-  const contextInstructions = customPrompt?.context_instructions || '';
+  // Stage-specific instructions from DB
+  const masterInstructions = ctx.masterPrompt?.system_prompt || '';
+  const stageInstructions = ctx.stagePrompt?.system_prompt || DEFAULT_STAGE_PROMPTS[lead.stage] || '';
+  const contextInstructions = ctx.stagePrompt?.context_instructions || ctx.masterPrompt?.context_instructions || '';
 
   // Build conversation history summary
   const convHistory = messages.map(m => {
@@ -185,8 +193,11 @@ ${lead.camping_vehicle_type ? `
 ## STAGE HISTORY (recent)
 ${stageHistory.length > 0 ? stageHistory.map(h => `  ${h.from_stage || '—'} → ${h.to_stage} (${h.trigger}, ${h.created_at})`).join('\n') : 'No stage changes yet.'}
 
-## STAGE-SPECIFIC INSTRUCTIONS
-${stagePrompt}
+## PRICING & CALCULATION RULES (Master)
+${masterInstructions}
+
+## STAGE-SPECIFIC INSTRUCTIONS (${lead.stage})
+${stageInstructions}
 ${contextInstructions ? `\n### Additional context:\n${contextInstructions}` : ''}
 
 ## CONVERSATION HISTORY
