@@ -34,7 +34,8 @@ interface LeadContext {
   lead: any;
   messages: any[];
   stageHistory: any[];
-  customPrompt: any | null;
+  masterPrompt: any | null;
+  stagePrompt: any | null;
   propertyInfo: any;
 }
 
