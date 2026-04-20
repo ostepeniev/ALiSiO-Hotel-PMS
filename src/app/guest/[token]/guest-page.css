@@ -276,30 +276,21 @@
 }
 
 /* ═══════════════════════════════════════════════
-   HOUSE RULES (accordion)
+   HOUSE RULES (compact chips)
    ═══════════════════════════════════════════════ */
-.gp-rule-item {
-  border-bottom: 1px solid var(--gp-sep);
-  padding: 2px 0;
+.gp-rules-compact {
+  background: var(--gp-card); border-radius: var(--gp-radius);
+  padding: 14px 16px; box-shadow: var(--gp-shadow);
 }
-.gp-rule-item:last-child { border-bottom: none; }
-.gp-rule-summary {
-  display: flex; align-items: center; gap: 10;
-  padding: 11px 0; cursor: pointer; list-style: none;
-  font-size: 14px; font-weight: 500;
+.gp-rules-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.gp-rules-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
 }
-.gp-rule-summary::-webkit-details-marker { display: none; }
-.gp-rule-icon { font-size: 18px; flex-shrink: 0; width: 26px; text-align: center; }
-.gp-rule-label { flex: 1; color: var(--gp-text); }
-.gp-rule-chevron {
-  font-size: 18px; color: var(--gp-sub); transition: transform 0.25s;
-  transform: rotate(0deg); display: inline-block;
-}
-.gp-rule-item[open] .gp-rule-chevron { transform: rotate(90deg); }
-.gp-rule-item[open] .gp-rule-summary { color: var(--gp-tint); }
-.gp-rule-detail {
-  font-size: 13px; color: var(--gp-sub); line-height: 1.6;
-  padding: 0 0 10px 36px;
+.gp-rule-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--gp-sand); border-radius: 20px;
+  padding: 5px 12px; font-size: 13px; color: var(--gp-text);
+  white-space: nowrap;
 }
 
 /* ═══════════════════════════════════════════════

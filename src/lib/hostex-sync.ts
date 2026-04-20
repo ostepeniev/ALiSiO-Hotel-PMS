@@ -21,12 +21,12 @@ const BLOCKED_CHANNEL_TYPES = new Set(['owner', 'manual', 'owner_reservation', '
 
 /** Hostex property_id → ALiSiO unit_id mapping */
 const PROPERTY_MAP: Record<number, string> = {
-  12446083: 'u_mr1',                        // A1 River Wood → A1 - Mirror
-  12558043: 'u_mr2',                        // A2 Slow Down  → A2 - Mirror
-  12590381: 'u_st1',                        // B1            → B1 - Stealth
-  12590382: 'u_st2',                        // B2            → B2 - Stealth
-  12446084: 'u_st3',                        // B3 Stealth    → B3 - Stealth
-  12565124: '1e7f6c7bd383af9cdfaa43eb50160148', // B4 Svitanok → B4 - Svitanok
+  12446083: 'u_mr1',                           // A1 River Wood → A1 - Mirror
+  12558043: 'u_mr2',                           // A2 Slow Down  → A2 - Mirror
+  12590381: 'u_st1',                           // B1            → B1 - Stealth
+  12590382: 'u_st2',                           // B2            → B2 - Stealth
+  12446084: 'u_st3',                           // B3 Stealth    → B3 - Stealth
+  12565124: '1e7f6c7bd383af9cdfaa43eb50160148', // B4 Svitanok   → B4 - Svitanok
 };
 
 const PROPERTY_ID = 'prop_main_001';
@@ -35,11 +35,11 @@ const ORG_ID = 'org_alisio_001';
 // ─── Channel type → source mapping ───────────────────────
 function mapChannelToSource(channelType: string): string {
   switch (channelType) {
-    case 'airbnb': return 'airbnb';
-    case 'booking.com': return 'booking_com';
+    case 'airbnb':       return 'airbnb';
+    case 'booking.com':  return 'booking_com';
     case 'booking_site': return 'direct';
-    case 'agoda': return 'other_ota';
-    default: return 'other_ota';
+    case 'agoda':        return 'other_ota';
+    default:             return 'other_ota';
   }
 }
 
@@ -54,27 +54,16 @@ function detectPaymentInfo(reservation: HostexReservation): PaymentInfo {
   const remarks = reservation.channel_remarks || '';
   const channelType = reservation.channel_type;
 
-  // Airbnb: always prepaid
   if (channelType === 'airbnb') {
     return { isPrepaid: true, paymentCharge: null, channelType };
   }
 
-  // Booking.com: parse remarks for prepaid status
   if (channelType === 'booking.com') {
     const isPrepaid = remarks.includes('PRE-PAID') || remarks.includes('PREPAID');
     let paymentCharge: number | null = null;
-
     const chargeMatch = remarks.match(/Payment charge is (\w+)\s+([\d.]+)/);
-    if (chargeMatch) {
-      paymentCharge = parseFloat(chargeMatch[2]);
-    }
-
+    if (chargeMatch) paymentCharge = parseFloat(chargeMatch[2]);
     return { isPrepaid, paymentCharge, channelType };
-  }
-
-  // Direct / booking_site: not prepaid (guest pays on arrival or via booking site)
-  if (channelType === 'booking_site') {
-    return { isPrepaid: false, paymentCharge: null, channelType };
   }
 
   return { isPrepaid: false, paymentCharge: null, channelType };
@@ -92,16 +81,13 @@ function splitGuestName(fullName: string): { firstName: string; lastName: string
 // We always normalize to plain YYYY-MM-DD in Czech timezone
 function normalizeHostexDate(dateStr: string): string {
   if (!dateStr) return dateStr;
-  // Already plain date
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-  // Datetime string — convert to Czech local date
   try {
     const d = new Date(dateStr);
     if (!isNaN(d.getTime())) {
       return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Prague' });
     }
   } catch { /* ignore */ }
-  // Fallback: take first 10 chars
   return dateStr.substring(0, 10);
 }
 
@@ -143,7 +129,7 @@ export async function syncReservations(): Promise<SyncResult> {
     const reservations = await getAllReservations();
     console.log(`[Hostex Sync] Fetched ${reservations.length} reservations from Hostex`);
 
-    // 3. Ensure DB tables/columns exist
+    // 3. Ensure DB tables/columns exist + run migrations
     ensureHostexColumns(db);
 
     // 4. Process each reservation
@@ -156,7 +142,7 @@ export async function syncReservations(): Promise<SyncResult> {
       }
     }
 
-    // 5. Log sync result
+    // 5. Log result
     logSync(db, 'reservations', result.errors.length === 0 ? 'success' : 'partial',
       result.synced, result.errors.join('; '));
 
@@ -165,8 +151,7 @@ export async function syncReservations(): Promise<SyncResult> {
   } catch (e: any) {
     result.errors.push(`Sync failed: ${e.message}`);
     console.error('[Hostex Sync] Fatal error:', e.message);
-    const db2 = getDb();
-    logSync(db2, 'reservations', 'error', 0, e.message);
+    logSync(getDb(), 'reservations', 'error', 0, e.message);
   }
 
   return result;
@@ -175,17 +160,14 @@ export async function syncReservations(): Promise<SyncResult> {
 // ─── Process single reservation ───────────────────────────
 
 async function processReservation(db: any, res: HostexReservation, result: SyncResult) {
-  // ── Handle BLOCKED DATES (owner/manual closures in Hostex) ──────────────
-  // These are not real guest bookings — they are closed-date blocks.
-  // We store them as availability_blocks, NOT as reservations.
+  // Blocked dates (owner/manual closures) → availability_blocks, NOT reservations
   if (BLOCKED_CHANNEL_TYPES.has(res.channel_type)) {
     processBlockedDate(db, res, result);
     return;
   }
 
-  // Skip cancelled reservations
+  // Cancelled → mark in DB or skip
   if (res.status === 'cancelled' || res.status === 'denied' || res.status === 'timeout') {
-    // If we have it in DB, mark as cancelled
     const existing = db.prepare('SELECT id FROM reservations WHERE hostex_reservation_code = ?').get(res.reservation_code) as any;
     if (existing) {
       db.prepare("UPDATE reservations SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?").run(existing.id);
@@ -197,15 +179,9 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
     return;
   }
 
-  // Map property to unit
+  // Map property → unit
   const unitId = PROPERTY_MAP[res.property_id];
-  if (!unitId) {
-    result.skipped++;
-    return;
-  }
-
-  // Find or create guest
-  const guestId = findOrCreateGuest(db, res);
+  if (!unitId) { result.skipped++; return; }
 
   // Calculate financial data
   const totalEur = res.rates?.total_rate?.amount || 0;
@@ -213,22 +189,44 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
   const netEur = totalEur - commissionEur;
   const totalCzk = Math.round(totalEur * result.eurCzkRate);
 
-  // Detect payment
+  // Payment info, notes, status
   const paymentInfo = detectPaymentInfo(res);
-  
-  // Build notes with financial breakdown
   const financialNote = buildFinancialNote(res, result.eurCzkRate, totalEur, commissionEur, netEur, totalCzk);
-
-  // Map status
   const status = mapStatus(res);
   const paymentStatus = paymentInfo.isPrepaid ? 'prepaid' : 'unpaid';
 
-  // Check if reservation already exists
-  const existing = db.prepare('SELECT id, status, payment_status FROM reservations WHERE hostex_reservation_code = ?')
-    .get(res.reservation_code) as any;
+  // Find or create guest
+  const guestId = findOrCreateGuest(db, res);
+
+  // Check if already in DB
+  const existing = db.prepare(
+    'SELECT id, payment_status, guest_page_token FROM reservations WHERE hostex_reservation_code = ?'
+  ).get(res.reservation_code) as any;
+
+  const checkIn = normalizeHostexDate(res.check_in_date);
+  const checkOut = normalizeHostexDate(res.check_out_date);
+  const nights = calcNights(res.check_in_date, res.check_out_date);
 
   if (existing) {
-    // Update existing reservation
+    // Generate token if missing (backfill old bookings)
+    const existingToken = existing.guest_page_token;
+    const newToken = (!existingToken && (status === 'confirmed' || status === 'checked_in'))
+      ? generateGuestToken() : null;
+    const tokenClause = newToken ? ', guest_page_token = ?' : '';
+
+    const params: any[] = [
+      checkIn, checkOut, nights,
+      res.number_of_adults, res.number_of_children, res.number_of_infants,
+      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
+      totalCzk, mapChannelToSource(res.channel_type),
+      res.channel_type, res.channel_id, res.listing_id,
+      totalEur, commissionEur, netEur,
+      res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0,
+      financialNote,
+    ];
+    if (newToken) params.push(newToken);
+    params.push(existing.id);
+
     db.prepare(`
       UPDATE reservations SET
         check_in = ?, check_out = ?, nights = ?,
@@ -238,34 +236,31 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
         hostex_channel_type = ?, hostex_channel_id = ?, hostex_listing_id = ?,
         total_rate_eur = ?, commission_eur = ?, net_rate_eur = ?,
         channel_remarks = ?, is_prepaid = ?,
-        notes = ?,
+        notes = ?${tokenClause},
         updated_at = datetime('now')
       WHERE id = ?
-    `).run(
-      normalizeHostexDate(res.check_in_date), normalizeHostexDate(res.check_out_date), calcNights(res.check_in_date, res.check_out_date),
-      res.number_of_adults, res.number_of_children, res.number_of_infants,
-      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
-      totalCzk, mapChannelToSource(res.channel_type),
-      res.channel_type, res.channel_id, res.listing_id,
-      totalEur, commissionEur, netEur,
-      res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0,
-      financialNote,
-      existing.id
-    );
+    `).run(...params);
 
-    // Push guest page URL to Hostex if not already done
-    if (existing.guest_page_token) {
-      const guestPageUrl = `${PMS_BASE_URL}/guest/${existing.guest_page_token}`;
-      const remarks = res.remarks || '';
-      if (!remarks.includes(guestPageUrl)) {
-        const newRemarks = `${remarks ? remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
+    // Auto-create payment if prepaid and none exists
+    if (paymentInfo.isPrepaid && totalCzk > 0) {
+      const hasPay = db.prepare('SELECT id FROM payments WHERE reservation_id = ? AND auto_created = 1').get(existing.id);
+      if (!hasPay) createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
+    }
+
+    // Push guest page URL to Hostex
+    const activeToken = newToken || existingToken;
+    if (activeToken) {
+      const guestPageUrl = `${PMS_BASE_URL}/guest/${activeToken}`;
+      if (!(res.remarks || '').includes(guestPageUrl)) {
+        const newRemarks = `${res.remarks ? res.remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
         updateReservationRemarks(res.stay_code, newRemarks).catch(() => {});
       }
     }
 
     result.updated++;
+
   } else {
-    // Create new reservation + generate guest page token
+    // Create new reservation
     const newId = `hx_${res.reservation_code.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
     const guestPageToken = (status === 'confirmed' || status === 'checked_in') ? generateGuestToken() : null;
 
@@ -289,7 +284,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       )
     `).run(
       newId, PROPERTY_ID, unitId, guestId,
-      normalizeHostexDate(res.check_in_date), normalizeHostexDate(res.check_out_date), calcNights(res.check_in_date, res.check_out_date),
+      checkIn, checkOut, nights,
       res.number_of_adults, res.number_of_children, res.number_of_infants,
       status, paymentStatus, mapChannelToSource(res.channel_type),
       totalCzk, financialNote, guestPageToken,
@@ -299,16 +294,13 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       res.channel_remarks, paymentInfo.isPrepaid ? 1 : 0
     );
 
-    // Auto-create payment for prepaid reservations
     if (paymentInfo.isPrepaid && totalCzk > 0) {
       createAutoPayment(db, newId, totalCzk, res.channel_type, res.booked_at);
     }
 
-    // Push guest page URL to Hostex remarks (async, non-blocking)
     if (guestPageToken) {
       const guestPageUrl = `${PMS_BASE_URL}/guest/${guestPageToken}`;
-      const remarks = res.remarks || '';
-      const newRemarks = `${remarks ? remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
+      const newRemarks = `${res.remarks ? res.remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
       updateReservationRemarks(res.stay_code, newRemarks).catch(() => {});
     }
 
@@ -324,26 +316,11 @@ function processBlockedDate(db: any, res: HostexReservation, result: SyncResult)
   const unitId = PROPERTY_MAP[res.property_id];
   if (!unitId) { result.skipped++; return; }
 
-  // Ensure availability_blocks table exists
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS availability_blocks (
-      id TEXT PRIMARY KEY,
-      unit_id TEXT NOT NULL,
-      date_from TEXT NOT NULL,
-      date_to TEXT NOT NULL,
-      reason TEXT DEFAULT 'blocked',
-      notes TEXT,
-      hostex_code TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-
   const blockId = `hx_block_${res.reservation_code.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
-  const existing = db.prepare('SELECT id FROM availability_blocks WHERE id = ?').get(blockId);
+  const existingBlock = db.prepare('SELECT id FROM availability_blocks WHERE id = ?').get(blockId);
 
   if (res.status === 'cancelled') {
-    // Remove the block if cancelled
-    if (existing) {
+    if (existingBlock) {
       db.prepare('DELETE FROM availability_blocks WHERE id = ?').run(blockId);
       result.updated++;
       result.synced++;
@@ -354,17 +331,18 @@ function processBlockedDate(db: any, res: HostexReservation, result: SyncResult)
   }
 
   const notes = res.remarks || res.channel_remarks || 'Закрито в Hostex';
+  const dateFrom = normalizeHostexDate(res.check_in_date);
+  const dateTo = normalizeHostexDate(res.check_out_date);
 
-  if (existing) {
-    db.prepare(`
-      UPDATE availability_blocks SET date_from = ?, date_to = ?, notes = ? WHERE id = ?
-    `).run(res.check_in_date, res.check_out_date, notes, blockId);
+  if (existingBlock) {
+    db.prepare('UPDATE availability_blocks SET date_from = ?, date_to = ?, notes = ? WHERE id = ?')
+      .run(dateFrom, dateTo, notes, blockId);
     result.updated++;
   } else {
     db.prepare(`
       INSERT INTO availability_blocks (id, unit_id, date_from, date_to, reason, notes, hostex_code)
       VALUES (?, ?, ?, ?, 'blocked', ?, ?)
-    `).run(blockId, unitId, res.check_in_date, res.check_out_date, notes, res.reservation_code);
+    `).run(blockId, unitId, dateFrom, dateTo, notes, res.reservation_code);
     result.created++;
   }
 
@@ -380,7 +358,6 @@ function findOrCreateGuest(db: any, res: HostexReservation): string {
   const name = guestData?.name || res.guest_name || 'Unknown';
   const country = guestData?.country || '';
 
-  // Try to find existing guest by email or phone
   let guest: any = null;
   if (email && !email.includes('@guest.booking.com')) {
     guest = db.prepare('SELECT id FROM guests WHERE email = ?').get(email);
@@ -390,17 +367,14 @@ function findOrCreateGuest(db: any, res: HostexReservation): string {
   }
 
   if (guest) {
-    // Update existing guest with latest info
     if (country) {
       db.prepare("UPDATE guests SET country = ?, updated_at = datetime('now') WHERE id = ?").run(country, guest.id);
     }
     return guest.id;
   }
 
-  // Create new guest
   const { firstName, lastName } = splitGuestName(name);
   const guestId = `hx_g_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-
   db.prepare(`
     INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, country)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -413,20 +387,17 @@ function findOrCreateGuest(db: any, res: HostexReservation): string {
 
 function createAutoPayment(db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
   const payId = `hx_pay_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  const method = 'booking_platform';
   const paidAt = bookedAt ? bookedAt.split('T')[0] : new Date().toISOString().split('T')[0];
   const notes = `Авто-оплата через ${channelType === 'airbnb' ? 'Airbnb' : channelType === 'booking.com' ? 'Booking.com' : channelType}`;
-
   db.prepare(`
     INSERT INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
-    VALUES (?, ?, ?, 'CZK', ?, 'full', 'completed', ?, ?, 1)
-  `).run(payId, reservationId, amountCzk, method, paidAt, notes);
+    VALUES (?, ?, ?, 'CZK', 'booking_platform', 'full', 'completed', ?, ?, 1)
+  `).run(payId, reservationId, amountCzk, paidAt, notes);
 }
 
 // ─── Status mapping ───────────────────────────────────────
 
 function mapStatus(res: HostexReservation): string {
-  // stay_status: checkin_pending, stay_in_progress, stay_completed
   if (res.stay_status === 'stay_completed') return 'checked_out';
   if (res.stay_status === 'stay_in_progress') return 'checked_in';
   if (res.status === 'accepted') return 'confirmed';
@@ -458,17 +429,11 @@ function buildFinancialNote(
     lines.push(`💰 Нетто: €${netEur.toFixed(2)} (${netCzk} CZK)`);
   }
 
-  // Nightly breakdown from channel_remarks
   const pricesMatch = res.channel_remarks?.match(/Prices:\s*(.+?)(?:\n|$)/);
-  if (pricesMatch) {
-    lines.push(`🌙 ${pricesMatch[1].trim()}`);
-  }
+  if (pricesMatch) lines.push(`🌙 ${pricesMatch[1].trim()}`);
 
-  // Rate details
   const cleaning = res.rates?.details?.find(d => d.type === 'CLEANING_FEE');
-  if (cleaning) {
-    lines.push(`🧹 Прибирання: €${cleaning.amount.toFixed(2)}`);
-  }
+  if (cleaning) lines.push(`🧹 Прибирання: €${cleaning.amount.toFixed(2)}`);
 
   return lines.join('\n');
 }
@@ -499,17 +464,13 @@ function ensureHostexColumns(db: any) {
     }
   }
 
-  // Index for fast lookups
   db.exec('CREATE INDEX IF NOT EXISTS idx_reservations_hostex_code ON reservations(hostex_reservation_code)');
 
-  // Payments: add auto_created, add booking_platform method
   const payCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
   if (!payCols.some((c: any) => c.name === 'auto_created')) {
     db.exec('ALTER TABLE payments ADD COLUMN auto_created INTEGER DEFAULT 0');
-    console.log('[Hostex] Added column payments.auto_created');
   }
 
-  // Hostex sync log table
   db.exec(`
     CREATE TABLE IF NOT EXISTS hostex_sync_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -522,7 +483,6 @@ function ensureHostexColumns(db: any) {
     )
   `);
 
-  // Hostex property map table
   db.exec(`
     CREATE TABLE IF NOT EXISTS hostex_property_map (
       hostex_property_id INTEGER PRIMARY KEY,
@@ -533,7 +493,6 @@ function ensureHostexColumns(db: any) {
     )
   `);
 
-  // Availability blocks table (for Hostex blocked/closed dates)
   db.exec(`
     CREATE TABLE IF NOT EXISTS availability_blocks (
       id TEXT PRIMARY KEY,
@@ -547,53 +506,46 @@ function ensureHostexColumns(db: any) {
     )
   `);
 
-  // ── Migration 1: Backfill guest_page_token for existing Hostex bookings ──
-  // Bookings imported before our fix don't have a token — generate now.
+  // Migration 1: Backfill guest_page_token for existing Hostex bookings without token
   try {
     const missing = db.prepare(`
-      SELECT id, status FROM reservations
+      SELECT id FROM reservations
       WHERE hostex_reservation_code IS NOT NULL
         AND (guest_page_token IS NULL OR guest_page_token = '')
         AND status IN ('confirmed', 'checked_in', 'tentative')
-    `).all() as { id: string; status: string }[];
-
+    `).all() as { id: string }[];
     if (missing.length > 0) {
       const upd = db.prepare("UPDATE reservations SET guest_page_token = ? WHERE id = ?");
-      for (const r of missing) {
-        upd.run(generateGuestToken(), r.id);
-      }
-      console.log(`[Hostex] Backfilled guest_page_token for ${missing.length} existing Hostex bookings`);
+      for (const r of missing) upd.run(generateGuestToken(), r.id);
+      console.log(`[Hostex] Backfilled guest_page_token for ${missing.length} bookings`);
     }
   } catch (e: any) {
     console.warn('[Hostex] guest_page_token backfill note:', e.message);
   }
 
-  // ── Migration 2: Move blocked-channel reservations → availability_blocks ──
-  // Old sync created reservations for owner/manual closures — clean them up.
+  // Migration 2: Move blocked-channel reservations → availability_blocks
   try {
     const BLOCKED_TYPES = ['owner', 'manual', 'owner_reservation', 'blocked', 'maintenance'];
-    const placeholders = BLOCKED_TYPES.map(() => '?').join(', ');
-    const blockedReservations = db.prepare(`
+    const ph = BLOCKED_TYPES.map(() => '?').join(', ');
+    const blockedRes = db.prepare(`
       SELECT id, unit_id, check_in, check_out, notes, channel_remarks, hostex_reservation_code
       FROM reservations
       WHERE hostex_reservation_code IS NOT NULL
-        AND hostex_channel_type IN (${placeholders})
+        AND hostex_channel_type IN (${ph})
     `).all(...BLOCKED_TYPES) as any[];
 
-    if (blockedReservations.length > 0) {
-      const insertBlock = db.prepare(`
+    if (blockedRes.length > 0) {
+      const insBlock = db.prepare(`
         INSERT OR IGNORE INTO availability_blocks (id, unit_id, date_from, date_to, reason, notes, hostex_code)
         VALUES (?, ?, ?, ?, 'blocked', ?, ?)
       `);
-      const deleteRes = db.prepare('DELETE FROM reservations WHERE id = ?');
-
-      for (const r of blockedReservations) {
+      const delRes = db.prepare('DELETE FROM reservations WHERE id = ?');
+      for (const r of blockedRes) {
         const blockId = `hx_block_${(r.hostex_reservation_code || r.id).replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}`;
-        const notes = r.notes || r.channel_remarks || 'Закрито в Hostex';
-        insertBlock.run(blockId, r.unit_id, r.check_in, r.check_out, notes, r.hostex_reservation_code);
-        deleteRes.run(r.id);
+        insBlock.run(blockId, r.unit_id, r.check_in, r.check_out, r.notes || r.channel_remarks || 'Закрито в Hostex', r.hostex_reservation_code);
+        delRes.run(r.id);
       }
-      console.log(`[Hostex] Migrated ${blockedReservations.length} blocked reservations → availability_blocks`);
+      console.log(`[Hostex] Migrated ${blockedRes.length} blocked reservations → availability_blocks`);
     }
   } catch (e: any) {
     console.warn('[Hostex] Blocked reservation migration note:', e.message);

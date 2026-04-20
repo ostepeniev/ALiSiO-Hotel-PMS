@@ -4,8 +4,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
-import { Save, Check, Plus, Trash2, ChevronDown, ChevronRight, Loader2, ArrowLeft, Upload } from 'lucide-react';
+import { Save, Check, Plus, Trash2, ChevronDown, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { ImageUploadField } from '@/components/ui/ImageUploadField';
 
 // ─── Interfaces ──────────────────────────────────
 interface ConfigItem {
@@ -34,7 +35,7 @@ interface ConfigItem {
 interface AmenityItem { icon: string; name: string; }
 interface FaqItem { q: string; a: string; }
 interface RuleItem { icon: string; text: string; }
-interface UsefulItem { icon: string; title: string; desc: string; url?: string; }
+interface UsefulItem { icon: string; title: string; desc: string; url?: string; photo_url?: string; }
 
 function parseJSON<T>(val: string | null | undefined, fallback: T): T {
   if (!val) return fallback;
@@ -54,42 +55,6 @@ async function uploadImage(file: File, folder: string): Promise<string | null> {
     }
     return null;
   } catch { return null; }
-}
-
-function ImageUploadField({ label, value, onChange, folder }: { label: string; value: string; onChange: (v: string) => void; folder: string }) {
-  const [uploading, setUploading] = useState(false);
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    const url = await uploadImage(file, folder);
-    if (url) onChange(url);
-    setUploading(false);
-  };
-  return (
-    <div className="form-group">
-      <label className="form-label">{label}</label>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input className="form-input" style={{ flex: 1 }} value={value} placeholder="https://... або завантажте"
-          onChange={e => onChange(e.target.value)} />
-        <label style={{
-          padding: '8px 14px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-          background: 'var(--accent-primary)', color: '#fff', fontSize: 13, fontWeight: 600,
-          display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
-        }}>
-          {uploading ? <Loader2 size={14} className="animate-pulse" /> : <Upload size={14} />}
-          {uploading ? '...' : 'Завантажити'}
-          <input type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }} />
-        </label>
-      </div>
-      {value && (
-        <div style={{ marginTop: 8, borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
-          <img src={value} alt="Preview" style={{ width: '100%', maxHeight: 120, objectFit: 'cover' }}
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Section Header ──────────────────────────────
@@ -460,9 +425,18 @@ export default function GuestPageSettingsPage() {
                           <input className="form-input" type="url" value={u.url || ''} placeholder="https://maps.google.com/..."
                             onChange={e => setPUseful(prev => prev.map((p, idx) => idx === i ? { ...p, url: e.target.value } : p))} />
                         </div>
+                        <div style={{ marginTop: 8 }}>
+                          <ImageUploadField
+                            label="📸 Фото місця (показується в каруселі)"
+                            value={(u as any).photo_url || ''}
+                            onChange={url => setPUseful(prev => prev.map((p, idx) => idx === i ? { ...p, photo_url: url } : p))}
+                            folder="explore"
+                            aspectRatio="4/3"
+                          />
+                        </div>
                       </div>
                     ))}
-                    <button className="btn btn-sm btn-ghost" onClick={() => setPUseful(prev => [...prev, { icon: '📌', title: '', desc: '', url: '' }])}>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setPUseful(prev => [...prev, { icon: '📌', title: '', desc: '', url: '', photo_url: '' }])}>
                       <Plus size={14} /> Додати блок
                     </button>
                   </div>

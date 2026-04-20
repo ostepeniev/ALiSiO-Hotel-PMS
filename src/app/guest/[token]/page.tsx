@@ -557,20 +557,13 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           {/* ── HOUSE RULES ── */}
           {rules.length > 0 && (
             <div className="gp-section">
-              <div className="gp-section-title">{t.houseRules}</div>
-              <div className="gp-list-card" style={{ padding: '4px 16px' }}>
-                {rules.map((rule: any, i: number) => (
-                  <details key={i} className="gp-rule-item">
-                    <summary className="gp-rule-summary">
-                      <span className="gp-rule-icon">{rule.icon}</span>
-                      <span className="gp-rule-label">{tc(rule.text)}</span>
-                      <span className="gp-rule-chevron">›</span>
-                    </summary>
-                    {rule.detail && (
-                      <div className="gp-rule-detail">{tc(rule.detail)}</div>
-                    )}
-                  </details>
-                ))}
+              <div className="gp-rules-compact">
+                <div className="gp-rules-title">{t.houseRules}</div>
+                <div className="gp-rules-chips">
+                  {rules.map((rule: any, i: number) => (
+                    <span key={i} className="gp-rule-chip">{rule.icon} {tc(rule.text)}</span>
+                  ))}
+                </div>
               </div>
             </div>
           )}
