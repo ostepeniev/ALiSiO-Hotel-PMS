@@ -194,59 +194,57 @@ export async function getReservations(params?: {
 }
 
 /**
- * Get all reservations using date-window strategy to bypass Hostex total:0 pagination bug.
- * Splits into 3-month windows from 1 year ago to 2 years ahead, deduplicates by reservation_code.
+ * Get all reservations via sequential pagination.
+ * Hostex ignores date-range filters, so we paginate manually until we get an empty page.
+ * We use a 90-day checkout cutoff to skip very old completed reservations.
  */
 export async function getAllReservations(): Promise<HostexReservation[]> {
   const all = new Map<string, HostexReservation>();
-  const PER_PAGE = 50;
+  const PER_PAGE = 100;
 
-  // Window: from 1y ago to 2y from now — covers all active/past/future reservations
-  const windowStart = new Date();
-  windowStart.setFullYear(windowStart.getFullYear() - 1);
-  windowStart.setDate(1); // start of month
+  // Cutoff: don't fetch reservations that checked out more than 90 days ago
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
 
-  const windowEnd = new Date();
-  windowEnd.setFullYear(windowEnd.getFullYear() + 2);
+  let page = 1;
 
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  while (true) {
+    await rateLimitWait();
+    const result = await getReservations({ page, per_page: PER_PAGE });
 
-  // Build 3-month chunks
-  const chunks: { start: string; end: string }[] = [];
-  const cur = new Date(windowStart);
-  while (cur < windowEnd) {
-    const chunkStart = new Date(cur);
-    cur.setMonth(cur.getMonth() + 3);
-    const chunkEnd = new Date(Math.min(cur.getTime(), windowEnd.getTime()));
-    chunks.push({ start: fmt(chunkStart), end: fmt(chunkEnd) });
-  }
+    if (result.reservations.length === 0) {
+      console.log(`[Hostex] Page ${page} empty — done.`);
+      break;
+    }
 
-  console.log(`[Hostex] Fetching ${chunks.length} date windows...`);
+    let addedCount = 0;
+    let oldCount = 0;
 
-  for (const chunk of chunks) {
-    let page = 1;
-    while (true) {
-      await rateLimitWait();
-      const result = await getReservations({
-        check_out_date_start: chunk.start,
-        check_in_date_end: chunk.end,
-        page,
-        per_page: PER_PAGE,
-      });
-
-      for (const r of result.reservations) {
-        all.set(r.reservation_code, r);
+    for (const r of result.reservations) {
+      // Skip reservations where checkout was more than 90 days ago
+      if (r.check_out_date < cutoffStr) {
+        oldCount++;
+        continue;
       }
+      all.set(r.reservation_code, r);
+      addedCount++;
+    }
 
-      // Stop if we got fewer than a full page
-      if (result.reservations.length < PER_PAGE) break;
-      page++;
-      if (page > 20) break; // safety
+    console.log(`[Hostex] Page ${page}: ${addedCount} added, ${oldCount} old/skipped`);
+
+    // If we got fewer than a full page, we've reached the end
+    if (result.reservations.length < PER_PAGE) break;
+
+    page++;
+    if (page > 50) {
+      console.warn('[Hostex] Safety limit of 50 pages reached');
+      break;
     }
   }
 
   const reservations = Array.from(all.values());
-  console.log(`[Hostex] Total unique reservations fetched: ${reservations.length}`);
+  console.log(`[Hostex] Total unique reservations: ${reservations.length}`);
   return reservations;
 }
 
