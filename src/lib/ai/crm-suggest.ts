@@ -111,7 +111,7 @@ function buildLeadContext(leadId: string, conversationId: string): LeadContext {
    System prompt builder
    ──────────────────────────────────────────────────────── */
 function buildSystemPrompt(ctx: LeadContext): string {
-  const { lead, messages, stageHistory, customPrompt, propertyInfo } = ctx;
+  const { lead, messages, stageHistory, propertyInfo } = ctx;
   const today = new Date().toISOString().split('T')[0];
 
   // Detect guest language from messages (simple heuristic)
@@ -246,8 +246,8 @@ export async function* streamCrmSuggestion(
     });
   }
 
-  const model = ctx.customPrompt?.model || 'gpt-4o';
-  const temperature = ctx.customPrompt?.temperature ?? 0.7;
+  const model = ctx.stagePrompt?.model || ctx.masterPrompt?.model || 'gpt-4o';
+  const temperature = ctx.stagePrompt?.temperature ?? ctx.masterPrompt?.temperature ?? 0.7;
 
   const stream = await client.chat.completions.create({
     model,
