@@ -194,53 +194,36 @@ export async function getReservations(params?: {
 }
 
 /**
- * Get all reservations via sequential pagination.
- * Hostex ignores date-range filters, so we paginate manually until we get an empty page.
- * We use a 90-day checkout cutoff to skip very old completed reservations.
+ * Get all reservations via sequential pagination — both accepted and cancelled.
+ * Hostex API only returns 'accepted' reservations by default (ignores page param, returns same 20).
+ * We must explicitly fetch cancelled ones too to have a complete picture.
  */
 export async function getAllReservations(): Promise<HostexReservation[]> {
   const all = new Map<string, HostexReservation>();
   const PER_PAGE = 100;
 
-  // Cutoff: don't fetch reservations that checked out more than 90 days ago
+  // Cutoff: skip very old cancelled reservations (>90 days ago)
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 90);
   const cutoffStr = cutoff.toISOString().split('T')[0];
 
-  let page = 1;
-
-  while (true) {
+  // Fetch both statuses — Hostex ignores page param so one call per status is enough
+  for (const status of ['', 'cancelled']) {
     await rateLimitWait();
-    const result = await getReservations({ page, per_page: PER_PAGE });
+    const path = status
+      ? `/reservations?per_page=${PER_PAGE}&status=${status}`
+      : `/reservations?per_page=${PER_PAGE}`;
+    const result = await getReservations(
+      status ? { per_page: PER_PAGE, status } : { per_page: PER_PAGE }
+    );
 
-    if (result.reservations.length === 0) {
-      console.log(`[Hostex] Page ${page} empty — done.`);
-      break;
-    }
-
-    let addedCount = 0;
-    let oldCount = 0;
-
+    let added = 0;
     for (const r of result.reservations) {
-      // Skip reservations where checkout was more than 90 days ago
-      if (r.check_out_date < cutoffStr) {
-        oldCount++;
-        continue;
-      }
+      if (r.check_out_date < cutoffStr) continue; // skip very old
       all.set(r.reservation_code, r);
-      addedCount++;
+      added++;
     }
-
-    console.log(`[Hostex] Page ${page}: ${addedCount} added, ${oldCount} old/skipped`);
-
-    // If we got fewer than a full page, we've reached the end
-    if (result.reservations.length < PER_PAGE) break;
-
-    page++;
-    if (page > 50) {
-      console.warn('[Hostex] Safety limit of 50 pages reached');
-      break;
-    }
+    console.log(`[Hostex] Status="${status || 'default'}": ${result.reservations.length} returned, ${added} added`);
   }
 
   const reservations = Array.from(all.values());
