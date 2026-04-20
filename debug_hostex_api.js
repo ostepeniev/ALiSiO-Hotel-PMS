@@ -17,58 +17,50 @@ function hostexGet(path) {
   });
 }
 
+const MISSING = ['Franziska', 'Benjamin Busch', 'Benjamin Sode', 'Stefanie Fischer', 'Vera Michel'];
+const PROP = 12558043; // A2 Slow Down — has 20 (probably more)
+
 async function main() {
-  // Test: does pagination work WITH property_id filter?
-  // Property 12558043 (A2 Slow Down) returned exactly 20 — test if page=2 gives DIFFERENT results
-  const PROP = 12558043;
-  
-  console.log('=== PAGINATION WITH property_id TEST ===');
-  const p1 = await hostexGet(`/reservations?property_id=${PROP}&per_page=10&page=1`);
-  const p2 = await hostexGet(`/reservations?property_id=${PROP}&per_page=10&page=2`);
-  const p3 = await hostexGet(`/reservations?property_id=${PROP}&per_page=10&page=3`);
-  
-  const r1 = p1.data?.reservations || [];
-  const r2 = p2.data?.reservations || [];
-  const r3 = p3.data?.reservations || [];
-  
-  const names1 = r1.map(r => r.guest_name);
-  const names2 = r2.map(r => r.guest_name);
-  const names3 = r3.map(r => r.guest_name);
-  
-  console.log(`Page1: ${r1.length} results`);
-  console.log(`Page2: ${r2.length} results — SAME as page1? ${JSON.stringify(names1) === JSON.stringify(names2)}`);
-  console.log(`Page3: ${r3.length} results — SAME as page1? ${JSON.stringify(names1) === JSON.stringify(names3)}`);
-  
-  console.log('\nPage1 names:', names1);
-  console.log('Page2 names:', names2);
-
-  // Also test per_page=5
-  await new Promise(r => setTimeout(r, 200));
-  const pp5 = await hostexGet(`/reservations?property_id=${PROP}&per_page=5&page=2`);
-  const rr5 = pp5.data?.reservations || [];
-  console.log(`\nper_page=5 page=2: ${rr5.length} results, same? ${JSON.stringify(rr5.map(r=>r.guest_name)) === JSON.stringify(names1.slice(0,5))}`);
-  console.log('Names:', rr5.map(r => r.guest_name));
-
-  // Check where Franziska/Benjamin/Vera/Stefanie are — try all 6 properties with page=2
-  console.log('\n=== CHECK MISSING GUESTS ON PAGE 2 OF EACH PROPERTY ===');
-  const MISSING = ['Franziska', 'Benjamin Busch', 'Benjamin Sode', 'Stefanie', 'Vera Michel'];
-  const PROPS = [12446083, 12558043, 12590381, 12590382, 12446084, 12565124];
-
-  for (const propId of PROPS) {
-    await new Promise(r => setTimeout(r, 150));
-    const res2 = await hostexGet(`/reservations?property_id=${propId}&per_page=50&page=2`);
-    const list2 = res2.data?.reservations || [];
-    const found = list2.filter(r => MISSING.some(n => r.guest_name?.toLowerCase().includes(n.toLowerCase())));
-    if (found.length) {
-      console.log(`Property ${propId} page2: FOUND ${found.map(r=>r.guest_name).join(', ')}`);
-    } else {
-      // Check if page 2 differs from page 1
-      const res1 = await hostexGet(`/reservations?property_id=${propId}&per_page=50&page=1`);
-      const list1 = res1.data?.reservations || [];
-      const same = JSON.stringify(list1.map(r=>r.reservation_code)) === JSON.stringify(list2.map(r=>r.reservation_code));
-      console.log(`Property ${propId}: page1=${list1.length} page2=${list2.length} same=${same}`);
-      await new Promise(r => setTimeout(r, 150));
+  // TEST 1: Does check_in_date_start filter work WITH property_id?
+  console.log('=== TEST: date filter with property_id ===');
+  // Shift window forward (Apr 21 → Jun 30)
+  const windows = [
+    '2026-01-01&check_in_date_end=2026-04-20',
+    '2026-04-20&check_in_date_end=2026-06-30',
+    '2026-06-30&check_in_date_end=2026-12-31',
+  ];
+  const allFromWindows = new Map();
+  for (const w of windows) {
+    await new Promise(r => setTimeout(r, 200));
+    const url = `/reservations?property_id=${PROP}&per_page=50&check_in_date_start=${w}`;
+    const res = await hostexGet(url);
+    const list = res.data?.reservations || [];
+    list.forEach(r => allFromWindows.set(r.reservation_code, r));
+    const found = list.filter(r => MISSING.some(n => r.guest_name?.toLowerCase().includes(n.toLowerCase())));
+    console.log(`Window ${w}: ${list.length} results, found missing: ${found.map(r=>r.guest_name).join(', ') || 'none'}`);
+  }
+  console.log(`Total unique with date windows: ${allFromWindows.size}`);
+  allFromWindows.forEach(r => {
+    if (MISSING.some(n => r.guest_name?.toLowerCase().includes(n.toLowerCase()))) {
+      console.log('  MISSING FOUND:', r.guest_name, r.check_in_date);
     }
+  });
+
+  // TEST 2: Does listing_id filter give different results?
+  console.log('\n=== TEST: listing_id filter ===');
+  // Get properties to find listing_ids
+  const props = await hostexGet('/properties');
+  const a2 = (props.data?.properties || []).find(p => p.id === PROP);
+  console.log('A2 channels:', JSON.stringify(a2?.channels || []));
+  
+  for (const ch of (a2?.channels || [])) {
+    await new Promise(r => setTimeout(r, 200));
+    const res = await hostexGet(`/reservations?listing_id=${ch.listing_id}&per_page=50`);
+    const list = res.data?.reservations || [];
+    const found = list.filter(r => MISSING.some(n => r.guest_name?.toLowerCase().includes(n.toLowerCase())));
+    console.log(`Listing ${ch.listing_id} (${ch.channel_type}): ${list.length} results`);
+    found.forEach(r => console.log('  ** FOUND MISSING:', r.guest_name, r.check_in_date));
+    list.forEach(r => console.log('   ', r.check_in_date, r.guest_name));
   }
 }
 
