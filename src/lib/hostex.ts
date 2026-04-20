@@ -193,26 +193,63 @@ export async function getReservations(params?: {
   };
 }
 
-/** Get all reservations (paginated auto-fetch) */
-export async function getAllReservations(params?: {
-  status?: string;
-  check_in_date_start?: string;
-  check_in_date_end?: string;
-}): Promise<HostexReservation[]> {
-  const all: HostexReservation[] = [];
-  let page = 1;
-  const per_page = 50;
-  
-  while (true) {
-    const result = await getReservations({ ...params, page, per_page });
-    all.push(...result.reservations);
-    if (result.reservations.length < per_page) break;
-    page++;
-    if (page > 100) break; // safety limit
+/**
+ * Get all reservations using date-window strategy to bypass Hostex total:0 pagination bug.
+ * Splits into 3-month windows from 1 year ago to 2 years ahead, deduplicates by reservation_code.
+ */
+export async function getAllReservations(): Promise<HostexReservation[]> {
+  const all = new Map<string, HostexReservation>();
+  const PER_PAGE = 50;
+
+  // Window: from 1y ago to 2y from now — covers all active/past/future reservations
+  const windowStart = new Date();
+  windowStart.setFullYear(windowStart.getFullYear() - 1);
+  windowStart.setDate(1); // start of month
+
+  const windowEnd = new Date();
+  windowEnd.setFullYear(windowEnd.getFullYear() + 2);
+
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+
+  // Build 3-month chunks
+  const chunks: { start: string; end: string }[] = [];
+  const cur = new Date(windowStart);
+  while (cur < windowEnd) {
+    const chunkStart = new Date(cur);
+    cur.setMonth(cur.getMonth() + 3);
+    const chunkEnd = new Date(Math.min(cur.getTime(), windowEnd.getTime()));
+    chunks.push({ start: fmt(chunkStart), end: fmt(chunkEnd) });
   }
-  
-  return all;
+
+  console.log(`[Hostex] Fetching ${chunks.length} date windows...`);
+
+  for (const chunk of chunks) {
+    let page = 1;
+    while (true) {
+      await rateLimitWait();
+      const result = await getReservations({
+        check_out_date_start: chunk.start,
+        check_in_date_end: chunk.end,
+        page,
+        per_page: PER_PAGE,
+      });
+
+      for (const r of result.reservations) {
+        all.set(r.reservation_code, r);
+      }
+
+      // Stop if we got fewer than a full page
+      if (result.reservations.length < PER_PAGE) break;
+      page++;
+      if (page > 20) break; // safety
+    }
+  }
+
+  const reservations = Array.from(all.values());
+  console.log(`[Hostex] Total unique reservations fetched: ${reservations.length}`);
+  return reservations;
 }
+
 
 /** Get single reservation by stay_code */
 export async function getReservation(stayCode: string): Promise<HostexReservation | null> {

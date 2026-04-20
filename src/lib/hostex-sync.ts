@@ -12,7 +12,7 @@ import {
 } from './hostex';
 
 // Public URL of the PMS (used to build guest page links sent to Hostex)
-const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://pms.alisio.cz';
+const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
 
 // Channel types that represent owner blocks / closed dates — NOT real guests
 const BLOCKED_CHANNEL_TYPES = new Set(['owner', 'manual', 'owner_reservation', 'blocked', 'maintenance']);

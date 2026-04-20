@@ -167,6 +167,7 @@ function CalendarDesktop() {
   const [blocks, setBlocks] = useState<{ id: string; unit_id: string; date_from: string; date_to: string; notes: string }[]>([]);
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [showPayForm, setShowPayForm] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
 
@@ -699,7 +700,25 @@ function CalendarDesktop() {
                   }}>{ZOOM_LEVELS[z].label}</button>
                 ))}
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => fetchData()} title="Оновити" style={{ padding: '4px 6px' }}><RefreshCw size={14} /></button>
+              <button className="btn btn-secondary btn-sm" onClick={() => fetchData()} title="Оновити дані" style={{ padding: '4px 6px' }}><RefreshCw size={14} /></button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  setSyncing(true);
+                  try {
+                    await fetch('/api/hostex/sync', { method: 'POST' });
+                    await fetchData();
+                    showToast('✅ Hostex синхронізовано');
+                  } catch { showToast('❌ Помилка синхронізації'); }
+                  setSyncing(false);
+                }}
+                disabled={syncing}
+                title="Синхронізувати з Hostex"
+                style={{ padding: '4px 8px', fontSize: 11, gap: 4, opacity: syncing ? 0.6 : 1 }}
+              >
+                {syncing ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <span>🔄</span>}
+                {syncing ? ' Синх...' : ' Hostex'}
+              </button>
               <button className="btn btn-secondary btn-sm" onClick={() => setShowGroupModal(true)} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Users size={14} /> Групове</button>
               <button className="btn btn-primary btn-sm" onClick={() => { setForm({ category: 'glamping', unitTypeId: unitTypesForCategory[0]?.id || '', unitId: '', source: 'direct', checkIn: '', checkOut: '', adults: 2, children: 0, firstName: '', lastName: '', email: '', phone: '', status: 'confirmed', paymentStatus: 'unpaid', totalPrice: '', commissionAmount: '', cityTaxAmount: '', cityTaxIncluded: false, cityTaxPaid: 'pending', internalNotes: '' }); setShowNewBooking(true); }} style={{ fontSize: 11, padding: '4px 8px', gap: 4 }}><Plus size={14} /> Нове</button>
             </div>
