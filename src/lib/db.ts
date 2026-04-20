@@ -1203,6 +1203,30 @@ function runMigrations(database: any) {
     console.log('[DB] New services seed note:', e.message);
   }
 
+  // --- Migration: create content_translations table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS content_translations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      text_hash   TEXT NOT NULL,
+      source_text TEXT NOT NULL,
+      lang        TEXT NOT NULL,
+      translated_text TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(text_hash, lang)
+    )
+  `);
+
+  // --- Migration: add per-language columns to additional_services ---
+  const svcLangCols = [
+    'name_pl','name_nl','name_fr',
+    'description_en','description_de','description_cs','description_pl','description_nl','description_fr',
+    'unit_label_en','unit_label_de','unit_label_cs','unit_label_pl','unit_label_nl','unit_label_fr',
+  ];
+  for (const col of svcLangCols) {
+    try { database.exec(`ALTER TABLE additional_services ADD COLUMN ${col} TEXT`); }
+    catch { /* already exists */ }
+  }
+
   // ═══════════════════════════════════════════════════════
   // FINANCE MODULE TABLES
   // ═══════════════════════════════════════════════════════

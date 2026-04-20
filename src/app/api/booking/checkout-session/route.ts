@@ -17,14 +17,8 @@ export async function OPTIONS() {
 /**
  * POST /api/booking/checkout-session
  * 
- * Creates a Teya Checkout Session for Hosted Checkout payments.
- * Also creates a preliminary booking_service_order so it appears in PMS immediately,
- * and sends a Telegram notification.
- *
- * Body: { amount: number, currency?: string, description?: string, 
- *         items?: [], reservation_id?: string, return_path?: string,
- *         service_id?: string, service_date?: string, start_hour?: number,
- *         hours?: number, addons?: [] }
+ * Flow: 1) Create preliminary order  2) Send TG notification  3) Call Teya
+ * Even if Teya fails, the admin knows about the order.
  */
 export async function POST(req: Request) {
   try {
@@ -38,41 +32,16 @@ export async function POST(req: Request) {
 
     console.log('[Checkout Session] Creating:', { amount, description, reservation_id, service_id, service_date });
 
-    // Determine base URL for redirects
-    const origin = new URL(req.url).origin;
-    const returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
-    const isProduction = !origin.includes('localhost') && !origin.includes('127.0.0.1');
+    const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
-    // Teya API uses minor units (haléřů for CZK): 1 CZK = 100 haléřů
-    const amountMinor = Math.round(amount * 100);
-
-    const session = await createCheckoutSession({
-      amount: amountMinor,
-      currency: currency || 'CZK',
-      description: description || 'ALiSiO Booking',
-      items: items ? items.map((item: { description: string; quantity: number; unit_price: number }) => ({
-        ...item,
-        unit_price: Math.round(item.unit_price * 100),
-      })) : undefined,
-      metadata: reservation_id ? { reservation_id } : undefined,
-      ...(isProduction ? {
-        success_url: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(returnTo)}`,
-        cancel_url: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=cancel&return=${encodeURIComponent(returnTo)}`,
-      } : {}),
-    });
-
-    const sessionId = session.id;
-
-    // ── Create preliminary order + TG notification ──
+    // ── Step 1: Create preliminary order in DB ──
+    let orderId: string | null = null;
     try {
       const db = getDb();
-
-      // Ensure completed_at column exists
       try { db.prepare("ALTER TABLE booking_service_orders ADD COLUMN completed_at TEXT DEFAULT NULL").run(); } catch { /* exists */ }
 
       if (service_id && service_date) {
-        // Slot booking (sauna, tub) — create preliminary order
-        const orderId = `bso_${Date.now()}`;
+        orderId = `bso_${Date.now()}`;
         const h = hours || 2;
         const sHour = start_hour || 14;
         
@@ -84,7 +53,7 @@ export async function POST(req: Request) {
           orderId, reservation_id || null, service_id, h, service_date,
           JSON.stringify({ startHour: sHour, hours: h, addons: addons || [] }),
           amount / h, amount,
-          sessionId
+          'pending_teya'
         );
 
         // Lock time slots temporarily
@@ -97,23 +66,23 @@ export async function POST(req: Request) {
 
           if (existingSlot) {
             db.prepare('UPDATE service_time_slots SET booked_count = booked_count + 1, booking_session_id = ? WHERE id = ?')
-              .run(sessionId, existingSlot.id);
+              .run('pending_teya', existingSlot.id);
           } else {
             db.prepare(`
               INSERT INTO service_time_slots (id, service_id, date, start_time, end_time, max_capacity, booked_count, is_available, booking_session_id, created_at)
               VALUES (?, ?, ?, ?, ?, 1, 1, 1, ?, datetime('now'))
-            `).run(`sts_${Date.now()}_${hr}`, service_id, service_date, slotStart, slotEnd, sessionId);
+            `).run(`sts_${Date.now()}_${hr}`, service_id, service_date, slotStart, slotEnd, 'pending_teya');
           }
         }
-
         console.log('[Checkout Session] Preliminary order created:', orderId);
-      } else if (description && !service_id) {
-        // Generic checkout (no service_id) — just log
-        console.log('[Checkout Session] Generic checkout, no preliminary order');
       }
+    } catch (dbErr: any) {
+      console.error('[Checkout Session] DB error:', dbErr.message);
+    }
 
-      // ── Telegram notification: new order awaiting payment ──
-      const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    // ── Step 2: Send TG notification IMMEDIATELY ──
+    try {
+      const db = getDb();
       let guestInfo = 'Зовнішній клієнт';
       let unitInfo = '';
       if (reservation_id) {
@@ -144,16 +113,64 @@ export async function POST(req: Request) {
         `💳 Очікує оплати`,
       ].join('\n');
       sendTelegramMessage(text).catch(() => {});
-    } catch (preOrderErr: any) {
-      // Pre-order is non-critical, don't fail the checkout
-      console.error('[Checkout Session] Pre-order error:', preOrderErr.message);
-    }
+    } catch { /* non-critical */ }
 
-    return NextResponse.json({
-      session_token: session.session_token,
-      session_id: sessionId,
-      session_url: session.session_url,
-    }, { headers: CORS_HEADERS });
+    // ── Step 3: Call Teya ──
+    const origin = new URL(req.url).origin;
+    const returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
+    const isProduction = !origin.includes('localhost') && !origin.includes('127.0.0.1');
+    const amountMinor = Math.round(amount * 100);
+
+    try {
+      const session = await createCheckoutSession({
+        amount: amountMinor,
+        currency: currency || 'CZK',
+        description: description || 'ALiSiO Booking',
+        items: items ? items.map((item: { description: string; quantity: number; unit_price: number }) => ({
+          ...item,
+          unit_price: Math.round(item.unit_price * 100),
+        })) : undefined,
+        metadata: reservation_id ? { reservation_id } : undefined,
+        ...(isProduction ? {
+          success_url: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(returnTo)}`,
+          cancel_url: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=cancel&return=${encodeURIComponent(returnTo)}`,
+        } : {}),
+      });
+
+      // Update order with real session ID
+      if (orderId) {
+        try {
+          const db = getDb();
+          db.prepare('UPDATE booking_service_orders SET payment_id = ? WHERE id = ?')
+            .run(session.id, orderId);
+          db.prepare("UPDATE service_time_slots SET booking_session_id = ? WHERE booking_session_id = 'pending_teya'")
+            .run(session.id);
+        } catch { /* non-critical */ }
+      }
+
+      return NextResponse.json({
+        session_token: session.session_token,
+        session_id: session.id,
+        session_url: session.session_url,
+      }, { headers: CORS_HEADERS });
+    } catch (teyaErr: any) {
+      // Teya failed — notify admin but order + TG already sent
+      console.error('[Checkout Session] Teya error:', teyaErr.message);
+      sendTelegramMessage(
+        `⚠️ <b>Помилка оплати (Teya)</b>\n❌ ${esc(teyaErr.message?.substring(0, 150))}`
+      ).catch(() => {});
+
+      // Clean up pending slots
+      if (orderId) {
+        try {
+          const db = getDb();
+          db.prepare("UPDATE booking_service_orders SET payment_status = 'failed' WHERE id = ?").run(orderId);
+          db.prepare("DELETE FROM service_time_slots WHERE booking_session_id = 'pending_teya'").run();
+        } catch { /* */ }
+      }
+
+      return NextResponse.json({ error: 'Payment system temporarily unavailable' }, { status: 503, headers: CORS_HEADERS });
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Checkout Session API]', message);

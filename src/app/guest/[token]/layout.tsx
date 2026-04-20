@@ -1,8 +1,21 @@
 import type { Metadata } from 'next';
 
+const TITLE = '✅ YOUR PERSONAL PAGE for your reservation';
+const DESCRIPTION = '➡️ Check-in information, services, and tourist itineraries and helpful tips';
+
 export const metadata: Metadata = {
-  title: 'Ваше бронювання — ALiSiO Resort & Glamping',
-  description: 'Інформація про ваше бронювання, реєстрація гостей, додаткові послуги',
+  title: TITLE,
+  description: DESCRIPTION,
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export default function GuestLayout({

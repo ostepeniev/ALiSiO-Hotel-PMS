@@ -194,6 +194,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     return text;
   }, [lang, data?.translations]);
 
+  // Pick localised name/label from a service/menu-item object.
+  // Priority: per-column (name_en, name_de…) → tc(name) → name
+  const svcField = useCallback((obj: any, field: 'name' | 'description' | 'unit_label'): string => {
+    if (!obj) return '';
+    if (lang !== 'uk') {
+      const colKey = `${field}_${lang}`;
+      if (obj[colKey]) return obj[colKey];
+    }
+    return tc(obj[field] || '') || obj[field] || '';
+  }, [lang, tc]);
+
   const t = getTranslations(lang);
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
@@ -484,7 +495,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 {data.services?.slice(0, 3).map((svc: any, i: number) => {
                   const wType = getWidgetType(svc);
                   return (
-                    <ListRow key={svc.id} icon={svc.icon || '✨'} label={svc.name_en && lang !== 'uk' ? svc.name_en : tc(svc.name)}
+                    <ListRow key={svc.id} icon={svc.icon || '✨'} label={svcField(svc, 'name')}
                       onClick={() => {
                         if (wType) { setWidgetService(wType); }
                         else { setSelectedService(svc); setSheet('service'); }
@@ -599,14 +610,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <div className="gp-service-emoji">{svc.icon || '✨'}</div>
                 <div className="gp-service-info">
                   <div className="gp-service-name">
-                    {svc.name_en && lang !== 'uk' ? svc.name_en : tc(svc.name)}
+                    {svcField(svc, 'name')}
                     {isOrdered && ' ✅'}
                   </div>
-                  <div className="gp-service-desc">{tc(svc.description || '')}</div>
+                  <div className="gp-service-desc">{svcField(svc, 'description')}</div>
                 </div>
                 <div className="gp-service-price-col">
                   <div className="gp-service-price">{formatPriceLocalized(svc.price, svc.currency)}</div>
-                  {svc.unit_label && <div className="gp-service-per">/{tc(svc.unit_label)}</div>}
+                  {svc.unit_label && <div className="gp-service-per">/{svcField(svc, 'unit_label')}</div>}
                 </div>
               </button>
             );
@@ -782,17 +793,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Service detail (simple services) */}
       <BottomSheet open={sheet === 'service' && !!selectedService} onClose={() => { setSheet(null); setSelectedService(null); }}
-        title={selectedService ? (selectedService.name_en && lang !== 'uk' ? selectedService.name_en : tc(selectedService.name || '')) : ''}>
+        title={selectedService ? svcField(selectedService, 'name') : ''}>
         {selectedService && (
           <>
             <div className="gp-service-detail">
               <div className="gp-service-detail-emoji">{selectedService.icon || '✨'}</div>
               <div className="gp-service-detail-price">{formatPriceLocalized(selectedService.price, selectedService.currency)}</div>
               {selectedService.unit_label && (
-                <div className="gp-service-detail-per">{t.per} {tc(selectedService.unit_label)}</div>
+                <div className="gp-service-detail-per">{t.per} {svcField(selectedService, 'unit_label')}</div>
               )}
             </div>
-            <div className="gp-service-detail-desc">{tc(selectedService.description || '')}</div>
+            <div className="gp-service-detail-desc">{svcField(selectedService, 'description')}</div>
             {!data.orderedServices?.some((o: any) => o.service_id === selectedService.id && o.payment_status === 'paid') ? (
               <button className="gp-btn gp-btn-primary" onClick={() => handleOrderService(selectedService.id)}
                 disabled={orderingService === selectedService.id}>
@@ -807,9 +818,10 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
 
       {/* Service widget popup (sauna / tub / breakfast) */}
       <BottomSheet open={!!widgetService} onClose={() => setWidgetService(null)}
-        title={widgetService === 'sauna' ? '🔥 ' + (lang === 'uk' ? 'Сауна' : 'Sauna')
-             : widgetService === 'tub'  ? '🛁 ' + (lang === 'uk' ? 'Купіль' : 'Hot Tub')
-             : '🍳 ' + (lang === 'uk' ? 'Сніданок' : 'Breakfast')}>
+        title={(() => {
+          const wsvc = data?.services?.find((s: any) => s.id === `svc_${widgetService}`);
+          return wsvc ? svcField(wsvc, 'name') : widgetService || '';
+        })()}>
         <div ref={widgetContainerRef} style={{ minHeight: 200 }} />
       </BottomSheet>
 

@@ -1,40 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { extractTexts, translateAndStore } from '@/lib/translate';
+import { NextRequest, NextResponse } from 'next/server';
+import { retranslateAll } from '@/lib/translate';
 
 /**
  * POST /api/admin/translate-all
- * Trigger translation of all existing property + unit-type config content.
- * Call this once to populate the translations table, or after major content updates.
+ * Translates ALL content: property config, unit-type configs, and services.
+ * Pass { force: true } to re-translate even already-translated texts.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const db = getDb();
-    const allTexts = new Set<string>();
+    let force = false;
+    try { const b = await request.json(); force = !!b.force; } catch { /* no body */ }
 
-    // Collect from property configs
-    const propConfigs = db.prepare('SELECT * FROM property_guest_config').all() as any[];
-    for (const cfg of propConfigs) {
-      extractTexts(cfg).forEach(t => allTexts.add(t));
-    }
-
-    // Collect from unit-type configs
-    const utConfigs = db.prepare('SELECT * FROM guest_page_config').all() as any[];
-    for (const cfg of utConfigs) {
-      extractTexts(cfg).forEach(t => allTexts.add(t));
-    }
-
-    const texts = Array.from(allTexts);
-    console.log(`[translate-all] Found ${texts.length} unique texts to translate`);
-
-    // Force re-translate everything
-    await translateAndStore(texts, true);
+    const result = await retranslateAll(force);
 
     return NextResponse.json({
       ok: true,
-      textsCount: texts.length,
-      message: `Translated ${texts.length} texts to 6 languages`,
+      translated: result.translated,
+      skipped: result.skipped,
+      message: `Translated ${result.translated} texts, skipped ${result.skipped} (already done)`,
     });
   } catch (error: any) {
     console.error('POST /api/admin/translate-all error:', error?.message);
