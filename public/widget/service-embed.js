@@ -26,6 +26,7 @@
   var RESERVATION_ID = scriptTag ? (scriptTag.getAttribute('data-reservation') || '') : '';
   var ENABLE_PAYMENT = scriptTag ? (scriptTag.getAttribute('data-payment') !== 'false') : true;
   var AUTO_PROMO = scriptTag ? (scriptTag.getAttribute('data-promo') || '') : '';
+  var SITE_ID = scriptTag ? (scriptTag.getAttribute('data-site') || '') : '';
 
   // Service ID mapping
   var SERVICE_IDS = { sauna: 'svc_sauna', tub: 'svc_pool', breakfast: 'svc_breakfast' };
@@ -374,6 +375,7 @@
     };
     if (RESERVATION_ID) body.reservationId = RESERVATION_ID;
     if (paymentId) body.paymentId = paymentId;
+    if (SITE_ID) body.site_id = SITE_ID;
     if (state.promoApplied && state.promoCode) body.promoCode = state.promoCode;
     if (SERVICE_TYPE === 'sauna' && state.brooms > 0) {
       body.addons = [{ id: 'addon_broom', quantity: state.brooms }];

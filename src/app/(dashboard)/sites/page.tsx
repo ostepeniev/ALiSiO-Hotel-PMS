@@ -1,0 +1,344 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import Header from '@/components/layout/Header';
+import { useMobileMenu } from '@/lib/MobileMenuContext';
+import {
+  Globe, Plus, Search, Trash2, ExternalLink,
+  Loader2, X, ToggleLeft, ToggleRight,
+} from 'lucide-react';
+
+/* ───── Types ───── */
+interface BookingSite {
+  id: string;
+  name: string;
+  type: 'widget' | 'self-hosted';
+  currency: string;
+  status: 'active' | 'paused' | 'deleted';
+  listings_count: number;
+  created_at: string;
+}
+
+/* ───── Modal ───── */
+function Modal({ open, onClose, title, children, footer }: {
+  open: boolean; onClose: () => void; title: string;
+  children: React.ReactNode; footer?: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 className="modal-title">{title}</h3>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-footer">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ───── Status badge ───── */
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  active:  { label: 'Активний',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  paused:  { label: 'Призупинено', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  deleted: { label: 'Видалено',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  widget: 'Віджет',
+  'self-hosted': 'Self-hosted',
+};
+
+function fmt(d: string) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/* ───── Main Page ───── */
+export default function SitesPage() {
+  const router = useRouter();
+  const onMenuClick = useMobileMenu();
+
+  const [sites, setSites] = useState<BookingSite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [toast, setToast] = useState('');
+
+  /* create modal */
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState<'widget' | 'self-hosted'>('self-hosted');
+  const [newCurrency, setNewCurrency] = useState('CZK');
+  const [creating, setCreating] = useState(false);
+
+  /* ── fetch ── */
+  const fetchSites = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/booking-sites');
+      const data = await res.json();
+      if (Array.isArray(data.sites)) setSites(data.sites);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSites(); }, [fetchSites]);
+
+  /* ── create ── */
+  const handleCreate = async () => {
+    if (!newName.trim()) { alert('Введіть назву сайту'); return; }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/booking-sites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim(), type: newType, currency: newCurrency }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Сайт створено!');
+        setShowCreate(false);
+        setNewName('');
+        fetchSites();
+        router.push(`/sites/${data.site.id}`);
+      } else {
+        alert(data.error || 'Помилка создання');
+      }
+    } catch { alert('Помилка мережі'); }
+    finally { setCreating(false); }
+  };
+
+  /* ── toggle status ── */
+  const toggleStatus = async (site: BookingSite) => {
+    const nextStatus = site.status === 'active' ? 'paused' : 'active';
+    try {
+      await fetch(`/api/booking-sites/${site.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      showToast(nextStatus === 'active' ? 'Сайт активовано' : 'Сайт призупинено');
+      fetchSites();
+    } catch { alert('Помилка'); }
+  };
+
+  /* ── delete ── */
+  const handleDelete = async (site: BookingSite) => {
+    if (!confirm(`Видалити сайт «${site.name}»? Це незворотно.`)) return;
+    await fetch(`/api/booking-sites/${site.id}`, { method: 'DELETE' });
+    showToast('Сайт видалено');
+    fetchSites();
+  };
+
+  /* ── toast ── */
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  /* ── filter ── */
+  const filtered = sites.filter(s =>
+    s.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  /* ── render ── */
+  return (
+    <div className="page-layout">
+      <Header title="Сайти бронювання" onMenuClick={onMenuClick} />
+
+      <div className="page-content">
+        {/* Toolbar */}
+        <div className="table-toolbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+              <input
+                className="form-input"
+                placeholder="Пошук сайтів..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ paddingLeft: 32, width: 240 }}
+              />
+            </div>
+          </div>
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            <Plus size={16} /> Новий сайт
+          </button>
+        </div>
+
+        {/* Table */}
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+            <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary)' }} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-secondary)' }}>
+            <Globe size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+            <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
+              {search ? 'Сайтів не знайдено' : 'Сайтів ще немає'}
+            </div>
+            <div style={{ fontSize: 14, marginBottom: 24 }}>
+              {search ? 'Спробуйте змінити запит' : 'Створіть перший сайт бронювання'}
+            </div>
+            {!search && (
+              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+                <Plus size={16} /> Створити перший сайт
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Назва</th>
+                  <th>Тип</th>
+                  <th>Оголошень</th>
+                  <th>Валюта</th>
+                  <th>Статус</th>
+                  <th>Створено</th>
+                  <th style={{ textAlign: 'right' }}>Дії</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(site => {
+                  const st = STATUS_CONFIG[site.status] || STATUS_CONFIG.active;
+                  return (
+                    <tr
+                      key={site.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => router.push(`/sites/${site.id}`)}
+                    >
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Globe size={16} style={{ color: 'var(--accent-primary)' }} />
+                          <span style={{ fontWeight: 600 }}>{site.name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                          {TYPE_LABELS[site.type] || site.type}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-info">{site.listings_count}</span>
+                      </td>
+                      <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{site.currency}</td>
+                      <td>
+                        <span style={{
+                          fontSize: 12, fontWeight: 600, padding: '3px 10px',
+                          borderRadius: 99, background: st.bg, color: st.color,
+                        }}>
+                          {st.label}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{fmt(site.created_at)}</td>
+                      <td>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }} onClick={e => e.stopPropagation()}>
+                          {/* Toggle active/paused */}
+                          <button
+                            className="btn btn-ghost"
+                            title={site.status === 'active' ? 'Призупинити' : 'Активувати'}
+                            onClick={() => toggleStatus(site)}
+                            style={{ padding: '4px 8px' }}
+                          >
+                            {site.status === 'active'
+                              ? <ToggleRight size={18} style={{ color: '#22c55e' }} />
+                              : <ToggleLeft size={18} style={{ color: 'var(--text-tertiary)' }} />
+                            }
+                          </button>
+                          {/* Open */}
+                          <button
+                            className="btn btn-ghost"
+                            title="Відкрити"
+                            onClick={() => router.push(`/sites/${site.id}`)}
+                            style={{ padding: '4px 8px' }}
+                          >
+                            <ExternalLink size={16} />
+                          </button>
+                          {/* Delete */}
+                          <button
+                            className="btn btn-ghost"
+                            title="Видалити"
+                            onClick={() => handleDelete(site)}
+                            style={{ padding: '4px 8px', color: '#ef4444' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Create Modal */}
+      <Modal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        title="Новий сайт бронювання"
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Скасувати</button>
+            <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
+              {creating ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
+              Створити
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">Назва сайту *</label>
+          <input
+            className="form-input"
+            placeholder="Наприклад: Glamping ALiSiO"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleCreate()}
+            autoFocus
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Тип</label>
+            <select className="form-select" value={newType} onChange={e => setNewType(e.target.value as 'widget' | 'self-hosted')}>
+              <option value="self-hosted">Self-hosted</option>
+              <option value="widget">Лише віджет</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Валюта</label>
+            <select className="form-select" value={newCurrency} onChange={e => setNewCurrency(e.target.value)}>
+              <option value="CZK">CZK</option>
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+              <option value="UAH">UAH</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ marginTop: 8, padding: '12px 16px', background: 'var(--surface-secondary)', borderRadius: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
+          💡 Після створення ви зможете налаштувати оголошення, дизайн, тарифні плани та інсталяційний код.
+        </div>
+      </Modal>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          background: '#22c55e', color: '#fff', padding: '12px 20px',
+          borderRadius: 8, fontWeight: 600, fontSize: 14,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+        }}>
+          ✓ {toast}
+        </div>
+      )}
+    </div>
+  );
+}

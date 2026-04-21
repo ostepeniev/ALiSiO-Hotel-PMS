@@ -2147,7 +2147,106 @@ function runMigrations(database: any) {
   } catch (e: any) {
     console.error('[DB] Payments migration error:', e.message);
   }
+
+  // ═══════════════════════════════════════════════════════
+  // BOOKING SITES MODULE
+  // ═══════════════════════════════════════════════════════
+
+  // --- Migration: create booking_sites table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS booking_sites (
+      id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      property_id   TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      type          TEXT NOT NULL DEFAULT 'widget'
+                      CHECK (type IN ('widget', 'self-hosted')),
+      currency      TEXT NOT NULL DEFAULT 'CZK',
+      status        TEXT NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active', 'paused', 'deleted')),
+      design_config TEXT,
+      widget_config TEXT,
+      created_by    TEXT REFERENCES app_users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_booking_sites_property ON booking_sites(property_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_booking_sites_status ON booking_sites(status)');
+
+  // --- Migration: create site_listings table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS site_listings (
+      id                 TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id            TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+      unit_id            TEXT REFERENCES units(id)      ON DELETE CASCADE,
+      unit_type_id       TEXT REFERENCES unit_types(id) ON DELETE CASCADE,
+      price_override     REAL,
+      rules_override     TEXT,
+      has_rules_override INTEGER NOT NULL DEFAULT 0,
+      max_inventory      INTEGER,
+      external_url       TEXT,
+      sort_order         INTEGER NOT NULL DEFAULT 0,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_site_listings_site ON site_listings(site_id)');
+
+  // --- Migration: create site_rate_plans table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS site_rate_plans (
+      id                      TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id                 TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+      name                    TEXT NOT NULL,
+      is_default              INTEGER NOT NULL DEFAULT 0,
+      cancellation_policy     TEXT NOT NULL DEFAULT 'non_refundable'
+                                CHECK (cancellation_policy IN ('non_refundable', 'full_refund', 'flexible')),
+      payment_schedule        TEXT NOT NULL DEFAULT '[{"percent": 100, "trigger": "on_booking"}]',
+      meals_included          TEXT NOT NULL DEFAULT '[]',
+      min_days_before_checkin INTEGER NOT NULL DEFAULT 0,
+      same_day_cutoff_hour    INTEGER,
+      min_stay                INTEGER NOT NULL DEFAULT 1,
+      max_stay                INTEGER NOT NULL DEFAULT 999,
+      pricing_mode            TEXT NOT NULL DEFAULT 'independent'
+                                CHECK (pricing_mode IN ('independent', 'dependent')),
+      applied_listings        TEXT NOT NULL DEFAULT '[]',
+      is_active               INTEGER NOT NULL DEFAULT 1,
+      created_at              TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_site_rate_plans_site ON site_rate_plans(site_id)');
+
+  // --- Migration: create site_services table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS site_services (
+      id             TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id        TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+      service_id     TEXT NOT NULL REFERENCES additional_services(id) ON DELETE CASCADE,
+      is_enabled     INTEGER NOT NULL DEFAULT 1,
+      price_override REAL,
+      sort_order     INTEGER NOT NULL DEFAULT 0,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(site_id, service_id)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_site_services_site ON site_services(site_id)');
+
+  // --- Migration: NULL-safe ALTER on existing tables ---
+  // payment_accounts → add site_id, is_default
+  try { database.exec('ALTER TABLE payment_accounts ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE payment_accounts ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0'); } catch { /* already exists */ }
+
+  // promo_codes → add site_id, redemption_limit, applied_listings
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN redemption_limit INTEGER'); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* already exists */ }
+
+  // booking_service_orders → add site_id
+  try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
+
+  console.log('[DB] Booking Sites module tables ready');
 }
+
 
 // Generate a random 12-char token for guest pages
 export function generateGuestToken(): string {

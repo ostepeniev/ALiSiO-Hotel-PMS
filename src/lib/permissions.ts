@@ -17,6 +17,7 @@ export const ALL_PERMISSIONS = [
   'nav:finance',
   'nav:settings',
   'nav:crm',
+  'nav:sites',
   // Features
   'manage_users',
   'manage_pricing',
@@ -29,6 +30,7 @@ export const ALL_PERMISSIONS = [
   'manage_expenses',
   'view_finance',
   'manage_crm',
+  'manage_sites',
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
@@ -47,6 +49,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: { key: Permission;
       { key: 'nav:documents', label: 'Документи' },
       { key: 'nav:finance', label: 'Фінанси' },
       { key: 'nav:crm', label: 'CRM' },
+      { key: 'nav:sites', label: 'Сайти бронювання' },
       { key: 'nav:settings', label: 'Налаштування' },
     ],
   },
@@ -64,6 +67,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: { key: Permission;
       { key: 'manage_expenses', label: 'Керування витратами' },
       { key: 'view_finance', label: 'Перегляд фінансів' },
       { key: 'manage_crm', label: 'Керування CRM' },
+      { key: 'manage_sites', label: 'Керування сайтами' },
     ],
   },
 ];
@@ -74,10 +78,10 @@ export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
   director: [...ALL_PERMISSIONS],
   manager: [
     'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:pricing',
-    'nav:reports', 'nav:guests', 'nav:documents', 'nav:finance', 'nav:crm',
+    'nav:reports', 'nav:guests', 'nav:documents', 'nav:finance', 'nav:crm', 'nav:sites',
     'manage_bookings', 'manage_guests', 'manage_pricing',
     'view_reports', 'manage_payments', 'manage_documents',
-    'manage_expenses', 'view_finance', 'manage_crm',
+    'manage_expenses', 'view_finance', 'manage_crm', 'manage_sites',
   ],
   receptionist: [
     'nav:dashboard', 'nav:calendar', 'nav:bookings', 'nav:guests', 'nav:crm',
@@ -175,4 +179,5 @@ export const NAV_PERMISSION_MAP: Record<string, Permission> = {
   '/crm/inbox': 'nav:crm',
   '/crm/leads': 'nav:crm',
   '/crm/settings': 'nav:crm',
+  '/sites': 'nav:sites',
 };

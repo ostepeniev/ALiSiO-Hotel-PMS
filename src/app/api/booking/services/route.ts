@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     if (action === 'book-slots') {
-      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId, promoCode } = body;
+      const { serviceId, date, startHour, hours, persons, addons, reservationId, paymentId, promoCode, site_id } = body;
 
       if (!serviceId || !date || startHour === undefined || !hours || hours < 2) {
         return NextResponse.json(
@@ -257,15 +257,16 @@ export async function POST(request: NextRequest) {
       if (existingTables.has('booking_service_orders')) {
         const orderId = `bso_${Date.now()}`;
         db.prepare(`
-          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status, promo_code)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)
+          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date, time_slot_id, options_json, unit_price, total_price, status, payment_id, payment_status, promo_code, site_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)
         `).run(
           orderId, reservationId || null, serviceId, hours, date, slotIds[0],
           JSON.stringify({ persons: persons || 1, addons: addonDetails, hours, startHour }),
           pricePerHour, totalPrice,
           paymentId || null,
           paymentId ? 'pending' : 'none',
-          appliedPromo
+          appliedPromo,
+          (site_id as string) || null
         );
       }
 
