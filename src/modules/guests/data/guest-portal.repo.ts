@@ -1,0 +1,110 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { getDb } from '@core/db';
+
+export function getReservationByToken(token: string) {
+  return getDb().prepare(`
+    SELECT
+      r.id, r.check_in, r.check_out, r.nights, r.adults, r.children, r.infants,
+      r.status, r.payment_status, r.total_price, r.currency, r.notes, r.source,
+      r.guest_page_expires_at, r.property_id,
+      g.id as guest_id, g.first_name, g.last_name, g.email as guest_email, g.phone as guest_phone,
+      u.id as unit_id, u.name as unit_name, u.code as unit_code, u.beds,
+      c.id as category_id, c.name as category_name, c.type as category_type, c.icon as category_icon, c.color as category_color,
+      ut.id as unit_type_id, ut.name as unit_type_name, ut.code as unit_type_code,
+      ut.max_adults, ut.max_children, ut.max_occupancy, ut.base_occupancy,
+      ut.beds_single, ut.beds_double, ut.beds_sofa, ut.extra_bed_available, ut.description as unit_type_description,
+      b.id as building_id, b.name as building_name, b.code as building_code,
+      p.name as property_name, p.address as property_address, p.city as property_city,
+      p.country as property_country, p.phone as property_phone, p.email as property_email,
+      p.check_in_time, p.check_out_time
+    FROM reservations r
+    JOIN guests g ON r.guest_id = g.id
+    JOIN units u ON r.unit_id = u.id
+    JOIN categories c ON u.category_id = c.id
+    JOIN unit_types ut ON u.unit_type_id = ut.id
+    LEFT JOIN buildings b ON u.building_id = b.id
+    JOIN properties p ON r.property_id = p.id
+    WHERE r.guest_page_token = ?
+  `).get(token) as any;
+}
+
+export function getUnitTypesForRebooking() {
+  return getDb().prepare(`
+    SELECT ut.id, ut.name, ut.code, ut.description, ut.max_adults, ut.max_children, ut.base_occupancy,
+           c.name as category_name, c.type as category_type, c.icon as category_icon
+    FROM unit_types ut
+    JOIN categories c ON ut.category_id = c.id
+    ORDER BY c.type, ut.sort_order
+  `).all();
+}
+
+export function getRegisteredGuests(reservationId: string) {
+  return getDb().prepare('SELECT * FROM reservation_guests WHERE reservation_id = ? ORDER BY created_at').all(reservationId);
+}
+
+export function getPaymentsSummary(reservationId: string) {
+  return getDb().prepare(
+    "SELECT SUM(CASE WHEN type != 'refund' THEN amount ELSE 0 END) as total_paid, SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as total_refunded FROM payments WHERE reservation_id = ? AND status = 'completed'"
+  ).get(reservationId) as any;
+}
+
+export function getUnitTypePhotos(unitTypeId: string) {
+  return getDb().prepare('SELECT * FROM unit_type_photos WHERE unit_type_id = ? ORDER BY sort_order').all(unitTypeId);
+}
+
+export function getPropertyPhotos(propertyId: string) {
+  return getDb().prepare('SELECT * FROM property_photos WHERE property_id = ? ORDER BY sort_order').all(propertyId);
+}
+
+export function getAvailableServices(propertyId: string, categoryType: string) {
+  return getDb().prepare(
+    "SELECT * FROM additional_services WHERE property_id = ? AND is_active = 1 AND (available_for = 'all' OR available_for = ?) ORDER BY sort_order"
+  ).all(propertyId, categoryType);
+}
+
+export function getOrderedServices(reservationId: string) {
+  return getDb().prepare(`
+    SELECT so.*, ads.name as service_name, ads.icon as service_icon
+    FROM service_orders so
+    JOIN additional_services ads ON so.service_id = ads.id
+    WHERE so.reservation_id = ?
+    ORDER BY so.created_at
+  `).all(reservationId);
+}
+
+export function getGuestPageConfig(unitTypeId: string, propertyId: string) {
+  const db = getDb();
+  const unitTypeConfig = db.prepare('SELECT * FROM guest_page_config WHERE unit_type_id = ?').get(unitTypeId) as any || null;
+
+  let propertyConfig: any = null;
+  try {
+    propertyConfig = db.prepare('SELECT * FROM property_guest_config WHERE property_id = ?').get(propertyId) as any || null;
+  } catch { /* table may not exist yet */ }
+
+  if (!propertyConfig) return unitTypeConfig;
+
+  return {
+    ...unitTypeConfig,
+    wifi_network: unitTypeConfig?.wifi_network || propertyConfig.wifi_network,
+    wifi_password: unitTypeConfig?.wifi_password || propertyConfig.wifi_password,
+    restaurant_name: propertyConfig.restaurant_name,
+    restaurant_hours: propertyConfig.restaurant_hours,
+    restaurant_menu_url: propertyConfig.restaurant_menu_url,
+    rules: propertyConfig.rules,
+    useful_info: propertyConfig.useful_info,
+    faq_items: propertyConfig.faq_items,
+    maps_url: unitTypeConfig?.maps_url || propertyConfig.maps_url,
+    territory_map_url: unitTypeConfig?.territory_map_url || propertyConfig.territory_map_url,
+    pets_policy: unitTypeConfig?.pets_policy || propertyConfig.pets_policy || 'welcome',
+    parking_info: propertyConfig.parking_info,
+    parking_photo_url: propertyConfig.parking_photo_url,
+    video_guide_url: propertyConfig.video_guide_url,
+    emergency_phone: propertyConfig.emergency_phone,
+    weather_lat: propertyConfig.weather_lat,
+    weather_lon: propertyConfig.weather_lon,
+    amenities: unitTypeConfig?.amenities,
+    check_in_instructions: unitTypeConfig?.check_in_instructions,
+    lock_code: unitTypeConfig?.lock_code,
+    entry_photo_url: unitTypeConfig?.entry_photo_url,
+  };
+}

@@ -145,7 +145,7 @@ export const POST = bookingsHandlers.create
 | `core/db` | 🟡 Shim | Re-exports from `src/lib/db.ts` |
 | `core/auth` | 🟡 Shim | Re-exports from `src/lib/auth.ts` + `src/lib/permissions.ts` |
 | `core/event-bus` | ✅ Done | New infrastructure |
-| `properties` | ⬜ Pending | Next to migrate |
+| `properties` | ✅ Done | properties, units, unit-types, buildings, categories |
 | `pricing` | ⬜ Pending | |
 | `guests` | ⬜ Pending | |
 | `channels` | ⬜ Pending | |
