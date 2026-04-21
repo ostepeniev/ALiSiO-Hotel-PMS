@@ -858,7 +858,6 @@
         if (id==='aw-email') state.email = el.value;
       });
     });
-  }
 
     // Availability calendar navigation
     bindClick('aw-avail-prev', function() { state.availCalOffset = Math.max(0, state.availCalOffset - 1); render(); });
