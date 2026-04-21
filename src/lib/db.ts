@@ -2166,6 +2166,41 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_reservation ON invoices(reservation_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_issued ON invoices(issued_at)');
+
+  // --- Migration: camping-specific fields in reservations ---
+  try {
+    const resCols = (database.prepare("PRAGMA table_info(reservations)").all() as any[]).map((c: any) => c.name);
+    if (!resCols.includes('camping_vehicle_type'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_vehicle_type TEXT");
+    if (!resCols.includes('camping_tent_type'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_tent_type TEXT");
+    if (!resCols.includes('camping_electricity'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_electricity INTEGER DEFAULT 0");
+    if (!resCols.includes('camping_pets'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_pets TEXT");
+    if (!resCols.includes('camping_notes'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_notes TEXT");
+    // deposit / prepayment tracking
+    if (!resCols.includes('deposit_amount'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_amount INTEGER DEFAULT 0");
+    if (!resCols.includes('deposit_status'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_status TEXT DEFAULT 'none'");
+    if (!resCols.includes('deposit_session_id'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_session_id TEXT");
+    if (!resCols.includes('deposit_session_url'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_session_url TEXT");
+    if (!resCols.includes('deposit_session_expires_at'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_session_expires_at TEXT");
+    if (!resCols.includes('deposit_paid_at'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_paid_at TEXT");
+    if (!resCols.includes('group_lead_id'))
+      database.exec("ALTER TABLE reservations ADD COLUMN group_lead_id TEXT");
+    database.exec('CREATE INDEX IF NOT EXISTS idx_reservations_deposit_session ON reservations(deposit_session_id)');
+    console.log('[DB] Camping + deposit columns migrated');
+  } catch (e: any) {
+    console.error('[DB] Camping migration error:', e.message);
+  }
+
 }
 
 // Generate a random 12-char token for guest pages

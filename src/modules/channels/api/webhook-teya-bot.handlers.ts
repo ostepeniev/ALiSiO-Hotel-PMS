@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-
-const BOT_TOKEN = process.env.ALISIO_BOT_TOKEN || '';
-const ADMIN_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+import { getDb } from '@core/db';
+import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 const WEBHOOK_KEYS: Record<string, string> = {
   camping: process.env.TEYA_CAMPING_WEBHOOK_KEY || '',
@@ -23,15 +22,72 @@ function verifySignature(body: string, signature: string): boolean {
   return false;
 }
 
-async function sendTg(text: string) {
-  if (!BOT_TOKEN || !ADMIN_CHAT_ID) { console.warn('[Teya-Bot] ALISIO_BOT_TOKEN or TELEGRAM_CHAT_ID not set'); return; }
+/**
+ * Auto-confirm CRM deposit reservations after Teya payment succeeds.
+ * Called only when metadata.source === 'crm_deposit'.
+ */
+async function handleCrmDepositPaid(metadata: Record<string, string>, amountCzk: number, sessionId: string) {
   try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: ADMIN_CHAT_ID, text, parse_mode: 'HTML' }),
-    });
-  } catch (err) { console.error('[Teya-Bot] Failed to send Telegram message:', err); }
+    const db = getDb();
+    const reservationIds = (metadata.reservation_ids || '').split(',').filter(Boolean);
+    const leadId = metadata.lead_id || '';
+    const guestName = metadata.guest_name || 'Гість';
+    const depositPercent = metadata.deposit_percent || '30';
+
+    if (!reservationIds.length) {
+      console.error('[Teya Deposit] No reservation_ids in metadata');
+      return;
+    }
+
+    const paidAt = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    for (const resId of reservationIds) {
+      db.prepare(`
+        UPDATE reservations SET
+          status = 'confirmed',
+          payment_status = 'prepaid',
+          deposit_status = 'paid',
+          deposit_paid_at = ?,
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(paidAt, resId);
+
+      const payId = `pay_dep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      db.prepare(`
+        INSERT OR IGNORE INTO payments (id, reservation_id, amount, method, type, status, paid_at, notes, auto_created)
+        VALUES (?, ?, ?, 'card', 'deposit', 'completed', ?, ?, 1)
+      `).run(payId, resId, amountCzk, paidAt, `Teya deposit ${depositPercent}% | session: ${sessionId}`);
+    }
+
+    if (leadId) {
+      db.prepare(`UPDATE crm_leads SET stage = 'booked', updated_at = datetime('now') WHERE id = ?`).run(leadId);
+    }
+
+    const res = db.prepare(`
+      SELECT r.check_in, r.check_out, r.total_price, u.code as unit_code
+      FROM reservations r JOIN units u ON r.unit_id = u.id
+      WHERE r.id = ?
+    `).get(reservationIds[0]) as any;
+
+    const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const msg = [
+      `💳 <b>Передплата отримана! Бронювання підтверджено.</b>`,
+      ``,
+      `👤 ${esc(guestName)}`,
+      res ? `📍 ${esc(res.unit_code || '')} · ${res.check_in} – ${res.check_out}` : '',
+      reservationIds.length > 1 ? `🏕 Місць: ${reservationIds.length}` : '',
+      ``,
+      `💰 Передплата: <b>${amountCzk.toLocaleString()} CZK</b>`,
+      res ? `📊 Повна вартість: ${((res.total_price || 0) * reservationIds.length).toLocaleString()} CZK` : '',
+      `✅ Статус: <b>Підтверджено (prepaid)</b>`,
+    ].filter(Boolean).join('\n');
+
+    await sendTelegramMessage(msg).catch(e => console.error('[Teya Deposit] TG notify error:', e.message));
+    console.log(`[Teya Deposit] Confirmed ${reservationIds.length} reservations for lead ${leadId}`);
+  } catch (err: any) {
+    console.error('[Teya Deposit] Auto-confirm error:', err.message);
+  }
 }
 
 export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
@@ -59,18 +115,31 @@ export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
         const amount = event.data?.amount?.value || 0;
         const currency = event.data?.amount?.currency || 'CZK';
         const amountCzk = Math.round(amount / 100);
-        await sendTg(`✅ <b>Оплата отримана!</b>\n\n💳 ${companyLabel}\n💰 Сума: <b>${amountCzk} ${currency}</b>\n🆔 Session: <code>${sessionId}</code>\n🔗 Transaction: <code>${transactionId}</code>`);
+
+        if (metadata.source === 'crm_deposit') {
+          await handleCrmDepositPaid(metadata, amountCzk, sessionId);
+        } else {
+          await sendTelegramMessage(
+            `✅ <b>Оплата отримана!</b>\n\n💳 ${companyLabel}\n💰 Сума: <b>${amountCzk} ${currency}</b>\n🆔 Session: <code>${sessionId}</code>\n🔗 Transaction: <code>${transactionId}</code>`
+          ).catch(() => {});
+        }
         break;
       }
       case 'payment.failed.v1': {
         const sessionId = event.data?.checkout_session_id || '';
-        await sendTg(`❌ <b>Оплата не пройшла</b>\n\n💳 ${companyLabel}\n🆔 Session: <code>${sessionId}</code>`);
+        const isDeposit = metadata.source === 'crm_deposit';
+        const guestName = metadata.guest_name || '';
+        await sendTelegramMessage(
+          `❌ <b>Оплата не пройшла</b>\n\n${isDeposit ? `👤 ${guestName}\n💳 Депозит CRM` : `💳 ${companyLabel}`}\n🆔 Session: <code>${sessionId}</code>`
+        ).catch(() => {});
         break;
       }
       case 'refund.succeeded.v1': {
         const amount = event.data?.amount || 0;
         const amountCzk = Math.round(amount / 100);
-        await sendTg(`🔄 <b>Повернення коштів</b>\n\n💳 ${companyLabel}\n💰 Сума: <b>${amountCzk} CZK</b>`);
+        await sendTelegramMessage(
+          `🔄 <b>Повернення коштів</b>\n\n💳 ${companyLabel}\n💰 Сума: <b>${amountCzk} CZK</b>`
+        ).catch(() => {});
         break;
       }
       default:
@@ -84,3 +153,6 @@ export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
     return NextResponse.json({ received: true, error: message });
   }
 }
+
+// Also export as teyaWebhook for @channels index compatibility
+export const teyaWebhook = teyaBotWebhook;
