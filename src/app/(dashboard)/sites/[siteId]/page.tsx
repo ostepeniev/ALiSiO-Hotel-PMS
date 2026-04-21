@@ -1008,7 +1008,8 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
     code: '', discount_type: 'percent', discount_value: '',
     valid_from: '', valid_until: '',
     min_nights: 1, max_nights: '', redemption_limit: '',
-    allowed_days: [] as number[],   // empty = all days
+    allowed_days: [] as number[],
+    applies_to: 'services' as 'services'|'listings'|'both',
   });
   const [form, setForm] = useState(emptyForm());
   const [creating, setCreating] = useState(false);
@@ -1053,6 +1054,7 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
           redemption_limit: form.redemption_limit ? +form.redemption_limit : null,
           site_id: siteId,
           allowed_days: form.allowed_days.length > 0 ? form.allowed_days : null,
+          applies_to: form.applies_to,
         }),
       });
       const data = await res.json();
@@ -1086,12 +1088,17 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
         </div>
       ) : (
         <table className="data-table">
-          <thead><tr><th>Код</th><th>Знижка</th><th>Діє до</th><th>Ночей</th><th>Використано</th><th></th></tr></thead>
+          <thead><tr><th>Код</th><th>Знижка</th><th>Застосовується</th><th>Діє до</th><th>Ночей</th><th>Використано</th><th></th></tr></thead>
           <tbody>
             {codes.map(c => (
               <tr key={c.id}>
                 <td style={{fontFamily:'monospace',fontWeight:700}}>{c.code}</td>
                 <td>{c.discount_value}{c.discount_type==='percentage'?'%':' CZK'}</td>
+                <td style={{fontSize:12}}>
+                  {c.applies_to === 'listings' ? '🏠 Оголошення'
+                   : c.applies_to === 'both'   ? '🏠+🛎 Обидва'
+                   : '🛎 Сервіси'}
+                </td>
                 <td style={{fontSize:13,color:'var(--text-secondary)'}}>{c.valid_until || '—'}</td>
                 <td style={{fontSize:13}}>
                   {c.min_nights || 1}–{c.max_nights || '∞'}
@@ -1118,6 +1125,29 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
             {creating ? <Loader2 size={14} className="spin"/> : <Plus size={14}/>} Створити
           </button>
         </>}>
+
+        {/* Застосовується до */}
+        <div className="form-group">
+          <label className="form-label">Застосовується до</label>
+          <div style={{display:'flex',gap:8}}>
+            {([['services','🛎 Сервіси'],['listings','🏠 Оголошення'],['both','🏠+🛎 Обидва']] as const).map(([val,label]) => (
+              <button key={val} type="button" onClick={() => setForm(f => ({...f, applies_to: val}))}
+                style={{
+                  flex:1, padding:'8px 4px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
+                  border:`2px solid ${form.applies_to===val?'var(--accent-primary)':'var(--border-primary)'}`,
+                  background:form.applies_to===val?'var(--accent-primary)':'var(--surface-secondary)',
+                  color:form.applies_to===val?'#fff':'var(--text-secondary)', transition:'all .15s',
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {form.applies_to !== 'services' && (
+            <div style={{fontSize:11,color:'#f59e0b',marginTop:6,padding:'6px 10px',background:'#fef3c722',borderRadius:6,border:'1px solid #f59e0b44'}}>
+              ⚠️ Промокоди для оголошень потребують додаткового налаштування embed.js. Наразі повністю працює лише для Сервісів.
+            </div>
+          )}
+        </div>
 
         {/* Код */}
         <div className="form-group">

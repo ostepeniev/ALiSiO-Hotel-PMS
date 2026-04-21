@@ -8,10 +8,14 @@
 
   // ─── Config from script tag ───
   const scriptTag = document.currentScript || document.querySelector('script[data-property]');
-  const API_BASE = scriptTag ? (scriptTag.getAttribute('data-api') || scriptTag.src.replace(/\/widget\/embed\.js.*$/, '')) : '';
-  const PROPERTY_ID = scriptTag ? (scriptTag.getAttribute('data-property') || '') : '';
-  const LANG = scriptTag ? (scriptTag.getAttribute('data-lang') || 'en') : 'en';
-  const ACCENT = scriptTag ? (scriptTag.getAttribute('data-color') || '#e61e4d') : '#e61e4d';
+  const API_BASE      = scriptTag ? (scriptTag.getAttribute('data-api') || scriptTag.src.replace(/\/widget\/embed\.js.*$/, '')) : '';
+  const PROPERTY_ID   = scriptTag ? (scriptTag.getAttribute('data-property') || '') : '';
+  const UNIT_ID       = scriptTag ? (scriptTag.getAttribute('data-unit') || '') : '';
+  const UNIT_TYPE_ID  = scriptTag ? (scriptTag.getAttribute('data-unit-type') || '') : '';
+  const SITE_ID       = scriptTag ? (scriptTag.getAttribute('data-site') || '') : '';
+  const LANG          = scriptTag ? (scriptTag.getAttribute('data-lang') || (window.__BOOKING_LANG__) || 'en') : 'en';
+  const ACCENT        = scriptTag ? (scriptTag.getAttribute('data-color') || '#e61e4d') : '#e61e4d';
+  const SHOW_AVAIL_CAL = !!(UNIT_ID || UNIT_TYPE_ID); // show inline avail calendar for unit embeds
 
   // ─── i18n ───
   const T = {
@@ -27,7 +31,11 @@
       mon:'Mo',tue:'Tu',wed:'We',thu:'Th',fri:'Fr',sat:'Sa',sun:'Su',
       months:['January','February','March','April','May','June','July','August','September','October','November','December'],
       selectHouse:'Select accommodation', available:'available', noAvail:'No availability for selected dates',
-      errorOccurred:'An error occurred', required:'required', loading:'Loading...' },
+      errorOccurred:'An error occurred', required:'required', loading:'Loading...',
+      checkPrice:'Check Price', promoCode:'Promo code', promoApply:'Apply', promoApplied:'Applied ✓',
+      promoInvalid:'Invalid promo code', promoRemove:'Remove', discount:'Discount',
+      proceedToBook:'Proceed to Booking', changeDates:'Change dates', priceFor:'Price for',
+      subtotal:'Subtotal', total2:'Total', perNightAvg:'avg/night' },
     uk: { total:'Усього', arrival:'ПРИБУТТЯ', departure:'ВИЇЗД', guests:'гостей', guest:'гість',
       adults:'Дорослі', children:'Діти', book:'Забронювати', noCharge:'Поки що ви нічого не платите',
       freeCancel:'Безкоштовне скасування', nights:'ночей', night:'ніч', perNight:'/ніч',
@@ -40,7 +48,11 @@
       mon:'Пн',tue:'Вт',wed:'Ср',thu:'Чт',fri:'Пт',sat:'Сб',sun:'Нд',
       months:['Січень','Лютий','Березень','Квітень','Травень','Червень','Липень','Серпень','Вересень','Жовтень','Листопад','Грудень'],
       selectHouse:'Оберіть помешкання', available:'вільних', noAvail:'Немає вільних місць на обрані дати',
-      errorOccurred:'Виникла помилка', required:'обов\'язково', loading:'Завантаження...' },
+      errorOccurred:'Виникла помилка', required:'обов\'язково', loading:'Завантаження...',
+      checkPrice:'Дізнатись ціну', promoCode:'Промокод', promoApply:'Застосувати', promoApplied:'Застосовано ✓',
+      promoInvalid:'Невірний промокод', promoRemove:'Видалити', discount:'Знижка',
+      proceedToBook:'Перейти до бронювання', changeDates:'Змінити дати', priceFor:'Ціна за',
+      subtotal:'Сума', total2:'Усього', perNightAvg:'сер./ніч' },
     cs: { total:'Celkem', arrival:'PŘÍJEZD', departure:'ODJEZD', guests:'hostů', guest:'host',
       adults:'Dospělí', children:'Děti', book:'Rezervovat', noCharge:'Zatím nic neplatíte',
       freeCancel:'Bezplatné storno', nights:'nocí', night:'noc', perNight:'/noc',
@@ -53,9 +65,22 @@
       mon:'Po',tue:'Út',wed:'St',thu:'Čt',fri:'Pá',sat:'So',sun:'Ne',
       months:['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'],
       selectHouse:'Vyberte ubytování', available:'volných', noAvail:'Žádná dostupnost pro vybraná data',
-      errorOccurred:'Došlo k chybě', required:'povinné', loading:'Načítání...' }
+      errorOccurred:'Došlo k chybě', required:'povinné', loading:'Načítání...',
+      checkPrice:'Zjistit cenu', promoCode:'Promo kód', promoApply:'Použít', promoApplied:'Aplikováno ✓',
+      promoInvalid:'Neplatný kód', promoRemove:'Odebrat', discount:'Sleva',
+      proceedToBook:'Přejít k rezervaci', changeDates:'Změnit data', priceFor:'Cena za',
+      subtotal:'Mezisouček', total2:'Celkem', perNightAvg:'prům./noc' }
   };
   const t = T[LANG] || T.en;
+
+  // ─── i18n extra keys ───
+  const TExtra = {
+    en: { availCal:'Availability Calendar', booked:'Booked', available:'Available', today:'Today' },
+    uk: { availCal:'Календар зайнятості',   booked:'Зайнято', available:'Вільно',   today:'Сьогодні' },
+    cs: { availCal:'Kalendář obsazenosti',  booked:'Obsazeno', available:'Volné',   today:'Dnes' },
+    de: { availCal:'Verfügbarkeitskalender', booked:'Belegt', available:'Verfügbar', today:'Heute' },
+  };
+  const tx = TExtra[LANG] || TExtra.en;
 
   // ─── State ───
   let state = {
@@ -65,7 +90,13 @@
     guestsOpen: false, modalOpen: false, modalStep: 1,
     selectingCheckOut: false, availability: null,
     firstName: '', lastName: '', phone: '', email: '',
-    loading: false, error: null, reservation: null, propertyName: ''
+    loading: false, error: null, reservation: null, propertyName: '',
+    // Availability calendar (inline, unit-specific)
+    availCalOffset: 0, bookedDates: new Set(), availLoaded: false,
+    // 2-stage widget
+    widgetStep: 1,   // 1 = form, 2 = price shown
+    promo: { code: '', open: false, applied: false, discountType: null, discountValue: null, error: null },
+    basePrice: 0, finalPrice: 0,
   };
 
   // ─── DOM ───
@@ -105,6 +136,81 @@
   function getDaysInMonth(y, m) { return new Date(y, m+1, 0).getDate(); }
   function getFirstDayMon(y, m) { var d = new Date(y, m, 1).getDay(); return d === 0 ? 6 : d - 1; }
 
+  // ─── Pixel / Analytics Events ───
+  // Called at key booking funnel moments.
+  // Works with: Facebook Pixel (fbq), GA4 (dataLayer), TikTok (ttq), PostMessage, Custom callback.
+  //
+  // Usage from parent page:
+  //   window.alisioOnEvent = function(event, data) { ... your tracking code ... }
+  //   OR use standard pixels — they are called automatically.
+  //
+  // Events fired:
+  //   'CheckPrice'        — user clicked "Дізнатись ціну" (dates + guests chosen)
+  //   'PriceViewed'       — price shown (step 2 reached)
+  //   'InitiateCheckout'  — user clicked "Перейти до бронювання"
+  //   'Purchase'          — booking confirmed (success screen)
+  //   'PromoApplied'      — promo code successfully applied
+  function trackEvent(eventName, data) {
+    var payload = Object.assign({
+      widget: 'alisio',
+      site_id: SITE_ID || PROPERTY_ID,
+      unit_id: UNIT_ID || undefined,
+      currency: state.currency,
+      check_in: state.checkIn,
+      check_out: state.checkOut,
+      nights: getNights(),
+      guests: state.adults + state.children,
+    }, data || {});
+
+    // 1. Custom callback on parent window
+    if (typeof window.alisioOnEvent === 'function') {
+      try { window.alisioOnEvent(eventName, payload); } catch(e) {}
+    }
+
+    // 2. Facebook Pixel
+    if (typeof window.fbq === 'function') {
+      var fbMap = {
+        CheckPrice:       ['track', 'Search', { currency: payload.currency, num_adults: state.adults }],
+        PriceViewed:      ['track', 'ViewContent', { content_type: 'product', value: payload.value, currency: payload.currency }],
+        InitiateCheckout: ['track', 'InitiateCheckout', { value: payload.value, currency: payload.currency, num_items: 1 }],
+        Purchase:         ['track', 'Purchase', { value: payload.value, currency: payload.currency }],
+        PromoApplied:     ['trackCustom', 'PromoCodeApplied', { promo: payload.promo_code }],
+      };
+      var args = fbMap[eventName];
+      if (args) { try { window.fbq.apply(window, args); } catch(e) {} }
+    }
+
+    // 3. Google Analytics 4 / GTM dataLayer
+    if (Array.isArray(window.dataLayer)) {
+      var gaMap = {
+        CheckPrice:       { event: 'search', search_term: (state.checkIn + '_' + state.checkOut) },
+        PriceViewed:      { event: 'view_item', value: payload.value, currency: payload.currency, items: [{ item_id: UNIT_ID||UNIT_TYPE_ID||PROPERTY_ID }] },
+        InitiateCheckout: { event: 'begin_checkout', value: payload.value, currency: payload.currency },
+        Purchase:         { event: 'purchase', transaction_id: payload.reservation_id, value: payload.value, currency: payload.currency },
+        PromoApplied:     { event: 'select_promotion', promotion_name: payload.promo_code },
+      };
+      var gaEvt = gaMap[eventName];
+      if (gaEvt) { try { window.dataLayer.push(gaEvt); } catch(e) {} }
+    }
+
+    // 4. TikTok Pixel
+    if (typeof window.ttq !== 'undefined' && typeof window.ttq.track === 'function') {
+      var ttMap = {
+        CheckPrice:       ['Search', {}],
+        PriceViewed:      ['ViewContent', { content_id: UNIT_ID||UNIT_TYPE_ID, value: payload.value, currency: payload.currency }],
+        InitiateCheckout: ['InitiateCheckout', { value: payload.value, currency: payload.currency }],
+        Purchase:         ['CompletePayment', { value: payload.value, currency: payload.currency }],
+      };
+      var ttArgs = ttMap[eventName];
+      if (ttArgs) { try { window.ttq.track(ttArgs[0], ttArgs[1]); } catch(e) {} }
+    }
+
+    // 5. postMessage to parent (for iframes or custom listeners)
+    try {
+      window.parent.postMessage({ source: 'alisio-widget', event: eventName, data: payload }, '*');
+    } catch(e) {}
+  }
+
   // ─── API calls ───
   async function loadConfig() {
     try {
@@ -122,6 +228,27 @@
       }
       render();
     } catch(e) { console.error('ALiSiO Widget: config error', e); }
+  }
+
+  async function loadUnitAvailability() {
+    if (!UNIT_ID && !UNIT_TYPE_ID) return;
+    try {
+      var params = UNIT_ID ? 'unit_id=' + UNIT_ID : 'unit_type_id=' + UNIT_TYPE_ID;
+      if (SITE_ID) params += '&site_id=' + SITE_ID;
+      var res = await fetch(API_BASE + '/api/public/availability?' + params);
+      var data = await res.json();
+      if (data.bookedDates) {
+        state.bookedDates = new Set(data.bookedDates);
+        // Also populate calendarData for the date-picker calendar
+        data.bookedDates.forEach(function(ds) {
+          var ym = ds.substring(0, 7);
+          if (!state.calendarData[ym]) state.calendarData[ym] = {};
+          state.calendarData[ym][ds] = { date: ds, status: 'booked' };
+        });
+      }
+      state.availLoaded = true;
+      render();
+    } catch(e) { console.error('ALiSiO Widget: availability error', e); }
   }
 
   async function loadCalendar(yearMonth) {
@@ -169,7 +296,73 @@
       if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Failed'); }
       var data = await res.json();
       state.reservation = data; state.modalStep = 3;
+      trackEvent('Purchase', { value: state.finalPrice, reservation_id: data.reservationId });
     } catch(e) { state.error = e.message || t.errorOccurred; }
+    state.loading = false; render();
+  }
+
+  async function applyPromo() {
+    var code = state.promo.code.trim().toUpperCase();
+    if (!code) return;
+    try {
+      var params = 'code=' + encodeURIComponent(code);
+      if (SITE_ID) params += '&site_id=' + SITE_ID;
+      var res = await fetch(API_BASE + '/api/booking/promo?' + params);
+      var data = await res.json();
+      if (res.ok && data.discount_type) {
+        state.promo.applied = true;
+        state.promo.discountType = data.discount_type;
+        state.promo.discountValue = data.discount_value;
+        state.promo.error = null;
+        calcFinalPrice();
+        trackEvent('PromoApplied', { promo_code: state.promo.code, value: state.finalPrice });
+      } else {
+        state.promo.error = t.promoInvalid;
+        state.promo.applied = false;
+      }
+    } catch(e) { state.promo.error = t.errorOccurred; }
+    render();
+  }
+
+  function calcFinalPrice() {
+    var base = state.basePrice;
+    if (state.promo.applied && state.promo.discountType) {
+      if (state.promo.discountType === 'percentage') {
+        state.finalPrice = Math.round(base * (1 - state.promo.discountValue / 100));
+      } else {
+        state.finalPrice = Math.max(0, base - state.promo.discountValue);
+      }
+    } else {
+      state.finalPrice = base;
+    }
+    state.totalPrice = state.finalPrice;
+  }
+
+  async function checkPrice() {
+    if (!state.checkIn || !state.checkOut) return;
+    trackEvent('CheckPrice', {});
+    state.loading = true; state.error = null; render();
+    try {
+      var url = API_BASE + '/api/booking/availability?checkIn=' + state.checkIn + '&checkOut=' + state.checkOut;
+      var res = await fetch(url);
+      var data = await res.json();
+      state.availability = data;
+      if (data.unitTypes && data.unitTypes.length > 0) {
+        var sel = state.selectedUnitTypeId ? data.unitTypes.find(function(u){return u.id===state.selectedUnitTypeId;}) : null;
+        if (!sel) sel = data.unitTypes.find(function(u){return u.availableCount>0;});
+        if (sel) {
+          state.basePrice = sel.totalPrice;
+          state.selectedUnitTypeId = sel.id;
+          calcFinalPrice();
+          state.widgetStep = 2;
+          trackEvent('PriceViewed', { value: state.finalPrice });
+        } else {
+          state.error = t.noAvail;
+        }
+      } else {
+        state.error = t.noAvail;
+      }
+    } catch(e) { state.error = t.errorOccurred; }
     state.loading = false; render();
   }
 
@@ -202,50 +395,108 @@
     var totalGuests = state.adults + state.children;
     var h = '';
 
-    // Main Card
     h += '<div class="aw-card">';
-    h += '<div class="aw-total-label">' + t.total + '</div>';
-    h += '<div class="aw-total-price"><span class="aw-currency">€</span> ' + fmtPrice(Math.round(state.totalPrice / 23.5)) + '</div>';
 
-    // Dates
-    h += '<div class="aw-dates" id="aw-dates-click">';
-    h += '<div class="aw-date-box"><div class="aw-date-label">' + t.arrival + '</div>';
-    h += '<div class="aw-date-value">' + (state.checkIn ? fmtDisplay(state.checkIn) : '—') + '</div></div>';
-    h += '<div class="aw-date-box"><div class="aw-date-label">' + t.departure + '</div>';
-    h += '<div class="aw-date-value">' + (state.checkOut ? fmtDisplay(state.checkOut) : '—') + '</div></div>';
-    h += '</div>';
+    if (state.widgetStep === 1) {
+      // ─── STEP 1: FORM ───
+      h += '<div class="aw-step-title">' + (state.propertyName || '') + '</div>';
 
-    // Guests
-    h += '<div class="aw-guests" id="aw-guests-click">';
-    h += '<div class="aw-guests-label">' + t.guests.toUpperCase() + '</div>';
-    h += '<div class="aw-guests-value"><span>' + totalGuests + ' ' + guestsWord(totalGuests) + '</span><span class="aw-guests-chevron">' + (state.guestsOpen?'▲':'▼') + '</span></div>';
-    if (state.guestsOpen) {
-      h += '<div class="aw-guests-dropdown">';
-      h += '<div class="aw-guest-row"><span class="aw-guest-row-label">' + t.adults + '</span>';
-      h += '<div class="aw-guest-row-controls"><button class="aw-counter-btn" id="aw-adults-minus"' + (state.adults<=1?' disabled':'') + '>−</button>';
-      h += '<span class="aw-counter-val">' + state.adults + '</span>';
-      h += '<button class="aw-counter-btn" id="aw-adults-plus"' + (state.adults>=10?' disabled':'') + '>+</button></div></div>';
-      h += '<div class="aw-guest-row"><span class="aw-guest-row-label">' + t.children + '</span>';
-      h += '<div class="aw-guest-row-controls"><button class="aw-counter-btn" id="aw-children-minus"' + (state.children<=0?' disabled':'') + '>−</button>';
-      h += '<span class="aw-counter-val">' + state.children + '</span>';
-      h += '<button class="aw-counter-btn" id="aw-children-plus"' + (state.children>=6?' disabled':'') + '>+</button></div></div>';
+      // Dates
+      h += '<div class="aw-dates" id="aw-dates-click">';
+      h += '<div class="aw-date-box"><div class="aw-date-label">' + t.arrival + '</div>';
+      h += '<div class="aw-date-value">' + (state.checkIn ? fmtDisplay(state.checkIn) : '—') + '</div></div>';
+      h += '<div class="aw-cal-sep">→</div>';
+      h += '<div class="aw-date-box"><div class="aw-date-label">' + t.departure + '</div>';
+      h += '<div class="aw-date-value">' + (state.checkOut ? fmtDisplay(state.checkOut) : '—') + '</div></div>';
+      if (nights > 0) h += '<div class="aw-nights-badge">' + nights + ' ' + nightsWord(nights) + '</div>';
       h += '</div>';
+
+      // Guests
+      h += '<div class="aw-guests" id="aw-guests-click">';
+      h += '<div class="aw-guests-label">' + t.guests.toUpperCase() + '</div>';
+      h += '<div class="aw-guests-value"><span>' + totalGuests + ' ' + guestsWord(totalGuests) + '</span><span class="aw-guests-chevron">' + (state.guestsOpen?'▲':'▼') + '</span></div>';
+      if (state.guestsOpen) {
+        h += '<div class="aw-guests-dropdown">';
+        h += '<div class="aw-guest-row"><span class="aw-guest-row-label">' + t.adults + '</span>';
+        h += '<div class="aw-guest-row-controls"><button class="aw-counter-btn" id="aw-adults-minus"' + (state.adults<=1?' disabled':'') + '>−</button>';
+        h += '<span class="aw-counter-val">' + state.adults + '</span>';
+        h += '<button class="aw-counter-btn" id="aw-adults-plus"' + (state.adults>=10?' disabled':'') + '>+</button></div></div>';
+        h += '<div class="aw-guest-row"><span class="aw-guest-row-label">' + t.children + '</span>';
+        h += '<div class="aw-guest-row-controls"><button class="aw-counter-btn" id="aw-children-minus"' + (state.children<=0?' disabled':'') + '>−</button>';
+        h += '<span class="aw-counter-val">' + state.children + '</span>';
+        h += '<button class="aw-counter-btn" id="aw-children-plus"' + (state.children>=6?' disabled':'') + '>+</button></div></div>';
+        h += '</div>';
+      }
+      h += '</div>';
+
+      // Promo code
+      h += '<div class="aw-promo-row">';
+      if (!state.promo.open && !state.promo.applied) {
+        h += '<button class="aw-promo-toggle" id="aw-promo-open">+ ' + t.promoCode + '</button>';
+      } else {
+        h += '<div class="aw-promo-input-row">';
+        h += '<input class="aw-promo-input" id="aw-promo-field" type="text" placeholder="' + t.promoCode + '"';
+        h += ' value="' + (state.promo.code||'') + '"' + (state.promo.applied?' disabled':'') + '>';
+        if (!state.promo.applied) {
+          h += '<button class="aw-promo-apply-btn" id="aw-promo-apply">' + t.promoApply + '</button>';
+        } else {
+          h += '<span class="aw-promo-ok">' + t.promoApplied + '</span>';
+          h += '<button class="aw-promo-remove" id="aw-promo-remove">' + t.promoRemove + '</button>';
+        }
+        h += '</div>';
+        if (state.promo.error) h += '<div class="aw-promo-error">' + state.promo.error + '</div>';
+      }
+      h += '</div>';
+
+      if (state.error) h += '<div class="aw-error">✗ ' + state.error + '</div>';
+
+      // Check price button
+      h += '<button class="aw-book-btn" id="aw-check-price-click"';
+      h += (!state.checkIn||!state.checkOut||state.loading?' disabled':'');
+      h += '>' + (state.loading ? ('⏳ ' + t.loading) : t.checkPrice) + '</button>';
+
+    } else {
+      // ─── STEP 2: PRICE BREAKDOWN ───
+      var nights2 = getNights();
+      var discAmt = 0;
+      if (state.promo.applied && state.promo.discountType) {
+        if (state.promo.discountType === 'percentage') discAmt = Math.round(state.basePrice * state.promo.discountValue / 100);
+        else discAmt = Math.min(state.promo.discountValue, state.basePrice);
+      }
+      var avgPerNight = nights2 > 0 ? Math.round(state.finalPrice / nights2) : 0;
+
+      h += '<div class="aw-price-header">';
+      h += '<div class="aw-price-main">' + fmtPrice(state.finalPrice) + ' <span class="aw-price-currency">' + state.currency + '</span></div>';
+      h += '<div class="aw-price-avg">' + fmtPrice(avgPerNight) + ' ' + state.currency + ' ' + t.perNightAvg + '</div>';
+      h += '</div>';
+
+      h += '<div class="aw-price-breakdown">';
+      h += '<div class="aw-pb-row"><span>' + t.priceFor + ' ' + nights2 + ' ' + nightsWord(nights2) + '</span><span>' + fmtPrice(state.basePrice) + ' ' + state.currency + '</span></div>';
+      if (discAmt > 0) {
+        h += '<div class="aw-pb-row aw-pb-discount"><span>' + t.discount + ' (' + state.promo.code.toUpperCase() + ')</span><span>-' + fmtPrice(discAmt) + ' ' + state.currency + '</span></div>';
+      }
+      h += '<div class="aw-pb-row aw-pb-total"><span>' + t.total2 + '</span><span>' + fmtPrice(state.finalPrice) + ' ' + state.currency + '</span></div>';
+      h += '</div>';
+
+      // Dates summary
+      h += '<div class="aw-dates-summary">';
+      h += '<span>→ ' + fmtDisplay(state.checkIn) + ' – ' + fmtDisplay(state.checkOut) + '</span>';
+      h += '<span class="aw-guests-summary">👤 ' + (state.adults+state.children) + '</span>';
+      h += '</div>';
+
+      // Buttons
+      h += '<button class="aw-book-btn" id="aw-book-click">' + t.proceedToBook + ' →</button>';
+      h += '<button class="aw-change-dates" id="aw-change-dates">← ' + t.changeDates + '</button>';
     }
+
     h += '</div>';
 
-    // Info
-    if (nights > 0) {
-      h += '<div class="aw-info">0 € ' + t.noCharge.toLowerCase() + '</div>';
+    // Availability Calendar (inline, unit-specific)
+    if (SHOW_AVAIL_CAL) {
+      h += renderAvailCalendar();
     }
 
-    // Book button
-    h += '<button class="aw-book-btn" id="aw-book-click"' + (!state.checkIn||!state.checkOut?' disabled':'') + '>' + t.book + '</button>';
-    if (state.checkIn && state.checkOut) {
-      h += '<div class="aw-sub-text">' + t.noCharge + '</div>';
-    }
-    h += '</div>';
-
-    // Calendar Overlay
+    // Popup Calendar Overlay
     if (state.calendarOpen) {
       h += renderCalendar();
     }
@@ -342,6 +593,61 @@
     h += '<button class="aw-cal-clear-btn" id="aw-cal-clear">' + t.clearDates + '</button>';
     h += '<button class="aw-cal-close-btn" id="aw-cal-close">' + t.close + '</button>';
     h += '</div></div></div>';
+    return h;
+  }
+
+  // ─── Inline Availability Calendar ───
+  function renderAvailCalendar() {
+    var today = new Date(); today.setHours(0,0,0,0);
+    var base = new Date(today.getFullYear(), today.getMonth() + state.availCalOffset, 1);
+    var months = [];
+    for (var i = 0; i < 2; i++) {
+      var mo = new Date(base.getFullYear(), base.getMonth() + i, 1);
+      months.push({ y: mo.getFullYear(), m: mo.getMonth() });
+    }
+    var todayStr = today.toISOString().split('T')[0];
+    var h = '<div class="aw-avail-cal">';
+    h += '<div class="aw-avail-cal-title">';
+    h += '<button class="aw-cal-nav-btn" id="aw-avail-prev"' + (state.availCalOffset <= 0 ? ' disabled' : '') + '>&#8249;</button>';
+    h += '<span>' + tx.availCal + '</span>';
+    h += '<button class="aw-cal-nav-btn" id="aw-avail-next">&#8250;</button>';
+    h += '</div>';
+    h += '<div class="aw-avail-legend">';
+    h += '<span class="aw-legend-item"><span class="aw-legend-dot aw-legend-free"></span>' + tx.available + '</span>';
+    h += '<span class="aw-legend-item"><span class="aw-legend-dot aw-legend-booked"></span>' + tx.booked + '</span>';
+    h += '</div>';
+    h += '<div class="aw-avail-months">';
+    months.forEach(function(mo) {
+      h += '<div class="aw-avail-month">';
+      h += '<div class="aw-avail-month-name">' + t.months[mo.m] + ' ' + mo.y + '</div>';
+      h += '<div class="aw-cal-weekdays">';
+      [t.mon,t.tue,t.wed,t.thu,t.fri,t.sat,t.sun].forEach(function(wd) { h += '<div>' + wd + '</div>'; });
+      h += '</div>';
+      h += '<div class="aw-cal-grid">';
+      var firstDay = getFirstDayMon(mo.y, mo.m);
+      for (var i = 0; i < firstDay; i++) h += '<div class="aw-cal-day"></div>';
+      var dim = getDaysInMonth(mo.y, mo.m);
+      for (var d = 1; d <= dim; d++) {
+        var ds = mo.y + '-' + String(mo.m+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        var dObj = new Date(ds + 'T00:00:00');
+        var isPast = dObj < today;
+        var isBooked = state.bookedDates.has(ds);
+        var isToday = ds === todayStr;
+        var isCheckIn = ds === state.checkIn;
+        var isCheckOut = ds === state.checkOut;
+        var inRange = state.checkIn && state.checkOut && ds > state.checkIn && ds < state.checkOut;
+        var cls = 'aw-cal-day';
+        if (isPast) cls += ' aw-past';
+        else if (isBooked) cls += ' aw-booked';
+        if (isToday && !isPast) cls += ' aw-today';
+        if (isCheckIn || isCheckOut) cls += ' aw-selected';
+        if (inRange) cls += ' aw-in-range';
+        var attrs = (isPast || isBooked) ? ' disabled' : ' data-date="' + ds + '"';
+        h += '<button class="' + cls + '"' + attrs + '>' + d + '</button>';
+      }
+      h += '</div></div>';
+    });
+    h += '</div></div>';
     return h;
   }
 
@@ -459,12 +765,42 @@
     bindClick('aw-children-minus', function(){ state.children = Math.max(0, state.children-1); render(); });
     bindClick('aw-children-plus', function(){ state.children = Math.min(6, state.children+1); render(); });
 
-    // Book button
+    // Book button (step 2 → modal)
     bindClick('aw-book-click', function() {
       if (!state.checkIn || !state.checkOut) return;
+      trackEvent('InitiateCheckout', { value: state.finalPrice });
       state.modalOpen = true; state.modalStep = 1; state.error = null;
       if (!state.availability) loadAvailability();
       render();
+    });
+
+    // Check price button (step 1 → step 2)
+    bindClick('aw-check-price-click', function() { checkPrice(); });
+
+    // Change dates (step 2 → step 1)
+    bindClick('aw-change-dates', function() {
+      state.widgetStep = 1;
+      state.availability = null;
+      render();
+    });
+
+    // Promo code
+    bindClick('aw-promo-open', function() { state.promo.open = true; render(); });
+    bindClick('aw-promo-apply', function() {
+      var field = root.querySelector('#aw-promo-field');
+      if (field) state.promo.code = field.value;
+      applyPromo();
+    });
+    bindClick('aw-promo-remove', function() {
+      state.promo = { code: '', open: false, applied: false, discountType: null, discountValue: null, error: null };
+      calcFinalPrice();
+      render();
+    });
+    // Sync promo input
+    var promoField = root.querySelector('#aw-promo-field');
+    if (promoField) promoField.addEventListener('keydown', function(e) {
+      state.promo.code = promoField.value;
+      if (e.key === 'Enter') applyPromo();
     });
 
     // Calendar events
@@ -524,11 +860,24 @@
     });
   }
 
+    // Availability calendar navigation
+    bindClick('aw-avail-prev', function() { state.availCalOffset = Math.max(0, state.availCalOffset - 1); render(); });
+    bindClick('aw-avail-next', function() { state.availCalOffset++; render(); });
+    // Availability calendar day clicks (same as main calendar)
+    root.querySelectorAll('.aw-avail-cal .aw-cal-day[data-date]').forEach(function(btn) {
+      btn.addEventListener('click', function() { onDayClick(btn.getAttribute('data-date')); });
+    });
+  }
+
   function bindClick(id, fn) {
     var el = root.querySelector('#' + id);
     if (el) el.addEventListener('click', fn);
   }
 
   // ─── Init ───
-  loadConfig();
+  if (UNIT_ID || UNIT_TYPE_ID) {
+    loadUnitAvailability().then(function() { loadConfig(); });
+  } else {
+    loadConfig();
+  }
 })();

@@ -35,8 +35,9 @@ export async function POST(req: NextRequest) {
       valid_from, valid_until,
       min_nights, max_nights,
       redemption_limit, site_id,
-      allowed_days,           // JSON array e.g. [1,2,3,4,5] (1=Mon…7=Sun)
+      allowed_days,
       description,
+      applies_to,
     } = body;
 
     if (!code || discount_value === undefined || discount_value === '') {
@@ -52,8 +53,8 @@ export async function POST(req: NextRequest) {
          valid_from, valid_until,
          min_nights, max_nights,
          max_uses, redemption_limit,
-         site_id, allowed_days, is_active)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         site_id, allowed_days, applies_to, is_active)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
     `).run(
       id,
       String(code).toUpperCase().trim(),
@@ -65,9 +66,10 @@ export async function POST(req: NextRequest) {
       min_nights ? Number(min_nights) : null,
       max_nights ? Number(max_nights) : null,
       redemption_limit ? Number(redemption_limit) : null,
-      redemption_limit ? Number(redemption_limit) : null,  // also set max_uses
+      redemption_limit ? Number(redemption_limit) : null,
       site_id || null,
       allowed_days ? JSON.stringify(allowed_days) : null,
+      applies_to || 'services',
     );
 
     const created = db.prepare('SELECT * FROM promo_codes WHERE id = ?').get(id);

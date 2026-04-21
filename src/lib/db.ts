@@ -2244,6 +2244,7 @@ function runMigrations(database: any) {
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* already exists */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN max_nights INTEGER'); } catch { /* already exists */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN allowed_days TEXT'); } catch { /* already exists */ }
+  try { database.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* already exists */ }
 
   // booking_service_orders → add site_id
   try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
