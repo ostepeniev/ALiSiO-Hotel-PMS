@@ -41,7 +41,9 @@
       "@auth": ["./src/modules/auth/api"],
       "@auth/*": ["./src/modules/auth/api/*"],
       "@dashboard": ["./src/modules/dashboard/api"],
-      "@dashboard/*": ["./src/modules/dashboard/api/*"]
+      "@dashboard/*": ["./src/modules/dashboard/api/*"],
+      "@admin": ["./src/modules/admin/api"],
+      "@admin/*": ["./src/modules/admin/api/*"]
     }
   },
   "include": [
