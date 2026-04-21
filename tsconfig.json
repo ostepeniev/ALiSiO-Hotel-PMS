@@ -37,7 +37,9 @@
       "@channels": ["./src/modules/channels/api"],
       "@channels/*": ["./src/modules/channels/api/*"],
       "@reports": ["./src/modules/reports/api"],
-      "@reports/*": ["./src/modules/reports/api/*"]
+      "@reports/*": ["./src/modules/reports/api/*"],
+      "@auth": ["./src/modules/auth/api"],
+      "@auth/*": ["./src/modules/auth/api/*"]
     }
   },
   "include": [
