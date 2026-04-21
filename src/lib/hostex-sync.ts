@@ -51,19 +51,32 @@ interface PaymentInfo {
 }
 
 function detectPaymentInfo(reservation: HostexReservation): PaymentInfo {
-  const remarks = reservation.channel_remarks || '';
+  const remarks = (reservation.channel_remarks || '').toLowerCase();
   const channelType = reservation.channel_type;
 
+  // Airbnb always collects payment upfront
   if (channelType === 'airbnb') {
     return { isPrepaid: true, paymentCharge: null, channelType };
   }
 
   if (channelType === 'booking.com') {
-    const isPrepaid = remarks.includes('PRE-PAID') || remarks.includes('PREPAID');
+    const isPrepaid =
+      remarks.includes('pre-paid') ||
+      remarks.includes('prepaid') ||
+      remarks.includes('virtual credit card') || // VCC = guaranteed payment
+      remarks.includes('virtual card') ||
+      remarks.includes('credit card:') ||        // CC details present = collectible
+      remarks.includes('mastercard') ||
+      remarks.includes('visa');
     let paymentCharge: number | null = null;
-    const chargeMatch = remarks.match(/Payment charge is (\w+)\s+([\d.]+)/);
+    const chargeMatch = remarks.match(/payment charge is (\w+)\s+([\d.]+)/i);
     if (chargeMatch) paymentCharge = parseFloat(chargeMatch[2]);
     return { isPrepaid, paymentCharge, channelType };
+  }
+
+  // booking_site (direct) — usually paid on arrival unless stated
+  if (channelType === 'booking_site' || channelType === 'hostex_direct') {
+    return { isPrepaid: false, paymentCharge: null, channelType };
   }
 
   return { isPrepaid: false, paymentCharge: null, channelType };
