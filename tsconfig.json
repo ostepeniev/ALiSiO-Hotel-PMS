@@ -19,7 +19,25 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@core/*": ["./src/core/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@bookings": ["./src/modules/bookings/api"],
+      "@bookings/*": ["./src/modules/bookings/api/*"],
+      "@guests": ["./src/modules/guests/api"],
+      "@guests/*": ["./src/modules/guests/api/*"],
+      "@properties": ["./src/modules/properties/api"],
+      "@properties/*": ["./src/modules/properties/api/*"],
+      "@pricing": ["./src/modules/pricing/api"],
+      "@pricing/*": ["./src/modules/pricing/api/*"],
+      "@finance": ["./src/modules/finance/api"],
+      "@finance/*": ["./src/modules/finance/api/*"],
+      "@crm": ["./src/modules/crm/api"],
+      "@crm/*": ["./src/modules/crm/api/*"],
+      "@channels": ["./src/modules/channels/api"],
+      "@channels/*": ["./src/modules/channels/api/*"],
+      "@reports": ["./src/modules/reports/api"],
+      "@reports/*": ["./src/modules/reports/api/*"]
     }
   },
   "include": [
