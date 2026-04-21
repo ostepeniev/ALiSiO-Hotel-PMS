@@ -927,21 +927,6 @@ export default function BookingPage() {
           {step === 1 && (
             <div className="booking-fade-in">
               <div className="booking-content-card">
-                <div className="booking-content-card-title">{t.enterStayData}</div>
-
-                <div className="booking-alert warning">
-                  <span className="booking-alert-icon">⚠</span>
-                  {t.fillRequired}
-                </div>
-
-                {/* Location */}
-                <div className="booking-field" style={{ marginBottom: 20 }}>
-                  <label className="booking-field-label">{t.location} <span className="booking-field-required">*</span></label>
-                  <div className="booking-field-input" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'default' }}>
-                    <span>🏕️</span> QA Glamping
-                  </div>
-                </div>
-
                 {/* Date Summary Bar */}
                 <div className="booking-field" style={{ marginBottom: 16 }}>
                   <label className="booking-field-label">{t.dates} <span className="booking-field-required">*</span></label>
@@ -1302,13 +1287,6 @@ export default function BookingPage() {
           {step === 3 && (
             <div className="booking-fade-in">
               <div className="booking-content-card">
-                <div className="booking-content-card-title">{t.enterPersonalInfo}</div>
-
-                <div className="booking-alert warning">
-                  <span className="booking-alert-icon">⚠</span>
-                  {t.fillRequired}
-                </div>
-
                 {/* Name Row */}
                 <div className="booking-form-row">
                   <div className="booking-field">

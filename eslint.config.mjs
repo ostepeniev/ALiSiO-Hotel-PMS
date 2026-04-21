@@ -17,11 +17,11 @@ const eslintConfig = defineConfig([
   // ─── Modular Architecture Boundaries ──────────────────────────
   // Modules must communicate ONLY through their public api/index.ts.
   // Direct imports into domain/, data/, or events/ of ANY module are forbidden.
-  // Phase: 'warn' during migration → change to 'error' after full migration.
+  // Migration complete — enforced as error.
   {
     rules: {
       "no-restricted-imports": [
-        "warn",
+        "error",
         {
           patterns: [
             {
