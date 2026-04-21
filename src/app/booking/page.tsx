@@ -893,21 +893,6 @@ export default function BookingPage() {
           {/* ═══════ STEP 1: Your Choice (Dates) ═══════ */}
           {step === 1 && (
             <div className="booking-fade-in">
-              {/* Nav Bar */}
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" disabled type="button">
-                  ‹ {t.back}
-                </button>
-                <button
-                  className="booking-btn-next"
-                  onClick={goToStep2}
-                  disabled={!checkIn || !checkOut || nights < 1}
-                  type="button"
-                >
-                  {t.next} ›
-                </button>
-              </div>
-
               <div className="booking-content-card">
                 <div className="booking-content-card-title">{t.enterStayData}</div>
 
@@ -1023,26 +1008,27 @@ export default function BookingPage() {
                   </div>
                 )}
               </div>
+
+              {/* Nav Bar (sticky on mobile) */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" disabled type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={goToStep2}
+                  disabled={!checkIn || !checkOut || nights < 1}
+                  type="button"
+                >
+                  {t.next} ›
+                </button>
+              </div>
             </div>
           )}
 
           {/* ═══════ STEP 2: House Selection ═══════ */}
           {step === 2 && (
             <div className="booking-fade-in">
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" onClick={() => goToStep(1)} type="button">
-                  ‹ {t.back}
-                </button>
-                <button
-                  className="booking-btn-next"
-                  onClick={goToStep3}
-                  disabled={!selectedUnit}
-                  type="button"
-                >
-                  {t.next} ›
-                </button>
-              </div>
-
               {/* Multi-house info tooltip */}
               <div className="booking-multi-house-info">
                 <span className="booking-multi-house-info-icon">ℹ</span>
@@ -1261,26 +1247,27 @@ export default function BookingPage() {
                   {error}
                 </div>
               )}
+
+              {/* Nav Bar (sticky on mobile) */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" onClick={() => goToStep(1)} type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={goToStep3}
+                  disabled={!selectedUnit}
+                  type="button"
+                >
+                  {t.next} ›
+                </button>
+              </div>
             </div>
           )}
 
           {/* ═══════ STEP 3: Personal Info ═══════ */}
           {step === 3 && (
             <div className="booking-fade-in">
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" onClick={() => goToStep(2)} type="button">
-                  ‹ {t.back}
-                </button>
-                <button
-                  className="booking-btn-next"
-                  onClick={goToStep4}
-                  disabled={!firstName.trim() || !lastName.trim() || !phone.trim()}
-                  type="button"
-                >
-                  {`${t.next} ›`}
-                </button>
-              </div>
-
               <div className="booking-content-card">
                 <div className="booking-content-card-title">{t.enterPersonalInfo}</div>
 
@@ -1372,39 +1359,27 @@ export default function BookingPage() {
                   {error}
                 </div>
               )}
+
+              {/* Nav Bar (sticky on mobile) */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" onClick={() => goToStep(2)} type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={goToStep4}
+                  disabled={!firstName.trim() || !lastName.trim() || !phone.trim()}
+                  type="button"
+                >
+                  {`${t.next} ›`}
+                </button>
+              </div>
             </div>
           )}
 
           {/* ═══════ STEP 4: Services (ULIS-Style) ═══════ */}
           {step === 4 && (
             <div className="booking-fade-in">
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" onClick={() => goToStep(3)} type="button">
-                  ‹ {t.back}
-                </button>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button
-                    className="booking-btn-back"
-                    onClick={() => {
-                      setSaunaAdded(false);
-                      setBreakfastAdded(false);
-                      submitBooking();
-                    }}
-                    type="button"
-                  >
-                    {t.servicesSkip} ›
-                  </button>
-                  <button
-                    className="booking-btn-next"
-                    onClick={submitBooking}
-                    disabled={submitting || (!saunaAdded && !breakfastAdded)}
-                    type="button"
-                  >
-                    {submitting ? t.processing : `${t.confirmBooking} ›`}
-                  </button>
-                </div>
-              </div>
-
               {servicesLoading ? (
                 <div className="booking-loading"><div className="booking-spinner" /></div>
               ) : (
@@ -1801,6 +1776,21 @@ export default function BookingPage() {
                       {t.serviceTotal}: <strong>{formatPrice(servicesTotal)} Kč</strong>
                     </div>
                   )}
+
+                  {/* Inline skip link (moved out of the top nav-bar) */}
+                  <div className="booking-services-skip">
+                    <button
+                      className="booking-btn-skip-link"
+                      onClick={() => {
+                        setSaunaAdded(false);
+                        setBreakfastAdded(false);
+                        submitBooking();
+                      }}
+                      type="button"
+                    >
+                      {t.servicesSkip} ›
+                    </button>
+                  </div>
                 </>
               )}
 
@@ -1810,6 +1800,21 @@ export default function BookingPage() {
                   {error}
                 </div>
               )}
+
+              {/* Nav Bar (sticky on mobile) */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" onClick={() => goToStep(3)} type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={submitBooking}
+                  disabled={submitting || (!saunaAdded && !breakfastAdded)}
+                  type="button"
+                >
+                  {submitting ? t.processing : `${t.confirmBooking} ›`}
+                </button>
+              </div>
             </div>
           )}
 

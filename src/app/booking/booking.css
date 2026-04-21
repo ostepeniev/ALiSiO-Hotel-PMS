@@ -543,6 +543,29 @@
   cursor: default;
 }
 
+/* ─── Inline "skip services" link on Step 4 ────────── */
+.booking-services-skip {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px 0 4px;
+}
+
+.booking-btn-skip-link {
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  font-family: var(--bk-font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bk-text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.booking-btn-skip-link:hover {
+  color: var(--bk-text);
+}
+
 /* ─── Content Cards ────────────────────────────────── */
 .booking-content-card {
   background: var(--bk-card);
@@ -1761,6 +1784,42 @@
   .booking-btn-next {
     width: 100%;
     justify-content: center;
+  }
+
+  /* Sticky-to-bottom variant: nav-bar with this class becomes a fixed
+     footer on mobile so Back/Next are always under the thumb. */
+  .booking-nav-bar.sticky-mobile {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200;
+    flex-direction: row;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--bk-card);
+    border-top: 1px solid var(--bk-border);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .booking-nav-bar.sticky-mobile .booking-btn-back,
+  .booking-nav-bar.sticky-mobile .booking-btn-next {
+    flex: 1 1 0;
+    width: auto;
+    padding: 14px 16px;
+    justify-content: center;
+  }
+
+  /* On Step 1 the Back button is disabled — hide it so Next takes
+     the full footer width. */
+  .booking-nav-bar.sticky-mobile .booking-btn-back:disabled {
+    display: none;
+  }
+
+  /* Reserve space at the bottom so sticky nav-bar doesn't cover content. */
+  .booking-layout {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
 }
 
