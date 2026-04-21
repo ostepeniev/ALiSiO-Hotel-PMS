@@ -25,7 +25,6 @@ export async function POST(request: NextRequest) {
       adults = 2, children = 0,
       hasPet = false,
       firstName, lastName, email, phone,
-      gender,
       promoCode, certificateCode,
     } = body;
 
@@ -180,19 +179,19 @@ export async function POST(request: NextRequest) {
       if (existing) {
         guestId = existing.id;
         db.prepare(
-          'UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), gender = COALESCE(?, gender), updated_at = datetime("now") WHERE id = ?'
-        ).run(firstName, lastName, phone || null, gender || null, guestId);
+          'UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime("now") WHERE id = ?'
+        ).run(firstName, lastName, phone || null, guestId);
       } else {
         guestId = `g_${Date.now()}`;
         db.prepare(
-          'INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, gender) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(guestId, org.id, firstName, lastName, email, phone || null, gender || null);
+          'INSERT INTO guests (id, organization_id, first_name, last_name, email, phone) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(guestId, org.id, firstName, lastName, email, phone || null);
       }
     } else {
       guestId = `g_${Date.now()}`;
       db.prepare(
-        'INSERT INTO guests (id, organization_id, first_name, last_name, phone, gender) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(guestId, org.id, firstName, lastName, phone || null, gender || null);
+        'INSERT INTO guests (id, organization_id, first_name, last_name, phone) VALUES (?, ?, ?, ?, ?)'
+      ).run(guestId, org.id, firstName, lastName, phone || null);
     }
 
     // Create reservation with status 'tentative'

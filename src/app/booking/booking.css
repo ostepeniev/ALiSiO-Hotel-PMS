@@ -1511,65 +1511,6 @@
   color: var(--bk-text-muted);
 }
 
-/* Gender Radio */
-.booking-gender-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.booking-gender-option {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--bk-border);
-  border-radius: var(--bk-radius-sm);
-  cursor: pointer;
-  font-size: 14px;
-  font-family: var(--bk-font);
-  transition: all 0.2s;
-  background: var(--bk-card);
-}
-
-.booking-gender-option:hover {
-  border-color: var(--bk-text-muted);
-}
-
-.booking-gender-option.active {
-  border-color: var(--bk-primary);
-  background: var(--bk-primary);
-  color: #fff;
-}
-
-.booking-gender-radio {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--bk-border);
-  background: var(--bk-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.2s;
-}
-
-.booking-gender-option.active .booking-gender-radio {
-  border-color: #fff;
-  background: #fff;
-}
-
-.booking-gender-option.active .booking-gender-radio::after {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--bk-primary);
-}
-
 /* ─── Step 5: Success ──────────────────────────────── */
 .booking-success {
   text-align: center;
@@ -1747,13 +1688,37 @@
   .booking-form-row {
     grid-template-columns: 1fr;
   }
-  
-  .booking-gender-row {
-    grid-template-columns: 1fr;
-  }
 
   .booking-codes-row {
     flex-direction: column;
+  }
+
+  /* Fix: expanded house-card footer on mobile was overflowing right.
+     Stack price summary above the action buttons; make buttons share width. */
+  .booking-house-expanded-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .booking-house-dynamic-price {
+    text-align: left;
+    order: -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .booking-house-dynamic-total {
+    justify-content: flex-start;
+  }
+
+  .booking-house-expanded-actions {
+    width: 100%;
+  }
+
+  .booking-house-expanded-actions > button {
+    flex: 1 1 0;
+    min-width: 0;
   }
   
   .booking-dates-bar {

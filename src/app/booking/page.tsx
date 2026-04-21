@@ -119,7 +119,6 @@ export default function BookingPage() {
   const [selectingCheckOut, setSelectingCheckOut] = useState(false);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
-  const [gender, setGender] = useState<'female' | 'male' | 'other'>('male');
 
   // Calendar navigation
   const [today] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
@@ -431,7 +430,6 @@ export default function BookingPage() {
           lastName: lastName.trim(),
           email: email.trim() || undefined,
           phone: phone.trim(),
-          gender,
           promoCode: promoApplied || undefined,
           certificateCode: certInput || undefined,
         }),
@@ -568,7 +566,7 @@ export default function BookingPage() {
       setError(e?.message || t.errorOccurred);
     }
     setSubmitting(false);
-  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, gender, promoApplied, certInput, t, goToStep, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, totalWithDiscount]);
+  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, promoApplied, certInput, t, goToStep, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, totalWithDiscount]);
 
   // ─── Reset ──────
   const resetForm = useCallback(() => {
@@ -578,7 +576,6 @@ export default function BookingPage() {
     setSelectingCheckOut(false);
     setAdults(2);
     setChildren(0);
-    setGender('male');
     setPromoInput('');
     setCertInput('');
     setPromoApplied('');
@@ -1301,24 +1298,6 @@ export default function BookingPage() {
                       onChange={e => setLastName(e.target.value)}
                       placeholder={t.lastName}
                     />
-                  </div>
-                </div>
-
-                {/* Gender */}
-                <div className="booking-field" style={{ marginBottom: 16 }}>
-                  <label className="booking-field-label">{t.gender} <span className="booking-field-required">*</span></label>
-                  <div className="booking-gender-row">
-                    {(['female', 'male', 'other'] as const).map(g => (
-                      <button
-                        key={g}
-                        className={`booking-gender-option ${gender === g ? 'active' : ''}`}
-                        onClick={() => setGender(g)}
-                        type="button"
-                      >
-                        <div className="booking-gender-radio" />
-                        {g === 'female' ? t.genderFemale : g === 'male' ? t.genderMale : t.genderOther}
-                      </button>
-                    ))}
                   </div>
                 </div>
 

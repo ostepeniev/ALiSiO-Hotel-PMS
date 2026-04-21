@@ -61,10 +61,6 @@ export interface BookingTranslations {
   enterPersonalInfo: string;
   firstName: string;
   lastName: string;
-  gender: string;
-  genderFemale: string;
-  genderMale: string;
-  genderOther: string;
   phone: string;
   email: string;
   // Promo & Certificate
@@ -208,10 +204,6 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Введіть особисту інформацію',
     firstName: "Ім'я",
     lastName: 'Прізвище',
-    gender: 'Стать',
-    genderFemale: 'Жіноча',
-    genderMale: 'Чоловіча',
-    genderOther: 'Інше',
     phone: 'Номер телефону',
     email: 'Email',
     promoCode: 'Промокод',
@@ -343,10 +335,6 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Enter personal information',
     firstName: 'First name',
     lastName: 'Last name',
-    gender: 'Gender',
-    genderFemale: 'Female',
-    genderMale: 'Male',
-    genderOther: 'Other',
     phone: 'Phone number',
     email: 'Email',
     promoCode: 'Promo code',
@@ -476,10 +464,6 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Zadejte osobní údaje',
     firstName: 'Jméno',
     lastName: 'Příjmení',
-    gender: 'Pohlaví',
-    genderFemale: 'Žena',
-    genderMale: 'Muž',
-    genderOther: 'Jiné',
     phone: 'Telefonní číslo',
     email: 'E-mail',
     promoCode: 'Slevový kód',
@@ -609,10 +593,6 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Persönliche Daten eingeben',
     firstName: 'Vorname',
     lastName: 'Nachname',
-    gender: 'Geschlecht',
-    genderFemale: 'Weiblich',
-    genderMale: 'Männlich',
-    genderOther: 'Andere',
     phone: 'Telefonnummer',
     email: 'E-Mail',
     promoCode: 'Aktionscode',
