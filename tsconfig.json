@@ -39,7 +39,9 @@
       "@reports": ["./src/modules/reports/api"],
       "@reports/*": ["./src/modules/reports/api/*"],
       "@auth": ["./src/modules/auth/api"],
-      "@auth/*": ["./src/modules/auth/api/*"]
+      "@auth/*": ["./src/modules/auth/api/*"],
+      "@dashboard": ["./src/modules/dashboard/api"],
+      "@dashboard/*": ["./src/modules/dashboard/api/*"]
     }
   },
   "include": [
