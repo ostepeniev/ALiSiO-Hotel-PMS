@@ -2190,6 +2190,8 @@ function runMigrations(database: any) {
     )
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_site_listings_site ON site_listings(site_id)');
+  try { database.exec('ALTER TABLE site_listings ADD COLUMN thank_you_url TEXT'); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE site_listings ADD COLUMN default_lang TEXT'); } catch { /* already exists */ }
 
   // --- Migration: create site_rate_plans table ---
   database.exec(`
@@ -2240,6 +2242,8 @@ function runMigrations(database: any) {
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN redemption_limit INTEGER'); } catch { /* already exists */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN max_nights INTEGER'); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN allowed_days TEXT'); } catch { /* already exists */ }
 
   // booking_service_orders → add site_id
   try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }

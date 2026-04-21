@@ -21,7 +21,7 @@ export async function PATCH(
     ).get(listingId, id);
     if (!listing) return NextResponse.json({ error: 'Listing not found' }, { status: 404 });
 
-    const allowed = ['price_override', 'has_rules_override', 'rules_override', 'max_inventory', 'external_url', 'sort_order'];
+    const allowed = ['price_override', 'has_rules_override', 'rules_override', 'max_inventory', 'external_url', 'thank_you_url', 'default_lang', 'sort_order'];
     const setClauses: string[] = [];
     const values: any[] = [];
 

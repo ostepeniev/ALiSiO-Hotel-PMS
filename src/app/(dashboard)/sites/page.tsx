@@ -149,45 +149,83 @@ export default function SitesPage() {
     <div className="page-layout">
       <Header title="Сайти бронювання" onMenuClick={onMenuClick} />
 
-      <div className="page-content">
-        {/* Toolbar */}
-        <div className="table-toolbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ position: 'relative' }}>
+      <div className="page-content" style={{ padding: 12 }}>
+
+        {/* ── Hero / Intro блок ── */}
+        <div style={{
+          background: 'var(--surface-secondary)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 12,
+          padding: '24px 28px',
+          marginTop: 54,
+          marginBottom: 20,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <Globe size={22} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
+              <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Сайти прямого бронювання</h2>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65, margin: '0 0 10px' }}>
+              Створіть власний сайт для прямого бронювання короткострокової оренди.
+              Керуйте оголошеннями, тарифними планами та правилами бронювання в одному місці.
+              Виберіть дизайн, підключіть онлайн-оплату через Stripe або PayPal і приймайте
+              бронювання без посередників.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+              {[
+                '💳 Stripe та PayPal з коробки',
+                '🎨 Налаштування стилю та дизайну',
+                '📦 Підтримка оголошень та тарифних планів',
+                '🔗 Вбудований і self-hosted режими',
+              ].map(f => (
+                <span key={f} style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{f}</span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowCreate(true)}
+            >
+              <Plus size={16} /> Новий сайт
+            </button>
+          </div>
+        </div>
+
+        {/* ── Пошук ── */}
+        {(sites.length > 0 || search) && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
               <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
               <input
                 className="form-input"
                 placeholder="Пошук сайтів..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{ paddingLeft: 32, width: 240 }}
+                style={{ paddingLeft: 32, width: 260 }}
               />
             </div>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Новий сайт
-          </button>
-        </div>
+        )}
 
-        {/* Table */}
+        {/* ── Таблиця / Empty state ── */}
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
             <Loader2 size={32} className="spin" style={{ color: 'var(--accent-primary)' }} />
           </div>
+        ) : filtered.length === 0 && search ? (
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: 15, marginBottom: 8 }}>Сайтів не знайдено</div>
+            <div style={{ fontSize: 13 }}>Спробуйте змінити запит</div>
+          </div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-secondary)' }}>
-            <Globe size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
-            <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
-              {search ? 'Сайтів не знайдено' : 'Сайтів ще немає'}
-            </div>
-            <div style={{ fontSize: 14, marginBottom: 24 }}>
-              {search ? 'Спробуйте змінити запит' : 'Створіть перший сайт бронювання'}
-            </div>
-            {!search && (
-              <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-                <Plus size={16} /> Створити перший сайт
-              </button>
-            )}
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
+            <Globe size={40} style={{ margin: '0 auto 12px', opacity: 0.2 }} />
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Сайтів ще немає</div>
+            <div style={{ fontSize: 13 }}>Натисніть «Новий сайт» щоб почати</div>
           </div>
         ) : (
           <div className="table-wrapper">
@@ -238,7 +276,6 @@ export default function SitesPage() {
                       <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{fmt(site.created_at)}</td>
                       <td>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }} onClick={e => e.stopPropagation()}>
-                          {/* Toggle active/paused */}
                           <button
                             className="btn btn-ghost"
                             title={site.status === 'active' ? 'Призупинити' : 'Активувати'}
@@ -250,7 +287,6 @@ export default function SitesPage() {
                               : <ToggleLeft size={18} style={{ color: 'var(--text-tertiary)' }} />
                             }
                           </button>
-                          {/* Open */}
                           <button
                             className="btn btn-ghost"
                             title="Відкрити"
@@ -259,7 +295,6 @@ export default function SitesPage() {
                           >
                             <ExternalLink size={16} />
                           </button>
-                          {/* Delete */}
                           <button
                             className="btn btn-ghost"
                             title="Видалити"
@@ -278,6 +313,7 @@ export default function SitesPage() {
           </div>
         )}
       </div>
+
 
       {/* Create Modal */}
       <Modal
@@ -323,6 +359,23 @@ export default function SitesPage() {
             </select>
           </div>
         </div>
+        {/* Type explanation */}
+        <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 8, fontSize: 13, border: '1px solid var(--border-primary)', background: 'var(--surface-secondary)', lineHeight: 1.5 }}>
+          {newType === 'self-hosted' ? (
+            <>
+              <span style={{ fontWeight: 600 }}>🌐 Self-hosted</span> — окремий сайт бронювання на власному домені
+              (<code style={{ fontSize: 12 }}>booking.yoursite.com</code>). Гість заходить і одразу бронює.
+              Підходить, якщо у вас ще немає сайту або хочете окремий landing для бронювань.
+            </>
+          ) : (
+            <>
+              <span style={{ fontWeight: 600 }}>📌 Лише віджет</span> — кнопка або форма, яка вставляється на ваш вже
+              існуючий сайт (Wix, WordPress тощо) одним рядком коду. Гість залишається на вашому сайті.
+              Підходить, якщо сайт вже є і ви хочете просто додати бронювання.
+            </>
+          )}
+        </div>
+
         <div style={{ marginTop: 8, padding: '12px 16px', background: 'var(--surface-secondary)', borderRadius: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
           💡 Після створення ви зможете налаштувати оголошення, дизайн, тарифні плани та інсталяційний код.
         </div>

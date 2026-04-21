@@ -7,7 +7,7 @@ import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Globe, ArrowLeft, Loader2, Plus, Trash2, X, Copy, Check,
   LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent,
-  ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save,
+  ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil,
 } from 'lucide-react';
 
 /* ════════════════════════════════════════════════
@@ -33,8 +33,9 @@ interface DesignConfig {
 interface WidgetConfig {
   search_result_url?: string;
   enable_prefill?: boolean;
+  default_lang?: string;
 }
-interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; price_override?: number; sort_order: number; created_at: string; }
+interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
 interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; }
 interface RatePlan { id: string; name: string; is_default: number; cancellation_policy: string; payment_schedule: {percent:number;trigger:string}[]; meals_included: string[]; min_stay: number; max_stay: number; min_days_before_checkin: number; pricing_mode: string; applied_listings: string[]; }
 
@@ -53,7 +54,18 @@ const CANCEL_LABELS: Record<string,string> = {
   full_refund:    '✅ Повне повернення',
   flexible:       '⚡ Гнучке',
 };
-const THEMES = ['Classical','Modern','Minimal','Nature','Luxury','Ocean','Forest','Sunset','Nordic','Urban','Vintage','Neon','Pastel','Dark'];
+const THEME_CONFIGS: Record<string,{color:string;bg:string;card:string;text:string;sub:string;border:string}> = {
+  Classical: { color:'#8B6914', bg:'#fdf8f0', card:'#fff8ec', text:'#2d1f0a', sub:'#8b7355', border:'#e8d5b0' },
+  Modern:    { color:'#2563eb', bg:'#f8faff', card:'#ffffff', text:'#0f172a', sub:'#64748b', border:'#e2e8f0' },
+  Minimal:   { color:'#374151', bg:'#ffffff', card:'#f9fafb', text:'#111827', sub:'#9ca3af', border:'#f3f4f6' },
+  Nature:    { color:'#16a34a', bg:'#f0fdf4', card:'#dcfce7', text:'#14532d', sub:'#4ade80', border:'#bbf7d0' },
+  Luxury:    { color:'#d4af37', bg:'#0d0d1a', card:'#1a1628', text:'#f5efe6', sub:'#c9a84c', border:'#2d2540' },
+  Ocean:     { color:'#0891b2', bg:'#ecfeff', card:'#cffafe', text:'#164e63', sub:'#0e7490', border:'#a5f3fc' },
+  Sunset:    { color:'#ea580c', bg:'#fff7ed', card:'#ffedd5', text:'#431407', sub:'#c2410c', border:'#fed7aa' },
+  Nordic:    { color:'#4f81bd', bg:'#f2f6fb', card:'#ffffff', text:'#1e3a5f', sub:'#7a9bbf', border:'#c8daf0' },
+  Dark:      { color:'#22d3ee', bg:'#0f172a', card:'#1e293b', text:'#f1f5f9', sub:'#94a3b8', border:'#334155' },
+};
+const THEMES = Object.keys(THEME_CONFIGS);
 const BUTTON_STYLES = [
   { value:'rounded_filled',  label:'Rounded Filled' },
   { value:'rounded_outline', label:'Rounded Outline' },
@@ -95,6 +107,162 @@ function CopyBtn({ text }: { text: string }) {
     </button>
   );
 }
+
+/* ── Check indicator ── */
+const Chk = ({ val }: { val?: string | null }) =>
+  val ? <span style={{color:'#22c55e',fontSize:16}}>✓</span> : <span style={{color:'var(--text-tertiary)',fontSize:14}}>—</span>;
+
+/* ── ListingRow: click → edit modal ── */
+function ListingRow({ listing, siteId, onDelete, onRefresh }: {
+  listing: Listing;
+  siteId: string;
+  onDelete: (id: string) => void;
+  onRefresh: () => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [embedOpen, setEmbedOpen] = useState(false);
+  const [embedLang, setEmbedLang] = useState('uk');
+  const [origin, setOrigin] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    external_url:  listing.external_url  || '',
+    thank_you_url: listing.thank_you_url || '',
+    default_lang:  listing.default_lang  || '',
+  });
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+
+  const save = async () => {
+    setSaving(true);
+    await fetch(`/api/booking-sites/${siteId}/listings/${listing.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        external_url:  form.external_url.trim()  || null,
+        thank_you_url: form.thank_you_url.trim() || null,
+        default_lang:  form.default_lang || null,
+      }),
+    });
+    setSaving(false);
+    setEditOpen(false);
+    onRefresh();
+  };
+
+  const unitName = listing.unit_name || listing.unit_type_name || listing.id;
+  const unitAttr = listing.unit_id
+    ? `data-unit="${listing.unit_id}"`
+    : `data-unit-type="${listing.unit_type_id}"`;
+  const embedCode = `<script\n  src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.js"\n  data-site="${siteId}"\n  ${unitAttr}\n  data-lang="${embedLang}">\n</script>`;
+
+  const LANGS = ['uk','cs','en','de'];
+
+  return (
+    <>
+      <tr style={{cursor:'pointer'}} onClick={() => setEditOpen(true)}>
+        <td style={{fontWeight:600}}>{listing.unit_name || listing.unit_type_name || '—'}</td>
+        <td style={{fontSize:12,color:'var(--text-secondary)'}}>{listing.unit_id ? 'Юніт' : 'Тип юніту'}</td>
+        <td style={{fontSize:13}}>{listing.price_override ? `${listing.price_override} CZK` : 'За прайсом'}</td>
+        <td style={{textAlign:'center'}}><Chk val={listing.external_url}/></td>
+        <td style={{textAlign:'center'}}><Chk val={listing.thank_you_url}/></td>
+        <td style={{textAlign:'right'}} onClick={e => e.stopPropagation()}>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
+            <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Embed-код"
+              onClick={() => setEmbedOpen(true)}>
+              <Code2 size={14}/> Код
+            </button>
+            <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}}
+              onClick={() => onDelete(listing.id)}>
+              <Trash2 size={14}/>
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      {/* ── Edit modal ── */}
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={unitName} size="lg"
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={() => setEditOpen(false)}>Скасувати</button>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              {saving ? <Loader2 size={14} className="spin"/> : <Check size={14}/>} Зберегти
+            </button>
+          </>
+        }>
+
+        <div className="form-group">
+          <label className="form-label">URL сторінки об&apos;єкта</label>
+          <input className="form-input" placeholder="https://yoursite.com/cabin-b3"
+            value={form.external_url} onChange={e => setForm(f => ({...f, external_url: e.target.value}))} />
+          <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Посилання на сторінку оголошення на вашому сайті</div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">URL сторінки подяки</label>
+          <input className="form-input" placeholder="https://yoursite.com/thank-you"
+            value={form.thank_you_url} onChange={e => setForm(f => ({...f, thank_you_url: e.target.value}))} />
+          <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Гість буде перенаправлений сюди після підтвердження бронювання</div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Мова за замовчуванням</label>
+          <div style={{display:'flex',gap:6}}>
+            {LANGS.map(l => (
+              <button key={l} type="button" onClick={() => setForm(f => ({...f, default_lang: f.default_lang === l ? '' : l}))}
+                style={{
+                  padding:'6px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                  border:`2px solid ${form.default_lang===l?'var(--accent-primary)':'var(--border-primary)'}`,
+                  background:form.default_lang===l?'var(--accent-primary)':'var(--surface-secondary)',
+                  color:form.default_lang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
+                }}>
+                {l.toUpperCase()}
+              </button>
+            ))}
+            {form.default_lang && (
+              <button type="button" onClick={() => setForm(f => ({...f, default_lang: ''}))}
+                style={{fontSize:11,color:'var(--text-tertiary)',background:'none',border:'none',cursor:'pointer'}}>
+                скинути
+              </button>
+            )}
+          </div>
+          {!form.default_lang && <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Не вибрано — використається мова сайту</div>}
+        </div>
+      </Modal>
+
+      {/* ── Embed code modal ── */}
+      <Modal open={embedOpen} onClose={() => setEmbedOpen(false)} title={`Embed-код: ${unitName}`} size="lg">
+        <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>
+          Вставте цей код на сторінку конкретного об&apos;єкта.
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:600,color:'var(--text-tertiary)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Мова віджета</div>
+          <div style={{display:'flex',gap:6}}>
+            {LANGS.map(l => (
+              <button key={l} type="button" onClick={() => setEmbedLang(l)}
+                style={{
+                  padding:'5px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                  border:`2px solid ${embedLang===l?'var(--accent-primary)':'var(--border-primary)'}`,
+                  background:embedLang===l?'var(--accent-primary)':'var(--surface-secondary)',
+                  color:embedLang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
+                }}>
+                {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{position:'relative',marginBottom:16}}>
+          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>{embedCode}</pre>
+          <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={embedCode}/></div>
+        </div>
+        <div style={{padding:'10px 14px',background:'var(--surface-secondary)',borderRadius:8,fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,border:'1px solid var(--border-primary)'}}>
+          💡 Щоб успадкувати мову сайту: додайте перед скриптом{' '}
+          <code>{`<script>window.__BOOKING_LANG__=document.documentElement.lang</script>`}</code>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+
+
 
 /* ════════════════════════════════════════════════
    TAB: LISTINGS
@@ -160,7 +328,7 @@ function ListingsTab({ siteId }: { siteId: string }) {
 
   return (
     <div>
-      <div className="table-toolbar">
+      <div className="table-toolbar" style={{marginBottom:12}}>
         <div style={{fontSize:14,color:'var(--text-secondary)'}}>{listings.length} оголошень</div>
         <button className="btn btn-primary" onClick={()=>setShowAdd(true)}><Plus size={16}/> Додати оголошення</button>
       </div>
@@ -172,19 +340,17 @@ function ListingsTab({ siteId }: { siteId: string }) {
         </div>
       ) : (
         <table className="data-table">
-          <thead><tr><th>Назва</th><th>Тип</th><th>Ціна</th><th></th></tr></thead>
+          <thead><tr>
+            <th>Назва</th>
+            <th>Тип</th>
+            <th>Ціна</th>
+            <th style={{textAlign:'center'}}>URL сторінки</th>
+            <th style={{textAlign:'center'}}>URL подяки</th>
+            <th></th>
+          </tr></thead>
           <tbody>
             {listings.map(l => (
-              <tr key={l.id}>
-                <td style={{fontWeight:600}}>{l.unit_name || l.unit_type_name || '—'}</td>
-                <td style={{fontSize:12,color:'var(--text-secondary)'}}>{l.unit_id ? 'Юніт' : 'Тип юніту'}</td>
-                <td style={{fontSize:13}}>{l.price_override ? `${l.price_override} CZK (override)` : 'За прайсом'}</td>
-                <td style={{textAlign:'right'}}>
-                  <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}} onClick={()=>handleDelete(l.id)}>
-                    <Trash2 size={14}/>
-                  </button>
-                </td>
-              </tr>
+              <ListingRow key={l.id} listing={l} siteId={siteId} onDelete={handleDelete} onRefresh={fetchListings} />
             ))}
           </tbody>
         </table>
@@ -373,69 +539,182 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
     onUpdate(cfg);
   };
 
-  return (
-    <div style={{ maxWidth: 720 }}>
-      {/* Themes */}
-      <div style={{marginBottom:28}}>
-        <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Тема</div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
-          {THEMES.map(t => (
-            <button key={t} onClick={()=>setCfg(c=>({...c,theme:t}))}
-              style={{padding:'10px 8px',borderRadius:8,fontSize:12,fontWeight:cfg.theme===t?700:400,
-                border:`2px solid ${cfg.theme===t?'var(--accent-primary)':'var(--border-primary)'}`,
-                background:cfg.theme===t?'var(--accent-primary-dim)':'var(--surface-secondary)',
-                cursor:'pointer',color:'var(--text-primary)',transition:'all .15s'}}>
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
+  // Use theme palette for preview
+  const themeCfg = THEME_CONFIGS[cfg.theme || 'Classical'] || THEME_CONFIGS['Classical'];
+  const color       = cfg.primary_color || themeCfg.color;
+  const previewBg   = themeCfg.bg;
+  const previewText = themeCfg.text;
+  const previewSub  = themeCfg.sub;
+  const previewCard = themeCfg.card;
+  const previewBorder = themeCfg.border;
 
-      {/* Primary color */}
-      <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24}}>
-        <div>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Основний колір</div>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <input type="color" value={cfg.primary_color||'#A2845E'} onChange={e=>setCfg(c=>({...c,primary_color:e.target.value}))}
-              style={{width:44,height:44,border:'none',borderRadius:8,cursor:'pointer',padding:2}} />
-            <input className="form-input" value={cfg.primary_color||'#A2845E'}
-              onChange={e=>setCfg(c=>({...c,primary_color:e.target.value}))}
-              style={{width:120,fontFamily:'monospace',fontSize:13}} />
+  const btnRadius = cfg.button_style?.includes('pill') ? 99
+    : cfg.button_style?.includes('rounded') ? 10 : 2;
+  const btnBg = cfg.button_style?.includes('outline') ? 'transparent' : color;
+  const btnColor = cfg.button_style?.includes('outline') ? color : '#fff';
+  const btnBorder = cfg.button_style?.includes('outline') ? `2px solid ${color}` : 'none';
+  const shadow = cfg.show_shadow ? '0 8px 32px rgba(0,0,0,0.12)' : 'none';
+
+  return (
+    <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+
+      {/* ── Settings column ── */}
+      <div style={{ flex: '0 0 400px', minWidth: 0 }}>
+        {/* Themes */}
+        <div style={{marginBottom:28}}>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Тема</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
+            {THEMES.map(t => (
+              <button key={t} onClick={()=>setCfg(c=>({...c, theme:t, primary_color: THEME_CONFIGS[t].color }))}
+                style={{padding:'10px 8px',borderRadius:8,fontSize:12,fontWeight:cfg.theme===t?700:400,
+                  border:`2px solid ${cfg.theme===t?'var(--accent-primary)':'var(--border-primary)'}`,
+                  background:cfg.theme===t?'var(--accent-primary-dim)':'var(--surface-secondary)',
+                  cursor:'pointer',color:'var(--text-primary)',transition:'all .15s',
+                  borderLeft:`4px solid ${THEME_CONFIGS[t].color}`}}>
+                {t}
+              </button>
+            ))}
           </div>
         </div>
+
+        {/* Primary color */}
+        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Основний колір</div>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <input type="color" value={cfg.primary_color||'#A2845E'} onChange={e=>setCfg(c=>({...c,primary_color:e.target.value}))}
+                style={{width:44,height:44,border:'none',borderRadius:8,cursor:'pointer',padding:2}} />
+              <input className="form-input" value={cfg.primary_color||'#A2845E'}
+                onChange={e=>setCfg(c=>({...c,primary_color:e.target.value}))}
+                style={{width:120,fontFamily:'monospace',fontSize:13}} />
+            </div>
+          </div>
+        </div>
+
+        {/* Button style */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Стиль кнопки</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+            {BUTTON_STYLES.map(bs => (
+              <button key={bs.value} onClick={()=>setCfg(c=>({...c,button_style:bs.value}))}
+                style={{padding:'8px 14px',borderRadius:bs.value.includes('pill')?99:bs.value.includes('rounded')?8:2,
+                  fontSize:12,border:`2px solid ${cfg.button_style===bs.value?'var(--accent-primary)':'var(--border-primary)'}`,
+                  background:cfg.button_style===bs.value?'var(--accent-primary-dim)':'var(--surface-secondary)',
+                  fontWeight:cfg.button_style===bs.value?700:400,cursor:'pointer',color:'var(--text-primary)'}}>
+                {bs.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Shadow */}
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
+          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+            <input type="checkbox" checked={!!cfg.show_shadow} onChange={e=>setCfg(c=>({...c,show_shadow:e.target.checked}))} />
+            <span style={{fontSize:13}}>Показувати тінь (shadow)</span>
+          </label>
+        </div>
+
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? <Loader2 size={16} className="spin"/> : saved ? <Check size={16}/> : <Save size={16}/>}
+          {saved ? 'Збережено!' : 'Зберегти дизайн'}
+        </button>
       </div>
 
-      {/* Button style */}
-      <div style={{marginBottom:24}}>
-        <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Стиль кнопки</div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-          {BUTTON_STYLES.map(bs => (
-            <button key={bs.value} onClick={()=>setCfg(c=>({...c,button_style:bs.value}))}
-              style={{padding:'8px 14px',borderRadius:bs.value.includes('pill')?99:bs.value.includes('rounded')?8:2,
-                fontSize:12,border:`2px solid ${cfg.button_style===bs.value?'var(--accent-primary)':'var(--border-primary)'}`,
-                background:cfg.button_style===bs.value?'var(--accent-primary-dim)':'var(--surface-secondary)',
-                fontWeight:cfg.button_style===bs.value?700:400,cursor:'pointer',color:'var(--text-primary)'}}>
-              {bs.label}
-            </button>
-          ))}
+      {/* ── Live preview column ── */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:12,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+          Прев&apos;ю віджета
+        </div>
+
+        {/* Browser chrome mockup */}
+        <div style={{border:'1px solid var(--border-primary)',borderRadius:12,overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
+          {/* Fake browser bar */}
+          <div style={{background:'#f1f5f9',padding:'8px 12px',display:'flex',alignItems:'center',gap:8,borderBottom:'1px solid #e2e8f0'}}>
+            <div style={{display:'flex',gap:5}}>
+              <div style={{width:10,height:10,borderRadius:'50%',background:'#ef4444'}}/>
+              <div style={{width:10,height:10,borderRadius:'50%',background:'#f59e0b'}}/>
+              <div style={{width:10,height:10,borderRadius:'50%',background:'#22c55e'}}/>
+            </div>
+            <div style={{flex:1,background:'#fff',borderRadius:6,padding:'3px 10px',fontSize:11,color:'#94a3b8',border:'1px solid #e2e8f0'}}>
+              yoursite.com/booking
+            </div>
+          </div>
+
+          {/* Widget preview area */}
+          <div style={{background:previewBg,padding:'28px 24px',minHeight:260,transition:'background .3s'}}>
+
+            {/* Hero text mock */}
+            <div style={{marginBottom:20}}>
+              <div style={{height:14,width:'55%',background:previewBorder,borderRadius:4,marginBottom:8}}/>
+              <div style={{height:10,width:'35%',background:previewCard,borderRadius:4,border:`1px solid ${previewBorder}`}}/>
+            </div>
+
+            {/* Widget card */}
+            <div style={{
+              background:previewCard,
+              border:`1px solid ${previewBorder}`,
+              borderRadius:12,
+              padding:20,
+              boxShadow:shadow,
+              transition:'all .3s',
+            }}>
+              {/* Date row */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+                {['Заїзд','Виїзд'].map(label => (
+                  <div key={label}>
+                    <div style={{fontSize:10,color:previewSub,fontWeight:600,marginBottom:4,textTransform:'uppercase'}}>{label}</div>
+                    <div style={{border:`1px solid ${previewBorder}`,borderRadius:8,padding:'8px 10px',fontSize:12,color:previewText,background:previewBg,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span>дд.мм.рррр</span>
+                      <span style={{fontSize:14}}>📅</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Guests row */}
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:10,color:previewSub,fontWeight:600,marginBottom:4,textTransform:'uppercase'}}>Гості</div>
+                <div style={{border:`1px solid ${previewBorder}`,borderRadius:8,padding:'8px 10px',fontSize:12,color:previewText,background:previewBg,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>2 гостя</span>
+                  <span style={{fontSize:11,color:previewSub}}>▼</span>
+                </div>
+              </div>
+
+              {/* Book button */}
+              <button style={{
+                width:'100%',
+                padding:'12px 0',
+                borderRadius:btnRadius,
+                background:btnBg,
+                color:btnColor,
+                border:btnBorder,
+                fontSize:14,
+                fontWeight:700,
+                cursor:'default',
+                transition:'all .3s',
+                letterSpacing:'0.02em',
+              }}>
+                Перевірити наявність
+              </button>
+            </div>
+
+            {/* Theme label */}
+            <div style={{marginTop:12,textAlign:'center',fontSize:11,color:previewSub}}>
+              {cfg.theme || 'Classical'} · {cfg.button_style || 'rounded_filled'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:8,textAlign:'center'}}>
+          Прев&apos;ю оновлюється в реальному часі
         </div>
       </div>
 
-      {/* Shadow */}
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
-        <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-          <input type="checkbox" checked={!!cfg.show_shadow} onChange={e=>setCfg(c=>({...c,show_shadow:e.target.checked}))} />
-          <span style={{fontSize:13}}>Показувати тінь (shadow)</span>
-        </label>
-      </div>
-
-      <button className="btn btn-primary" onClick={save} disabled={saving}>
-        {saving ? <Loader2 size={16} className="spin"/> : saved ? <Check size={16}/> : <Save size={16}/>}
-        {saved ? 'Збережено!' : 'Зберегти дизайн'}
-      </button>
     </div>
   );
 }
+
 
 /* ════════════════════════════════════════════════
    TAB: WIDGET
@@ -448,18 +727,30 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   useEffect(() => { setOrigin(window.location.origin); }, []);
 
+  const lang = cfg.default_lang || 'uk';
+
   const scriptTag = `<script
   src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.js"
   data-site="${site.id}"
-  data-lang="uk">
+  data-lang="${lang}">
 </script>`;
 
   const iframeEmbed = `<iframe
-  src="${origin || 'https://YOUR_DOMAIN'}/booking?site=${site.id}"
+  src="${origin || 'https://YOUR_DOMAIN'}/booking?site=${site.id}&lang=${lang}"
   width="100%" height="600"
   frameborder="0" allowfullscreen>
 </iframe>`;
 
+  // Dynamic locale injection example
+  const dynamicLocaleSnippet = `<!-- Передайте мову сайту у віджет динамічно -->
+<script>
+  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
+</script>
+<script
+  src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.js"
+  data-site="${site.id}"
+  data-lang-from="window.__BOOKING_LANG__">
+</script>`;
 
   const save = async () => {
     setSaving(true);
@@ -495,21 +786,54 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
         </label>
       </Step>
 
-      <Step n={2} title="Вставте JS-тег на ваш сайт">
+      <Step n={2} title="Мова віджета за замовчуванням">
+        <div style={{marginBottom:10,fontSize:13,color:'var(--text-secondary)'}}>
+          Ця мова буде використана якщо сторінка не передає локаль.
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          {(['uk','cs','en','de'] as const).map(l => (
+            <button key={l} type="button"
+              onClick={() => setCfg(c => ({...c, default_lang: l}))}
+              style={{
+                padding:'6px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                border:`2px solid ${lang===l?'var(--accent-primary)':'var(--border-primary)'}`,
+                background:lang===l?'var(--accent-primary)':'var(--surface-secondary)',
+                color:lang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
+              }}>
+              {l.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <div style={{marginTop:12,fontSize:12,color:'var(--text-tertiary)',lineHeight:1.6}}>
+          Щоб передати локаль з батьківського сайту динамічно, вставте перед тегом скрипта:
+        </div>
+        <div style={{position:'relative',marginTop:6}}>
+          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:12,fontSize:11,overflowX:'auto',margin:0}}>
+{`<script>
+  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
+</script>`}
+          </pre>
+          <div style={{position:'absolute',top:8,right:8}}>
+            <CopyBtn text={`<script>\n  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';\n</script>`}/>
+          </div>
+        </div>
+      </Step>
+
+      <Step n={3} title="Вставте JS-тег на ваш сайт">
         <div style={{position:'relative'}}>
           <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>{scriptTag}</pre>
           <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={scriptTag}/></div>
         </div>
       </Step>
 
-      <Step n={3} title="Або використайте iframe (альтернатива)">
+      <Step n={4} title="Або використайте iframe (альтернатива)">
         <div style={{position:'relative'}}>
           <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>{iframeEmbed}</pre>
           <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={iframeEmbed}/></div>
         </div>
       </Step>
 
-      <Step n={4} title="Перевірте встановлення">
+      <Step n={5} title="Перевірте встановлення">
         <div style={{fontSize:13,color:'var(--text-secondary)'}}>
           Відкрийте ваш сайт і переконайтесь що кнопка/форма бронювання відображається. Бронювання буде прив'язане до сайту <strong>{site.name}</strong>.
         </div>
@@ -673,7 +997,20 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
   const [codes, setCodes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ code:'', discount_type:'percent', discount_value:'', valid_from:'', valid_until:'', min_nights:1, redemption_limit:'' });
+
+  const DAYS = [
+    { key: 1, label: 'Пн' }, { key: 2, label: 'Вт' }, { key: 3, label: 'Ср' },
+    { key: 4, label: 'Чт' }, { key: 5, label: 'Пт' }, { key: 6, label: 'Сб' },
+    { key: 7, label: 'Нд' },
+  ];
+
+  const emptyForm = () => ({
+    code: '', discount_type: 'percent', discount_value: '',
+    valid_from: '', valid_until: '',
+    min_nights: 1, max_nights: '', redemption_limit: '',
+    allowed_days: [] as number[],   // empty = all days
+  });
+  const [form, setForm] = useState(emptyForm());
   const [creating, setCreating] = useState(false);
 
   const fetchCodes = useCallback(async () => {
@@ -689,20 +1026,48 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
 
   useEffect(() => { fetchCodes(); }, [fetchCodes]);
 
+  const toggleDay = (day: number) => {
+    setForm(f => {
+      const days = f.allowed_days.includes(day)
+        ? f.allowed_days.filter(d => d !== day)
+        : [...f.allowed_days, day].sort();
+      return { ...f, allowed_days: days };
+    });
+  };
+
   const handleCreate = async () => {
-    if (!form.code.trim() || !form.discount_value) { alert("Введіть код та знижку"); return; }
+    if (!form.code.trim() || !form.discount_value) { alert('Введіть код та знижку'); return; }
     setCreating(true);
     try {
-      await fetch('/api/promo-codes', {
+      const res = await fetch('/api/promo-codes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, site_id: siteId, discount_value: +form.discount_value, min_nights: +form.min_nights, redemption_limit: form.redemption_limit ? +form.redemption_limit : null }),
+        body: JSON.stringify({
+          code: form.code,
+          discount_type: form.discount_type === 'percent' ? 'percentage' : 'fixed_amount',
+          discount_value: +form.discount_value,
+          valid_from: form.valid_from || null,
+          valid_until: form.valid_until || null,
+          min_nights: form.min_nights || null,
+          max_nights: form.max_nights ? +form.max_nights : null,
+          redemption_limit: form.redemption_limit ? +form.redemption_limit : null,
+          site_id: siteId,
+          allowed_days: form.allowed_days.length > 0 ? form.allowed_days : null,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Помилка'); setCreating(false); return; }
       setShowCreate(false);
-      setForm({ code:'', discount_type:'percent', discount_value:'', valid_from:'', valid_until:'', min_nights:1, redemption_limit:'' });
+      setForm(emptyForm());
       fetchCodes();
-    } catch { alert('Помилка'); }
+    } catch { alert('Помилка мережі'); }
     setCreating(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Видалити промокод?')) return;
+    await fetch(`/api/promo-codes/${id}`, { method: 'DELETE' });
+    fetchCodes();
   };
 
   if (loading) return <div style={{padding:40,textAlign:'center'}}><Loader2 size={24} className="spin"/></div>;
@@ -721,14 +1086,25 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
         </div>
       ) : (
         <table className="data-table">
-          <thead><tr><th>Код</th><th>Знижка</th><th>Діє до</th><th>Використано</th></tr></thead>
+          <thead><tr><th>Код</th><th>Знижка</th><th>Діє до</th><th>Ночей</th><th>Використано</th><th></th></tr></thead>
           <tbody>
             {codes.map(c => (
               <tr key={c.id}>
                 <td style={{fontFamily:'monospace',fontWeight:700}}>{c.code}</td>
-                <td>{c.discount_value}{c.discount_type==='percent'?'%':' CZK'}</td>
+                <td>{c.discount_value}{c.discount_type==='percentage'?'%':' CZK'}</td>
                 <td style={{fontSize:13,color:'var(--text-secondary)'}}>{c.valid_until || '—'}</td>
-                <td style={{fontSize:13}}>{c.used_count || 0}{c.redemption_limit ? ` / ${c.redemption_limit}` : ''}</td>
+                <td style={{fontSize:13}}>
+                  {c.min_nights || 1}–{c.max_nights || '∞'}
+                  {c.allowed_days && <span style={{marginLeft:6,fontSize:11,color:'var(--text-tertiary)'}}>
+                    {(() => { try { return JSON.parse(c.allowed_days).map((d:number) => ['','Пн','Вт','Ср','Чт','Пт','Сб','Нд'][d]).join(','); } catch { return ''; } })()}
+                  </span>}
+                </td>
+                <td style={{fontSize:13}}>{c.current_uses || 0}{c.redemption_limit ? ` / ${c.redemption_limit}` : ''}</td>
+                <td>
+                  <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}} onClick={()=>handleDelete(c.id)}>
+                    <Trash2 size={14}/>
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -742,10 +1118,16 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
             {creating ? <Loader2 size={14} className="spin"/> : <Plus size={14}/>} Створити
           </button>
         </>}>
+
+        {/* Код */}
         <div className="form-group">
           <label className="form-label">Код *</label>
-          <input className="form-input" placeholder="SUMMER20" value={form.code} style={{textTransform:'uppercase'}} onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase()}))} autoFocus />
+          <input className="form-input" placeholder="SUMMER20" value={form.code}
+            style={{textTransform:'uppercase'}}
+            onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase()}))} autoFocus />
         </div>
+
+        {/* Тип + значення */}
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Тип знижки</label>
@@ -756,9 +1138,13 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
           </div>
           <div className="form-group">
             <label className="form-label">Значення *</label>
-            <input className="form-input" type="number" min={0} placeholder={form.discount_type==='percent'?'20':'500'} value={form.discount_value} onChange={e=>setForm(f=>({...f,discount_value:e.target.value}))} />
+            <input className="form-input" type="number" min={0}
+              placeholder={form.discount_type==='percent'?'20':'500'}
+              value={form.discount_value} onChange={e=>setForm(f=>({...f,discount_value:e.target.value}))} />
           </div>
         </div>
+
+        {/* Дати */}
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Діє від</label>
@@ -769,20 +1155,71 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
             <input className="form-input" type="date" value={form.valid_until} onChange={e=>setForm(f=>({...f,valid_until:e.target.value}))} />
           </div>
         </div>
+
+        {/* Ночі */}
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Мін. ночей</label>
-            <input className="form-input" type="number" min={1} value={form.min_nights} onChange={e=>setForm(f=>({...f,min_nights:+e.target.value}))} />
+            <input className="form-input" type="number" min={1} value={form.min_nights}
+              onChange={e=>setForm(f=>({...f,min_nights:+e.target.value}))} />
           </div>
           <div className="form-group">
-            <label className="form-label">Ліміт використань</label>
-            <input className="form-input" type="number" min={0} placeholder="Без ліміту" value={form.redemption_limit} onChange={e=>setForm(f=>({...f,redemption_limit:e.target.value}))} />
+            <label className="form-label">Макс. ночей</label>
+            <input className="form-input" type="number" min={1} placeholder="Без ліміту"
+              value={form.max_nights} onChange={e=>setForm(f=>({...f,max_nights:e.target.value}))} />
           </div>
         </div>
+
+        {/* Ліміт використань */}
+        <div className="form-group">
+          <label className="form-label">Ліміт використань</label>
+          <input className="form-input" type="number" min={0} placeholder="Без ліміту"
+            value={form.redemption_limit} onChange={e=>setForm(f=>({...f,redemption_limit:e.target.value}))} />
+        </div>
+
+        {/* Дні тижня */}
+        <div className="form-group">
+          <label className="form-label">
+            Діє лише в ці дні тижня
+            <span style={{fontSize:11,color:'var(--text-tertiary)',fontWeight:400,marginLeft:6}}>
+              {form.allowed_days.length === 0 ? '(всі дні)' : ''}
+            </span>
+          </label>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {DAYS.map(d => {
+              const on = form.allowed_days.includes(d.key);
+              return (
+                <button key={d.key} type="button" onClick={()=>toggleDay(d.key)}
+                  style={{
+                    width:38,height:38,borderRadius:8,fontSize:12,fontWeight:600,cursor:'pointer',
+                    border:`2px solid ${on ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                    background: on ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+                    color: on ? '#fff' : 'var(--text-secondary)',
+                    transition:'all .15s',
+                  }}>
+                  {d.label}
+                </button>
+              );
+            })}
+            {form.allowed_days.length > 0 && (
+              <button type="button" onClick={()=>setForm(f=>({...f,allowed_days:[]}))}
+                style={{fontSize:11,color:'var(--text-tertiary)',background:'none',border:'none',cursor:'pointer',padding:'0 4px'}}>
+                скинути
+              </button>
+            )}
+          </div>
+          {form.allowed_days.length === 0 && (
+            <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>
+              Не вибрано — промокод діє в будь-який день
+            </div>
+          )}
+        </div>
+
       </Modal>
     </div>
   );
 }
+
 
 /* ════════════════════════════════════════════════
    MAIN PAGE
@@ -828,9 +1265,9 @@ export default function SiteDetailPage() {
 
   return (
     <div className="page-layout">
-      <Header title={site.name} onMenuClick={onMenuClick} />
+      <Header title={site.name} onMenuClick={onMenuClick} onBack={() => router.push('/sites')} />
 
-      <div className="page-content">
+      <div className="page-content" style={{ padding: 12 }}>
         {/* Breadcrumb + meta */}
         <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
           <button className="btn btn-ghost" onClick={()=>router.push('/sites')} style={{padding:'6px 10px'}}>
