@@ -119,7 +119,6 @@ export default function BookingPage() {
   const [selectingCheckOut, setSelectingCheckOut] = useState(false);
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
-  const [gender, setGender] = useState<'female' | 'male' | 'other'>('male');
 
   // Calendar navigation
   const [today] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
@@ -180,38 +179,76 @@ export default function BookingPage() {
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
   const [redirectingToPayment, setRedirectingToPayment] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | null>(null);
+  const [purchasedServices, setPurchasedServices] = useState<any[]>([]);
 
-  // Handle return from Teya payment
+  // Handle return from Teya payment (room or services checkout)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const successId = params.get('success');
     const pStatus = params.get('payment_status');
+    const kind = (params.get('payment_kind') || 'room') as 'room' | 'services';
 
-    if (successId && pStatus === 'success') {
-      // Returned from successful payment
+    const cleanUrl = () => window.history.replaceState({}, '', window.location.pathname);
+
+    if (!successId || (pStatus !== 'success' && pStatus !== 'cancel')) return;
+
+    (async () => {
+      let ctxSrv: any = null;
+      try {
+        const r = await fetch(`${API_BASE}/api/booking/reservation?id=${encodeURIComponent(successId)}`);
+        if (r.ok) ctxSrv = await r.json();
+      } catch { /* ignore */ }
+
+      let ctxCache: any = null;
+      try {
+        const saved = sessionStorage.getItem('booking-return-ctx');
+        if (saved) ctxCache = JSON.parse(saved);
+      } catch { /* ignore */ }
+
+      const resSrv = ctxSrv?.reservation;
       setReservation({
         success: true,
         reservationId: successId,
-        unitName: '',
-        checkIn: '',
-        checkOut: '',
-        nights: 0,
-        totalPrice: 0,
-        originalPrice: 0,
+        unitName: resSrv?.unit_name || ctxCache?.unitName || '',
+        checkIn: resSrv?.check_in || ctxCache?.checkIn || '',
+        checkOut: resSrv?.check_out || ctxCache?.checkOut || '',
+        nights: resSrv?.nights || ctxCache?.nights || 0,
+        totalPrice: resSrv?.total_price || ctxCache?.totalPrice || 0,
+        originalPrice: resSrv?.total_price || ctxCache?.totalPrice || 0,
         promoDiscount: 0,
         certificateDiscount: 0,
         currency: 'CZK',
       });
-      setPaymentStatus('success');
-      setStep(5);
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (pStatus === 'cancel') {
-      setPaymentStatus('failed');
-      setStep(5);
-      window.history.replaceState({}, '', window.location.pathname);
-    }
+
+      const ci = resSrv?.check_in || ctxCache?.checkIn;
+      const co = resSrv?.check_out || ctxCache?.checkOut;
+      if (ci) setCheckIn(ci);
+      if (co) setCheckOut(co);
+
+      if (Array.isArray(ctxSrv?.services)) setPurchasedServices(ctxSrv.services);
+
+      if (pStatus === 'success') {
+        setPaymentStatus('success');
+        if (kind === 'services') {
+          setStep(5);
+        } else {
+          setStep(4);
+          if (ci && co) fetchServices(ci, co);
+        }
+      } else {
+        if (kind === 'services') {
+          setPaymentStatus('failed');
+          setStep(4);
+          if (ci && co) fetchServices(ci, co);
+        } else {
+          setPaymentStatus('failed');
+          setStep(5);
+        }
+      }
+      cleanUrl();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mobile summary
@@ -358,19 +395,20 @@ export default function BookingPage() {
     goToStep(3);
   }, [selectedUnit, goToStep]);
 
-  // ─── Fetch Services (entering Step 4) ──────
-  const fetchServices = useCallback(async () => {
-    if (!checkIn || !checkOut) return;
+  const fetchServices = useCallback(async (ciParam?: string, coParam?: string) => {
+    const ci = ciParam || checkIn;
+    const co = coParam || checkOut;
+    if (!ci || !co) return;
     setServicesLoading(true);
     try {
       // Fetch breakfast menu items
-      const bRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_breakfast&checkIn=${checkIn}&checkOut=${checkOut}`);
+      const bRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_breakfast&checkIn=${ci}&checkOut=${co}`);
       if (bRes.ok) {
         const bData = await bRes.json();
         setMenuItems(bData.menuItems || []);
       }
       // Fetch sauna details + booked slots
-      const sRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_sauna&checkIn=${checkIn}&checkOut=${checkOut}`);
+      const sRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_sauna&checkIn=${ci}&checkOut=${co}`);
       if (sRes.ok) {
         const sData = await sRes.json();
         setSaunaPrice(sData.price || 600);
@@ -380,38 +418,31 @@ export default function BookingPage() {
         }
       }
       // Fetch tub details + booked slots
-      const tRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_tub&checkIn=${checkIn}&checkOut=${checkOut}`);
+      const tRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_tub&checkIn=${ci}&checkOut=${co}`);
       if (tRes.ok) {
         const tData = await tRes.json();
         setTubPrice(tData.price || 600);
         setTubBookedSlots(tData.bookedSlots || []);
       }
       // Fetch late checkout price
-      const lcRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_late_checkout&checkIn=${checkIn}&checkOut=${checkOut}`);
+      const lcRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_late_checkout&checkIn=${ci}&checkOut=${co}`);
       if (lcRes.ok) {
         const lcData = await lcRes.json();
         setLateCheckoutPrice(lcData.price || 500);
       }
       // Fetch early checkin price
-      const ecRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_early_checkin&checkIn=${checkIn}&checkOut=${checkOut}`);
+      const ecRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_early_checkin&checkIn=${ci}&checkOut=${co}`);
       if (ecRes.ok) {
         const ecData = await ecRes.json();
         setEarlyCheckinPrice(ecData.price || 500);
       }
     } catch { /* silent */ }
     setServicesLoading(false);
-    // Default dates to check-in
-    if (checkIn && !saunaDate) setSaunaDate(checkIn);
-    if (checkIn && !tubDate) setTubDate(checkIn);
+    if (ci && !saunaDate) setSaunaDate(ci);
+    if (ci && !tubDate) setTubDate(ci);
   }, [checkIn, checkOut, saunaDate, tubDate]);
 
-  const goToStep4 = useCallback(async () => {
-    if (!firstName.trim() || !lastName.trim() || !phone.trim()) return;
-    await fetchServices();
-    goToStep(4);
-  }, [firstName, lastName, phone, fetchServices, goToStep]);
-
-  // ─── Submit Booking (Step 4 → Step 5) ──────
+  // ─── Submit Booking (Step 3: create reservation + first Teya checkout for the room) ──────
   const submitBooking = useCallback(async () => {
     if (!checkIn || !checkOut || !selectedUnit || !firstName || !lastName || !phone) return;
     setSubmitting(true);
@@ -431,7 +462,6 @@ export default function BookingPage() {
           lastName: lastName.trim(),
           email: email.trim() || undefined,
           phone: phone.trim(),
-          gender,
           promoCode: promoApplied || undefined,
           certificateCode: certInput || undefined,
         }),
@@ -440,135 +470,137 @@ export default function BookingPage() {
         const err = await res.json();
         throw new Error(err.error || 'Failed');
       }
-      const data = await res.json();
-
-      // Persist sauna booking if added
-      if (saunaAdded && saunaDate) {
-        try {
-          await fetch(`${API_BASE}/api/booking/services`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'book-slots',
-              serviceId: 'svc_sauna',
-              date: saunaDate,
-              startHour: saunaStartHour,
-              hours: saunaHours,
-              persons: cardAdults,
-              reservationId: data.reservationId,
-              addons: saunaBroom > 0 ? [{ id: 'addon_broom', quantity: saunaBroom }] : [],
-            }),
-          });
-        } catch { /* sauna booking error — non-fatal */ }
-      }
-
-      // Persist tub booking if added
-      if (tubAdded && tubDate) {
-        try {
-          await fetch(`${API_BASE}/api/booking/services`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'book-slots',
-              serviceId: 'svc_tub',
-              date: tubDate,
-              startHour: tubStartHour,
-              hours: tubHours,
-              persons: cardAdults,
-              reservationId: data.reservationId,
-            }),
-          });
-        } catch { /* tub booking error — non-fatal */ }
-      }
-
-      // Persist breakfast booking if added
-      if (breakfastAdded) {
-        const breakfastOrder = Object.entries(breakfastItems)
-          .filter(([, qty]) => qty > 0)
-          .map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
-        if (breakfastOrder.length > 0) {
-          try {
-            await fetch(`${API_BASE}/api/booking/services`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'book-breakfast',
-                reservationId: data.reservationId,
-                items: breakfastOrder,
-                serviceDate: checkIn,
-              }),
-            });
-          } catch { /* breakfast booking error — non-fatal */ }
-        }
-      }
-
-      // Persist late checkout if selected
-      if (lateCheckout) {
-        try {
-          await fetch(`${API_BASE}/api/booking/services`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'book-toggle',
-              serviceId: 'svc_late_checkout',
-              reservationId: data.reservationId,
-            }),
-          });
-        } catch { /* non-fatal */ }
-      }
-
-      // Persist early checkin if selected
-      if (earlyCheckin) {
-        try {
-          await fetch(`${API_BASE}/api/booking/services`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'book-toggle',
-              serviceId: 'svc_early_checkin',
-              reservationId: data.reservationId,
-            }),
-          });
-        } catch { /* non-fatal */ }
-      }
+      const data = await res.json() as ReserveResponse;
 
       setReservation(data);
 
-      // Create Teya checkout session for payment
+      // Persist return context (sessionStorage) so Step 4 hydrates after Teya
+      try {
+        sessionStorage.setItem('booking-return-ctx', JSON.stringify({
+          reservationId: data.reservationId,
+          unitName: data.unitName,
+          checkIn: data.checkIn,
+          checkOut: data.checkOut,
+          nights: data.nights,
+          totalPrice: data.totalPrice,
+        }));
+      } catch { /* private mode — ok */ }
+
+      // Create Teya checkout for the ROOM only (no services yet)
       setRedirectingToPayment(true);
       try {
         const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            amount: totalWithDiscount,
+            amount: data.totalPrice,
             currency: 'CZK',
             description: `Booking ${data.reservationId} — ${data.unitName}`,
             reservation_id: data.reservationId,
-            return_path: `/booking?success=${data.reservationId}`,
+            return_path: `/booking?success=${data.reservationId}&payment_kind=room`,
           }),
         });
         if (payRes.ok) {
           const payData = await payRes.json();
           if (payData.session_url) {
             window.location.href = payData.session_url;
-            return; // Don't proceed, page will redirect
+            return;
           }
         }
-        // If checkout session fails, still show success (tentative booking)
-        console.error('Checkout session creation failed, showing tentative booking');
+        console.error('Checkout session creation failed — tentative booking');
         setRedirectingToPayment(false);
-        goToStep(5);
+        setPaymentStatus('failed');
+        setStep(4);
+        fetchServices(data.checkIn, data.checkOut);
       } catch (payErr) {
         console.error('Payment redirect error:', payErr);
         setRedirectingToPayment(false);
-        goToStep(5);
+        setPaymentStatus('failed');
+        setStep(4);
+        fetchServices(data.checkIn, data.checkOut);
       }
     } catch (e: any) {
       setError(e?.message || t.errorOccurred);
     }
     setSubmitting(false);
-  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, gender, promoApplied, certInput, t, goToStep, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, totalWithDiscount]);
+  }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, promoApplied, certInput, t, fetchServices]);
+
+  // ─── Submit Services (Step 4: write services + second Teya checkout) ──────
+  const submitServices = useCallback(async () => {
+    const resId = reservation?.reservationId;
+    if (!resId) return;
+    const nothingPicked = !saunaAdded && !tubAdded && !breakfastAdded && !lateCheckout && !earlyCheckin;
+    if (nothingPicked) { setStep(5); return; }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const post = (body: any) => fetch(`${API_BASE}/api/booking/services`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (saunaAdded && saunaDate) {
+        try { await post({
+          action: 'book-slots', serviceId: 'svc_sauna',
+          date: saunaDate, startHour: saunaStartHour, hours: saunaHours,
+          persons: cardAdults, reservationId: resId,
+          addons: saunaBroom > 0 ? [{ id: 'addon_broom', quantity: saunaBroom }] : [],
+        }); } catch { /* non-fatal */ }
+      }
+      if (tubAdded && tubDate) {
+        try { await post({
+          action: 'book-slots', serviceId: 'svc_tub',
+          date: tubDate, startHour: tubStartHour, hours: tubHours,
+          persons: cardAdults, reservationId: resId,
+        }); } catch { /* non-fatal */ }
+      }
+      if (breakfastAdded) {
+        const items = Object.entries(breakfastItems)
+          .filter(([, qty]) => qty > 0)
+          .map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
+        if (items.length > 0) {
+          try { await post({
+            action: 'book-breakfast', reservationId: resId,
+            items, serviceDate: checkIn,
+          }); } catch { /* non-fatal */ }
+        }
+      }
+      if (lateCheckout) {
+        try { await post({ action: 'book-toggle', serviceId: 'svc_late_checkout', reservationId: resId }); } catch { /* */ }
+      }
+      if (earlyCheckin) {
+        try { await post({ action: 'book-toggle', serviceId: 'svc_early_checkin', reservationId: resId }); } catch { /* */ }
+      }
+
+      if (servicesTotal > 0) {
+        setRedirectingToPayment(true);
+        const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: servicesTotal,
+            currency: 'CZK',
+            description: `Services for reservation ${resId}`,
+            reservation_id: resId,
+            return_path: `/booking?success=${resId}&payment_kind=services`,
+          }),
+        });
+        if (payRes.ok) {
+          const payData = await payRes.json();
+          if (payData.session_url) {
+            window.location.href = payData.session_url;
+            return;
+          }
+        }
+        setRedirectingToPayment(false);
+      }
+      setStep(5);
+    } catch (e: any) {
+      setError(e?.message || t.errorOccurred);
+      setRedirectingToPayment(false);
+    }
+    setSubmitting(false);
+  }, [reservation, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, cardAdults, checkIn, servicesTotal, t]);
 
   // ─── Reset ──────
   const resetForm = useCallback(() => {
@@ -578,7 +610,6 @@ export default function BookingPage() {
     setSelectingCheckOut(false);
     setAdults(2);
     setChildren(0);
-    setGender('male');
     setPromoInput('');
     setCertInput('');
     setPromoApplied('');
@@ -592,6 +623,8 @@ export default function BookingPage() {
     setReservation(null);
     setError(null);
     setCalMonthOffset(0);
+    setPurchasedServices([]);
+    try { sessionStorage.removeItem('booking-return-ctx'); } catch { /* */ }
     // Service state
     setSaunaDate(null);
     setSaunaStartHour(14);
@@ -893,37 +926,7 @@ export default function BookingPage() {
           {/* ═══════ STEP 1: Your Choice (Dates) ═══════ */}
           {step === 1 && (
             <div className="booking-fade-in">
-              {/* Nav Bar */}
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" disabled type="button">
-                  ‹ {t.back}
-                </button>
-                <button
-                  className="booking-btn-next"
-                  onClick={goToStep2}
-                  disabled={!checkIn || !checkOut || nights < 1}
-                  type="button"
-                >
-                  {t.next} ›
-                </button>
-              </div>
-
               <div className="booking-content-card">
-                <div className="booking-content-card-title">{t.enterStayData}</div>
-
-                <div className="booking-alert warning">
-                  <span className="booking-alert-icon">⚠</span>
-                  {t.fillRequired}
-                </div>
-
-                {/* Location */}
-                <div className="booking-field" style={{ marginBottom: 20 }}>
-                  <label className="booking-field-label">{t.location} <span className="booking-field-required">*</span></label>
-                  <div className="booking-field-input" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'default' }}>
-                    <span>🏕️</span> QA Glamping
-                  </div>
-                </div>
-
                 {/* Date Summary Bar */}
                 <div className="booking-field" style={{ marginBottom: 16 }}>
                   <label className="booking-field-label">{t.dates} <span className="booking-field-required">*</span></label>
@@ -1023,26 +1026,27 @@ export default function BookingPage() {
                   </div>
                 )}
               </div>
+
+              {/* Nav Bar (sticky on mobile) */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" disabled type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={goToStep2}
+                  disabled={!checkIn || !checkOut || nights < 1}
+                  type="button"
+                >
+                  {t.next} ›
+                </button>
+              </div>
             </div>
           )}
 
           {/* ═══════ STEP 2: House Selection ═══════ */}
           {step === 2 && (
             <div className="booking-fade-in">
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" onClick={() => goToStep(1)} type="button">
-                  ‹ {t.back}
-                </button>
-                <button
-                  className="booking-btn-next"
-                  onClick={goToStep3}
-                  disabled={!selectedUnit}
-                  type="button"
-                >
-                  {t.next} ›
-                </button>
-              </div>
-
               {/* Multi-house info tooltip */}
               <div className="booking-multi-house-info">
                 <span className="booking-multi-house-info-icon">ℹ</span>
@@ -1261,34 +1265,28 @@ export default function BookingPage() {
                   {error}
                 </div>
               )}
+
+              {/* Nav Bar (sticky on mobile) */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" onClick={() => goToStep(1)} type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={goToStep3}
+                  disabled={!selectedUnit}
+                  type="button"
+                >
+                  {t.next} ›
+                </button>
+              </div>
             </div>
           )}
 
           {/* ═══════ STEP 3: Personal Info ═══════ */}
           {step === 3 && (
             <div className="booking-fade-in">
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" onClick={() => goToStep(2)} type="button">
-                  ‹ {t.back}
-                </button>
-                <button
-                  className="booking-btn-next"
-                  onClick={goToStep4}
-                  disabled={!firstName.trim() || !lastName.trim() || !phone.trim()}
-                  type="button"
-                >
-                  {`${t.next} ›`}
-                </button>
-              </div>
-
               <div className="booking-content-card">
-                <div className="booking-content-card-title">{t.enterPersonalInfo}</div>
-
-                <div className="booking-alert warning">
-                  <span className="booking-alert-icon">⚠</span>
-                  {t.fillRequired}
-                </div>
-
                 {/* Name Row */}
                 <div className="booking-form-row">
                   <div className="booking-field">
@@ -1314,24 +1312,6 @@ export default function BookingPage() {
                       onChange={e => setLastName(e.target.value)}
                       placeholder={t.lastName}
                     />
-                  </div>
-                </div>
-
-                {/* Gender */}
-                <div className="booking-field" style={{ marginBottom: 16 }}>
-                  <label className="booking-field-label">{t.gender} <span className="booking-field-required">*</span></label>
-                  <div className="booking-gender-row">
-                    {(['female', 'male', 'other'] as const).map(g => (
-                      <button
-                        key={g}
-                        className={`booking-gender-option ${gender === g ? 'active' : ''}`}
-                        onClick={() => setGender(g)}
-                        type="button"
-                      >
-                        <div className="booking-gender-radio" />
-                        {g === 'female' ? t.genderFemale : g === 'male' ? t.genderMale : t.genderOther}
-                      </button>
-                    ))}
                   </div>
                 </div>
 
@@ -1372,36 +1352,34 @@ export default function BookingPage() {
                   {error}
                 </div>
               )}
+
+              {/* Nav Bar (sticky on mobile) — final Pay action on Step 3 */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button className="booking-btn-back" onClick={() => goToStep(2)} type="button">
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={submitBooking}
+                  disabled={submitting || !firstName.trim() || !lastName.trim() || !phone.trim()}
+                  type="button"
+                >
+                  {submitting ? t.processing : `${t.payAndConfirm} ›`}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* ═══════ STEP 4: Services (ULIS-Style) ═══════ */}
+          {/* ═══════ STEP 4: Upsell services (after room payment) ═══════ */}
           {step === 4 && (
             <div className="booking-fade-in">
-              <div className="booking-nav-bar">
-                <button className="booking-btn-back" onClick={() => goToStep(3)} type="button">
-                  ‹ {t.back}
-                </button>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button
-                    className="booking-btn-back"
-                    onClick={() => {
-                      setSaunaAdded(false);
-                      setBreakfastAdded(false);
-                      submitBooking();
-                    }}
-                    type="button"
-                  >
-                    {t.servicesSkip} ›
-                  </button>
-                  <button
-                    className="booking-btn-next"
-                    onClick={submitBooking}
-                    disabled={submitting || (!saunaAdded && !breakfastAdded)}
-                    type="button"
-                  >
-                    {submitting ? t.processing : `${t.confirmBooking} ›`}
-                  </button>
+              <div className="booking-alert success booking-confirmed-banner">
+                <span className="booking-alert-icon">✓</span>
+                <div>
+                  <strong>{t.bookingConfirmedTitle}</strong>
+                  <div style={{ fontSize: 13, marginTop: 2, color: 'var(--bk-text-muted)' }}>
+                    {t.bookingConfirmedDesc}
+                  </div>
                 </div>
               </div>
 
@@ -1801,6 +1779,7 @@ export default function BookingPage() {
                       {t.serviceTotal}: <strong>{formatPrice(servicesTotal)} Kč</strong>
                     </div>
                   )}
+
                 </>
               )}
 
@@ -1810,6 +1789,25 @@ export default function BookingPage() {
                   {error}
                 </div>
               )}
+
+              {/* Nav Bar (sticky on mobile) — Skip vs Confirm services */}
+              <div className="booking-nav-bar sticky-mobile">
+                <button
+                  className="booking-btn-back"
+                  onClick={() => setStep(5)}
+                  type="button"
+                >
+                  {t.skipToThankYou}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={submitServices}
+                  disabled={submitting || (!saunaAdded && !tubAdded && !breakfastAdded && !lateCheckout && !earlyCheckin)}
+                  type="button"
+                >
+                  {submitting ? t.processing : `${t.confirmServices} ›`}
+                </button>
+              </div>
             </div>
           )}
 
@@ -1870,6 +1868,20 @@ export default function BookingPage() {
                         <span><strong>{t.total}</strong></span>
                         <span><strong>{formatPrice(reservation.totalPrice)} Kč</strong></span>
                       </div>
+                    </div>
+                  )}
+
+                  {purchasedServices.length > 0 && (
+                    <div className="booking-purchased-services">
+                      <div className="booking-purchased-services-title">{t.purchasedServicesTitle}</div>
+                      <ul>
+                        {purchasedServices.map((s) => (
+                          <li key={s.id}>
+                            <span>{s.service_name || s.service_id}</span>
+                            <strong>{formatPrice(s.total_price || 0)} Kč</strong>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
 

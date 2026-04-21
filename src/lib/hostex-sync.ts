@@ -297,6 +297,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
     const activeToken = newToken || existingToken;
     if (activeToken) {
       const guestPageUrl = `${PMS_BASE_URL}/guest/${activeToken}`;
+      // Only update if URL changed (avoid unnecessary API calls)
       const currentUrl = (res.custom_fields as any)?.guest_page_url || '';
       if (currentUrl !== guestPageUrl) {
         updateReservationCustomField(res.stay_code, { guest_page_url: guestPageUrl }).catch(() => {});

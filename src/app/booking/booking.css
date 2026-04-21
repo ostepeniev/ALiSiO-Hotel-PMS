@@ -543,6 +543,29 @@
   cursor: default;
 }
 
+/* ─── Inline "skip services" link on Step 4 ────────── */
+.booking-services-skip {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px 0 4px;
+}
+
+.booking-btn-skip-link {
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  font-family: var(--bk-font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bk-text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.booking-btn-skip-link:hover {
+  color: var(--bk-text);
+}
+
 /* ─── Content Cards ────────────────────────────────── */
 .booking-content-card {
   background: var(--bk-card);
@@ -1488,63 +1511,57 @@
   color: var(--bk-text-muted);
 }
 
-/* Gender Radio */
-.booking-gender-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+/* ─── Step 4 "Booking confirmed" banner ───────────── */
+.booking-confirmed-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
   margin-bottom: 16px;
-}
-
-.booking-gender-option {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--bk-border);
   border-radius: var(--bk-radius-sm);
-  cursor: pointer;
-  font-size: 14px;
-  font-family: var(--bk-font);
-  transition: all 0.2s;
-  background: var(--bk-card);
+  background: #eafaf1;
+  border-left: 4px solid #34a85a;
+  color: #0f5132;
 }
 
-.booking-gender-option:hover {
-  border-color: var(--bk-text-muted);
+.booking-confirmed-banner .booking-alert-icon {
+  color: #34a85a;
 }
 
-.booking-gender-option.active {
-  border-color: var(--bk-primary);
-  background: var(--bk-primary);
-  color: #fff;
+/* ─── Step 5: Purchased services list ──────────────── */
+.booking-purchased-services {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--bk-bg);
+  border-radius: var(--bk-radius-sm);
+  text-align: left;
 }
 
-.booking-gender-radio {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--bk-border);
-  background: var(--bk-card);
+.booking-purchased-services-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bk-text-muted);
+  margin-bottom: 8px;
+}
+
+.booking-purchased-services ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.booking-purchased-services li {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.2s;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bk-border-light);
+  font-size: 14px;
 }
 
-.booking-gender-option.active .booking-gender-radio {
-  border-color: #fff;
-  background: #fff;
-}
-
-.booking-gender-option.active .booking-gender-radio::after {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--bk-primary);
+.booking-purchased-services li:last-child {
+  border-bottom: none;
 }
 
 /* ─── Step 5: Success ──────────────────────────────── */
@@ -1724,13 +1741,37 @@
   .booking-form-row {
     grid-template-columns: 1fr;
   }
-  
-  .booking-gender-row {
-    grid-template-columns: 1fr;
-  }
 
   .booking-codes-row {
     flex-direction: column;
+  }
+
+  /* Fix: expanded house-card footer on mobile was overflowing right.
+     Stack price summary above the action buttons; make buttons share width. */
+  .booking-house-expanded-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .booking-house-dynamic-price {
+    text-align: left;
+    order: -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .booking-house-dynamic-total {
+    justify-content: flex-start;
+  }
+
+  .booking-house-expanded-actions {
+    width: 100%;
+  }
+
+  .booking-house-expanded-actions > button {
+    flex: 1 1 0;
+    min-width: 0;
   }
   
   .booking-dates-bar {
@@ -1761,6 +1802,42 @@
   .booking-btn-next {
     width: 100%;
     justify-content: center;
+  }
+
+  /* Sticky-to-bottom variant: nav-bar with this class becomes a fixed
+     footer on mobile so Back/Next are always under the thumb. */
+  .booking-nav-bar.sticky-mobile {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200;
+    flex-direction: row;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--bk-card);
+    border-top: 1px solid var(--bk-border);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .booking-nav-bar.sticky-mobile .booking-btn-back,
+  .booking-nav-bar.sticky-mobile .booking-btn-next {
+    flex: 1 1 0;
+    width: auto;
+    padding: 14px 16px;
+    justify-content: center;
+  }
+
+  /* On Step 1 the Back button is disabled — hide it so Next takes
+     the full footer width. */
+  .booking-nav-bar.sticky-mobile .booking-btn-back:disabled {
+    display: none;
+  }
+
+  /* Reserve space at the bottom so sticky nav-bar doesn't cover content. */
+  .booking-layout {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
 }
 

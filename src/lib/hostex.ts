@@ -296,10 +296,11 @@ export async function updateReservationRemarks(stayCode: string, remarks: string
 }
 
 /**
- * Write custom fields to a Hostex reservation.
- * Fields are referenceable in Hostex automated message templates as {{cf.field_name}}.
+ * Write a custom field to a Hostex reservation.
+ * Custom fields can be referenced in Hostex automated message templates as {{cf.field_name}}.
  *
- * Usage: set guest_page_url → use {{cf.guest_page_url}} in Hostex message templates.
+ * Example: set guest_page_url → use {{cf.guest_page_url}} in Hostex message templates.
+ *
  * API docs: https://hostex-openapi.readme.io/reference/custom-fields-guide
  */
 export async function updateReservationCustomField(
@@ -323,6 +324,7 @@ export async function updateReservationCustomField(
     return false;
   }
 }
+
 
 // ─── Exchange rate (ČNB mid-rate EUR/CZK) ─────────────────
 
