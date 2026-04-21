@@ -6,6 +6,7 @@
 import OpenAI from 'openai';
 import { getDb } from '@/lib/db';
 import { sendDraftApproval } from '@/lib/channels/telegram-bot';
+import { searchKnowledge, buildKnowledgeContext, assessQuestionConfidence } from '@/lib/crm/knowledge-base';
 import crypto from 'crypto';
 
 /* ────────────────────────────────────────────────────────
@@ -95,12 +96,21 @@ export async function generateAutoResponse(opts: {
       return `${role}: ${m.content}`;
     }).join('\n');
 
+    // Search knowledge base for relevant articles
+    const knowledgeArticles = searchKnowledge(opts.content);
+    const knowledgeContext = buildKnowledgeContext(knowledgeArticles);
+
+    // Assess question confidence
+    const hasPriceData = !!(lead?.check_in_date && lead?.adults);
+    const confidence = assessQuestionConfidence(opts.content, knowledgeArticles.length, hasPriceData);
+
     // Build prompt
     const systemPrompt = buildAutoResponsePrompt({
       property,
       lead,
       masterPrompt,
       stagePrompt,
+      knowledgeContext,
       history: historyText,
       language: opts.language,
     });
@@ -137,6 +147,9 @@ export async function generateAutoResponse(opts: {
 
     // Send to Telegram for approval
     const accountLabel = opts.accountId === 'gmail' ? 'Gmail' : 'Email.cz';
+    const confidenceLabel = confidence === 'unknown' ? '⚠️ НЕСТАНДАРТНЕ ПИТАННЯ — перевірте відповідь!' 
+      : confidence === 'uncertain' ? '🔶 Часткова відповідність — рекомендую перевірити'
+      : '';
     const tgMsgId = await sendDraftApproval({
       draftId,
       guestName: opts.guestName,
@@ -146,6 +159,7 @@ export async function generateAutoResponse(opts: {
       proposedResponse: draftUk,
       language: opts.language,
       accountLabel,
+      confidenceLabel,
     });
 
     if (tgMsgId) {
@@ -176,10 +190,11 @@ function buildAutoResponsePrompt(opts: {
   lead: any;
   masterPrompt: any;
   stagePrompt: any;
+  knowledgeContext: string;
   history: string;
   language: string;
 }): string {
-  const { property, lead, masterPrompt, stagePrompt, history } = opts;
+  const { property, lead, masterPrompt, stagePrompt, knowledgeContext, history } = opts;
   const today = new Date().toISOString().split('T')[0];
 
   // Determine property name based on lead context
@@ -245,9 +260,10 @@ ${lead?.reservation_status ? `- Статус бронювання: ${lead.reserv
 ${history || 'Це перше повідомлення від гостя.'}
 
 ## ЗАДАЧА
-Згенеруй ПОВНУ відповідь на повідомлення гостя УКРАЇНСЬКОЮ мовою. Не обрізай текст.`;
+Згенеруй ПОВНУ відповідь на повідомлення гостя УКРАЇНСЬКОЮ мовою. Не обрізай текст.
+Якщо питання виходить за межі наявної інформації (прайси, база знань) — НЕ ВИГАДУЙ. Скажи що уточниш у адміністратора і зв'яжешся.`;
 
-  return [systemContext, masterSection, stageSection, stageContext, leadContext, masterContext, historySection]
+  return [systemContext, masterSection, knowledgeContext, stageSection, stageContext, leadContext, masterContext, historySection]
     .filter(Boolean)
     .join('\n');
 }

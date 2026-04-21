@@ -126,12 +126,14 @@ export async function sendDraftApproval(opts: {
   proposedResponse: string;
   language: string;
   accountLabel: string;
+  confidenceLabel?: string;
 }): Promise<number | null> {
   const queryPreview = opts.originalQuery.substring(0, 500);
   const responsePreview = opts.proposedResponse.substring(0, 2000);
 
   const text = [
     `📩 <b>Новий запит</b> | ${opts.accountLabel}`,
+    ...(opts.confidenceLabel ? [`\n${opts.confidenceLabel}\n`] : []),
     ``,
     `👤 <b>${escapeHtml(opts.guestName)}</b> (${escapeHtml(opts.guestEmail)})`,
     `📋 <b>Тема:</b> ${escapeHtml(opts.subject)}`,

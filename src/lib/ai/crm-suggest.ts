@@ -6,6 +6,7 @@
  */
 import OpenAI from 'openai';
 import { getDb } from '@/lib/db';
+import { searchKnowledge, buildKnowledgeContext } from '@/lib/crm/knowledge-base';
 
 /* ────────────────────────────────────────────────────────
    Stage-specific default prompts (fallback when no custom)
@@ -197,6 +198,16 @@ ${stageHistory.length > 0 ? stageHistory.map(h => `  ${h.from_stage || '—'} �
 ## PRICING & CALCULATION RULES (Master)
 ${masterInstructions}
 
+${(() => {
+  // Search knowledge base using last guest message
+  const lastGuestMsg = messages.filter(m => m.direction === 'inbound').pop();
+  if (lastGuestMsg) {
+    const kbArticles = searchKnowledge(lastGuestMsg.content);
+    return buildKnowledgeContext(kbArticles);
+  }
+  return '';
+})()}
+
 ## STAGE-SPECIFIC INSTRUCTIONS (${lead.stage})
 ${stageInstructions}
 ${contextInstructions ? `\n### Additional context:\n${contextInstructions}` : ''}
@@ -212,7 +223,8 @@ Generate a reply to send to the guest. The reply should:
 4. Include relevant booking/property information when helpful
 5. End with a clear call-to-action or question when appropriate
 6. Do NOT include salutation line like "Subject:" or "Dear..." unless it's an email format
-7. Do NOT include your own signature — the staff will add it`;
+6. Do NOT include your own signature — the staff will add it
+8. If the question goes beyond available information (pricing, knowledge base) — DO NOT make up an answer. Say you will check with the administrator and get back to them.`;
 }
 
 /* ────────────────────────────────────────────────────────
