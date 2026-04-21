@@ -17,6 +17,7 @@ import {
   UserCheck,
   Code2,
   Sparkles,
+  Brain,
 } from 'lucide-react';
 
 const settingsItems = [
@@ -61,6 +62,13 @@ const settingsItems = [
     icon: <Sparkles size={22} />,
     href: '/settings/services',
     color: 'orange',
+  },
+  {
+    title: 'AI База знань',
+    desc: 'Навчання AI-рецепціоніста: знання, правила, відповіді',
+    icon: <Brain size={22} />,
+    href: '/settings/ai-knowledge',
+    color: 'purple',
   },
   {
     title: 'Шаблони документів',
