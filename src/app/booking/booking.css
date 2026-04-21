@@ -1511,6 +1511,59 @@
   color: var(--bk-text-muted);
 }
 
+/* ─── Step 4 "Booking confirmed" banner ───────────── */
+.booking-confirmed-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--bk-radius-sm);
+  background: #eafaf1;
+  border-left: 4px solid #34a85a;
+  color: #0f5132;
+}
+
+.booking-confirmed-banner .booking-alert-icon {
+  color: #34a85a;
+}
+
+/* ─── Step 5: Purchased services list ──────────────── */
+.booking-purchased-services {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--bk-bg);
+  border-radius: var(--bk-radius-sm);
+  text-align: left;
+}
+
+.booking-purchased-services-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bk-text-muted);
+  margin-bottom: 8px;
+}
+
+.booking-purchased-services ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.booking-purchased-services li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--bk-border-light);
+  font-size: 14px;
+}
+
+.booking-purchased-services li:last-child {
+  border-bottom: none;
+}
+
 /* ─── Step 5: Success ──────────────────────────────── */
 .booking-success {
   text-align: center;
