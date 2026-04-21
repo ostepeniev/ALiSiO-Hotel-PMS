@@ -157,6 +157,38 @@ export async function syncReservations(): Promise<SyncResult> {
   return result;
 }
 
+/**
+ * Sync a single reservation by its code — used by webhook handler.
+ * Uses ?reservation_code= filter which BYPASSES the 20-record global cap.
+ * Much faster than a full sync for real-time webhook processing.
+ */
+export async function syncSingleReservation(reservationCode: string): Promise<SyncResult> {
+  const db = getDb();
+  const result: SyncResult = { synced: 0, created: 0, updated: 0, skipped: 0, errors: [], eurCzkRate: 25.2 };
+
+  try {
+    const { getReservationByCode, getEurCzkRate: fetchRate } = await import('./hostex');
+    result.eurCzkRate = await fetchRate();
+    ensureHostexColumns(db);
+
+    const reservation = await getReservationByCode(reservationCode);
+    if (!reservation) {
+      result.errors.push(`Reservation ${reservationCode} not found in Hostex API`);
+      console.warn(`[Hostex Sync] Reservation ${reservationCode} not found`);
+      return result;
+    }
+
+    await processReservation(db, reservation, result);
+    logSync(db, 'webhook', result.errors.length === 0 ? 'success' : 'partial', result.synced, result.errors.join('; '));
+    console.log(`[Hostex Sync] Webhook sync done for ${reservationCode}: created=${result.created} updated=${result.updated}`);
+  } catch (e: any) {
+    result.errors.push(e.message);
+    console.error('[Hostex Sync] syncSingleReservation error:', e.message);
+  }
+
+  return result;
+}
+
 // ─── Process single reservation ───────────────────────────
 
 async function processReservation(db: any, res: HostexReservation, result: SyncResult) {

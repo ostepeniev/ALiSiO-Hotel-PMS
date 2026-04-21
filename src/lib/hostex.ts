@@ -175,6 +175,7 @@ export async function getReservations(params?: {
   check_out_date_start?: string;
   check_out_date_end?: string;
   property_id?: number;
+  reservation_code?: string; // ← fetch a single reservation by its code (bypasses 20-record cap!)
 }): Promise<{ reservations: HostexReservation[]; total: number; page: number; per_page: number }> {
   await rateLimitWait();
   const query = new URLSearchParams();
@@ -241,11 +242,25 @@ export async function getAllReservations(): Promise<HostexReservation[]> {
 }
 
 
-/** Get single reservation by stay_code */
+/**
+ * Get single reservation by stay_code (only works for hostex_direct reservations).
+ * For Airbnb/Booking.com reservations, use getReservationByCode() instead.
+ */
 export async function getReservation(stayCode: string): Promise<HostexReservation | null> {
   await rateLimitWait();
   const res = await hostexRequest<HostexReservation>('GET', `/reservations/${stayCode}`);
   return res.data || null;
+}
+
+/**
+ * Fetch a specific reservation by reservation_code using the ?reservation_code= filter.
+ * This BYPASSES the 20-record API cap and works for all channel types (Airbnb, Booking.com, etc.)
+ * Use this when you have a specific reservation_code from a webhook payload.
+ */
+export async function getReservationByCode(reservationCode: string): Promise<HostexReservation | null> {
+  await rateLimitWait();
+  const result = await getReservations({ reservation_code: reservationCode });
+  return result.reservations[0] || null;
 }
 
 /** Create reservation in Hostex (for push sync) */

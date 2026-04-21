@@ -1,24 +1,24 @@
 /**
- * Hostex Webhook Receiver
- * POST /api/webhooks/hostex
+ * Hostex Webhook Receiver — POST /api/webhooks/hostex
  *
  * Docs: https://hostex-openapi.readme.io/reference/webhook-useage-guide
  *
- * CRITICAL: Must respond with 200 within 3 seconds or Hostex disables the webhook.
- * So we respond immediately and process async in background (fire-and-forget).
+ * CRITICAL: Respond within 3 seconds or Hostex disables the webhook.
+ * → Respond 200 immediately, process in background (fire-and-forget).
  *
- * Payload format (from docs):
- * { "event": "reservation_created", "reservation_code": "...", "stay_code": "...", "timestamp": "..." }
+ * Payload: { event, reservation_code, stay_code, timestamp }
+ * Security header: Hostex-Webhook-Secret-Token
  *
- * Security: Hostex sends "Hostex-Webhook-Secret-Token" header with a fixed token per webhook URL.
+ * Strategy: use ?reservation_code= to fetch the exact reservation —
+ * bypasses the 20-record global cap that breaks bulk syncs.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { syncReservations } from '@/lib/hostex-sync';
+import { syncSingleReservation, syncReservations } from '@/lib/hostex-sync';
 
 const WEBHOOK_SECRET = process.env.HOSTEX_WEBHOOK_SECRET || '';
 
 export async function POST(request: NextRequest) {
-  // ─── 1. Parse body immediately ────────────────────────────
+  // 1. Parse body
   let payload: Record<string, any>;
   try {
     payload = await request.json();
@@ -26,46 +26,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // ─── 2. Verify secret token (optional but recommended) ───
+  // 2. Verify Hostex-Webhook-Secret-Token (optional but recommended)
   const incomingToken = request.headers.get('Hostex-Webhook-Secret-Token') || '';
   if (WEBHOOK_SECRET && incomingToken !== WEBHOOK_SECRET) {
-    console.warn('[Hostex Webhook] Invalid token:', incomingToken);
-    // Still return 200 to avoid Hostex disabling the webhook due to auth errors
-    // Change to 401 once you've confirmed the token value
+    console.warn('[Hostex Webhook] Unexpected token:', incomingToken);
+    // Return 200 anyway — avoid Hostex disabling the webhook on auth errors
   }
 
   const event = payload.event || '';
   const reservationCode = payload.reservation_code || '';
-  const stayCode = payload.stay_code || '';
 
-  console.log(`[Hostex Webhook] Event: ${event} | code: ${reservationCode} | stay: ${stayCode}`);
+  console.log(`[Hostex Webhook] ${event} | code: ${reservationCode}`);
 
-  // ─── 3. Respond immediately with 200 (Hostex requires <3s) ─
-  // Process in background — do NOT await here
+  // 3. Respond IMMEDIATELY with 200 (Hostex timeout = 3s)
   if (event === 'reservation_created' || event === 'reservation_updated') {
     setImmediate(async () => {
       try {
-        console.log(`[Hostex Webhook] Background sync triggered by ${event}...`);
-        await syncReservations();
-        console.log(`[Hostex Webhook] Sync complete for ${event}: ${reservationCode}`);
+        if (reservationCode) {
+          // Targeted: fetch exactly this reservation by code (bypasses 20-record cap)
+          await syncSingleReservation(reservationCode);
+        } else {
+          // Fallback: full sync if no code in payload
+          await syncReservations();
+        }
       } catch (e: any) {
-        console.error('[Hostex Webhook] Background sync error:', e.message);
+        console.error('[Hostex Webhook] Background error:', e.message);
       }
     });
   }
-  // For other events (calendar, messages, reviews) — no action needed
 
   return NextResponse.json({ ok: true, event, code: reservationCode });
 }
 
-// ─── GET: show webhook status ───────────────────────────────
 export async function GET() {
   return NextResponse.json({
     endpoint: '/api/webhooks/hostex',
     status: 'active',
-    docs: 'https://hostex-openapi.readme.io/reference/webhook-useage-guide',
-    events_handled: ['reservation_created', 'reservation_updated'],
+    strategy: '?reservation_code= targeted fetch — bypasses 20-record cap',
+    events: ['reservation_created', 'reservation_updated'],
     security: 'Hostex-Webhook-Secret-Token header',
-    note: 'Responds immediately (<3s), processes sync in background',
   });
 }
