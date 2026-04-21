@@ -12,6 +12,7 @@ import {
   Smartphone, Truck, Tent, DollarSign, ExternalLink,
   Users, Zap, FileText,
   Sparkles, PanelRightOpen, PanelRightClose,
+  Brain,
 } from 'lucide-react';
 import '../crm.css';
 
@@ -405,6 +406,8 @@ export default function CrmInboxPage() {
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [aiSuggesting, setAiSuggesting] = useState(false);
   const [aiDraft, setAiDraft] = useState<string | null>(null);
+  const [showKnowledgeModal, setShowKnowledgeModal] = useState<any | null>(null);
+  const [savingKnowledge, setSavingKnowledge] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -541,6 +544,18 @@ export default function CrmInboxPage() {
     setSending(false);
   };
 
+  const handleSaveToKnowledge = async (form: any) => {
+    setSavingKnowledge(true);
+    try {
+      await fetch('/api/crm/ai/knowledge', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      setShowKnowledgeModal(null);
+    } catch { /* */ }
+    setSavingKnowledge(false);
+  };
+
   const filteredLeads = leads.filter(l => {
     if (!search) return true;
     const s = search.toLowerCase();
@@ -669,6 +684,20 @@ export default function CrmInboxPage() {
                                   <span>{msg.staff_name || msg.sender_name || (isInbound ? 'Гість' : 'Ви')}</span>
                                   <span>·</span>
                                   <span>{formatDateTime(msg.created_at)}</span>
+                                  <span>·</span>
+                                  <button
+                                    onClick={() => setShowKnowledgeModal({
+                                      topic: '',
+                                      keywords: '',
+                                      content: msg.content,
+                                      category: 'general',
+                                      isActive: true,
+                                    })}
+                                    className="inbox-msg-action-btn"
+                                    title="Додати в базу знань"
+                                  >
+                                    <Brain size={10} /> Знання
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -737,8 +766,69 @@ export default function CrmInboxPage() {
               </div>
             </>
           )}
+          {showKnowledgeModal && (
+            <KnowledgeAddModal
+              initialData={showKnowledgeModal}
+              onClose={() => setShowKnowledgeModal(null)}
+              onSave={handleSaveToKnowledge}
+              loading={savingKnowledge}
+            />
+          )}
         </div>
       </div>
     </>
+  );
+}
+
+function KnowledgeAddModal({ initialData, onClose, onSave, loading }: any) {
+  const [topic, setTopic] = useState(initialData.topic || '');
+  const [keywords, setKeywords] = useState(initialData.keywords || '');
+  const [content, setContent] = useState(initialData.content || '');
+  const [category, setCategory] = useState(initialData.category || 'general');
+
+  return (
+    <div className="crm-modal-overlay">
+      <div className="crm-modal-content" style={{ maxWidth: 500 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Brain size={18} /> Додати в базу знань
+          </h3>
+          <button onClick={onClose} className="btn btn-ghost" style={{ padding: 4 }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Тема</label>
+            <input className="form-input" value={topic} onChange={e => setTopic(e.target.value)} placeholder="Напр: QA Glamping / WiFi" />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Ключові слова (через кому)</label>
+            <input className="form-input" value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="wifi, internet, login" />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Зміст (інформація для AI)</label>
+            <textarea className="form-input" rows={6} value={content} onChange={e => setContent(e.target.value)} style={{ resize: 'vertical' }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' }}>Категорія</label>
+            <select className="form-select" value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="general">Загальне</option>
+              <option value="properties">Об'єкти</option>
+              <option value="logistics">Логістика</option>
+              <option value="rules">Правила</option>
+              <option value="services">Сервіси</option>
+              <option value="activities">Активності</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+          <button className="btn btn-secondary" onClick={onClose}>Скасувати</button>
+          <button className="btn btn-primary" onClick={() => onSave({ topic, keywords, content, category, isActive: true })} disabled={loading || !topic.trim() || !keywords.trim() || !content.trim()}>
+            {loading ? 'Зберігаю...' : 'Зберегти в базу'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
