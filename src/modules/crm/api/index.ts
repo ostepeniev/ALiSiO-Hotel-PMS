@@ -14,3 +14,4 @@ export { pollEmails } from './email-poll.handlers';
 export { testEmail } from './email-test.handlers';
 export { pollTelegram } from './telegram-poll.handlers';
 export { handleTelegramCallback } from './telegram-callback.handlers';
+export { queryAi } from './ai-query.handlers';

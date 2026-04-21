@@ -14,3 +14,7 @@ export { createWidgetReservation, createWidgetReservationOptions } from './widge
 export { createWidgetCheckoutSession, createCheckoutSessionOptions } from './widget-checkout.handlers';
 export { handlePaymentReturn } from './widget-payment-return.handlers';
 export { getWidgetServices, bookWidgetService, getWidgetServicesOptions } from './widget-services.handlers';
+export { listAdditionalServices, createAdditionalService, updateAdditionalService, deleteAdditionalService } from './additional-services.handlers';
+export { listAvailabilityBlocks, deleteAvailabilityBlock } from './availability-blocks.handlers';
+export { listServiceOrders, updateServiceOrder } from './service-orders.handlers';
+export { getWidgetCalendar, getWidgetCalendarOptions } from './widget-calendar-public.handlers';

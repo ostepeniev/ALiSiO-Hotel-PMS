@@ -2267,6 +2267,25 @@ function seedData(database: any) {
   insertRes.run('r007', propId, 'u_d3', 'g007', '2026-03-10', '2026-03-12', 2, 1, 0, 'checked_out', 'paid', 'direct', 2800);
   insertRes.run('r008', propId, 'u_d7', 'g008', '2026-03-11', '2026-03-18', 7, 2, 1, 'confirmed', 'prepaid', 'whatsapp', 11200);
 
+  // --- Migration: create invoices table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY,
+      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      invoice_number TEXT NOT NULL UNIQUE,
+      issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+      due_date TEXT,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued', 'cancelled')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_reservation ON invoices(reservation_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_issued ON invoices(issued_at)');
+
   // Seed demo payments / transactions
   const insertPay = database.prepare('INSERT INTO payments (id, reservation_id, amount, method, type, status, paid_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   // r001 Jan Novák — fully paid by card (8800)

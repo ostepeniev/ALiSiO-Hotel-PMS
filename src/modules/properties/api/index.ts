@@ -39,6 +39,12 @@ export {
   deleteCategory,
 } from './categories.handlers';
 
+export { listGuestPageConfigs } from './guest-page-configs.handlers';
+export { getGuestPageConfig, updateGuestPageConfig } from './guest-page-config.handlers';
+export { listPropertyGuestConfigs, updatePropertyGuestConfig } from './property-guest-config.handlers';
+export { getWidgetConfig, getWidgetConfigOptions } from './widget-config-public.handlers';
+export { uploadPhoto, deletePhoto } from './photos.handlers';
+
 // Public types
 export type {
   Property,

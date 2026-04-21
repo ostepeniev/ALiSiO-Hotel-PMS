@@ -9,3 +9,8 @@ export { hostexWebhook, hostexWebhookInfo } from './webhook-hostex.handlers';
 export { teyaWebhook } from './webhook-teya.handlers';
 export { teyaBotWebhook } from './webhook-teya-bot.handlers';
 export { hostexSync, hostexSyncStatus, hostexReservations, hostexProperties, hostexBulkSync } from './hostex.handlers';
+export { listIcalChannels, createIcalChannel } from './ical-channels.handlers';
+export { updateIcalChannel, deleteIcalChannel } from './ical-channel.handlers';
+export { syncIcal } from './ical-sync.handlers';
+export { runIcalCron } from './ical-cron.handlers';
+export { exportIcal } from './ical-export.handlers';

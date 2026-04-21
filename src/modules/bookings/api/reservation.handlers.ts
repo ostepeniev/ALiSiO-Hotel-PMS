@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
+import { generateInvoiceForReservation } from '@/lib/invoices';
 
 export async function getReservation(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -109,6 +110,11 @@ export async function updateReservation(request: NextRequest, { params }: { para
           .run(`al_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, id, log.action, log.details);
       }
     } catch { /* non-critical */ }
+
+    // Auto-generate invoice when payment_status is manually set to 'paid'
+    if (body.payment_status === 'paid') {
+      generateInvoiceForReservation(id);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

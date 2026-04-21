@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { generateInvoiceForReservation } from '@/lib/invoices';
+
 
 function recalcPaymentStatus(db: any, reservationId: string) {
   const res = db.prepare('SELECT total_price FROM reservations WHERE id = ?').get(reservationId) as { total_price: number } | undefined;
@@ -12,7 +14,13 @@ function recalcPaymentStatus(db: any, reservationId: string) {
   else if (paidRow.paid >= res.total_price) newStatus = 'paid';
   else newStatus = 'prepaid';
   db.prepare('UPDATE reservations SET payment_status = ? WHERE id = ?').run(newStatus, reservationId);
+
+  // Auto-generate invoice when reservation becomes fully paid
+  if (newStatus === 'paid') {
+    generateInvoiceForReservation(reservationId);
+  }
 }
+
 
 function recalcGroupPaymentStatus(db: any, groupId: string) {
   const group = db.prepare('SELECT total_price FROM reservation_groups WHERE id = ?').get(groupId) as any;
