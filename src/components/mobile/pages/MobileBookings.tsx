@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Search, RefreshCw, Phone, Plus, X } from 'lucide-react';
+import { Search, RefreshCw, Phone, Plus, X, LogIn, LogOut } from 'lucide-react';
 import BookingViewModal from '@/components/booking/BookingViewModal';
 
 interface BookingRow {
@@ -16,7 +16,7 @@ interface BookingRow {
   city_tax_included: number; city_tax_paid: string;
   registration_status: string; nationality: string | null;
   unit_id: string; unit_type_id: string; category_id: string; category_name: string;
-  guest_id: string; notes: string | null;
+  guest_id: string; notes: string | null; cleaning_status: string | null;
 }
 
 interface UnitRow {
@@ -377,9 +377,11 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
         filtered.map(b => {
           const st = STATUS_MAP[b.status] || STATUS_MAP.draft;
           const pay = PAY_MAP[b.payment_status] || PAY_MAP.unpaid;
+          const cleanLabel = b.cleaning_status === 'clean' ? 'Чисто' : b.cleaning_status === 'dirty' ? 'Брудно' : b.cleaning_status === 'in_progress' ? 'В процесі' : null;
+          const cleanColor = b.cleaning_status === 'clean' ? '#22c55e' : b.cleaning_status === 'dirty' ? '#ef4444' : '#f59e0b';
           return (
-            <div key={b.id} className="m-card" onClick={() => openBooking(b)} style={{ padding: '12px 14px', cursor: 'pointer' }}>
-              <div className="m-card-row">
+            <div key={b.id} className="m-card" style={{ padding: '12px 14px', cursor: 'pointer' }}>
+              <div className="m-card-row" onClick={() => openBooking(b)}>
                 <div style={{ flex: 1 }}>
                   <div className="m-card-title">{b.first_name} {b.last_name}</div>
                   <div className="m-card-subtitle">
@@ -395,11 +397,36 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
                   </span>
                 </div>
               </div>
-              {b.guest_phone && (
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Phone size={10} /> {b.guest_phone}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {b.guest_phone && (
+                    <a href={`tel:${b.guest_phone}`} onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 3, textDecoration: 'none' }}>
+                      <Phone size={10} /> {b.guest_phone}
+                    </a>
+                  )}
+                  {cleanLabel && (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 8, background: `${cleanColor}18`, color: cleanColor }}>
+                      {cleanLabel}
+                    </span>
+                  )}
                 </div>
-              )}
+                {b.status === 'confirmed' && (
+                  <button
+                    onClick={e => { e.stopPropagation(); handleChangeStatus(b.id, 'checked_in'); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, border: 'none', background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <LogIn size={12} /> Заселити
+                  </button>
+                )}
+                {b.status === 'checked_in' && (
+                  <button
+                    onClick={e => { e.stopPropagation(); handleChangeStatus(b.id, 'checked_out'); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, border: 'none', background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <LogOut size={12} /> Виселити
+                  </button>
+                )}
+              </div>
             </div>
           );
         })
