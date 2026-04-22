@@ -27,15 +27,47 @@ export async function handlePaymentReturn(req: Request) {
         WHERE payment_id = ? AND payment_status IN ('pending', 'none')
       `).run(sessionId);
 
-      const returnUrl = new URL(returnPath, url.origin);
-      const reservationId = returnUrl.searchParams.get('success');
+      // reservation_id can come from URL query param OR embedded in return path
+      const reservationId = url.searchParams.get('reservation_id')
+        || new URL(returnPath, url.origin).searchParams.get('success');
+
       let resResult = { changes: 0 };
       if (reservationId) {
+        // Update tentative → confirmed+paid, OR confirmed → paid (for direct booking payments)
         resResult = db.prepare(`
           UPDATE reservations
-          SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now')
+          SET payment_status = 'paid', updated_at = datetime('now')
+          WHERE id = ? AND payment_status IN ('unpaid', 'payment_requested', 'prepaid')
+        `).run(reservationId);
+
+        // Also update tentative status to confirmed
+        db.prepare(`
+          UPDATE reservations SET status = 'confirmed', updated_at = datetime('now')
           WHERE id = ? AND status = 'tentative'
         `).run(reservationId);
+
+        // Record payment in payments table for booking payments (source=guest_booking_payment)
+        if (resResult.changes > 0) {
+          try {
+            const res = db.prepare('SELECT total_price, currency, unit_name FROM reservations r LEFT JOIN units u ON r.unit_id = u.id WHERE r.id = ?').get(reservationId) as any;
+            if (res) {
+              const payId = `pay_booking_${Date.now()}`;
+              db.prepare(`
+                INSERT OR IGNORE INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
+                VALUES (?, ?, ?, ?, 'online', 'full', 'completed', datetime('now'), 'Guest page Teya payment', 1)
+              `).run(payId, reservationId, res.total_price, res.currency || 'CZK');
+
+              const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+              sendTelegramMessage([
+                `💳 <b>Оплата бронювання підтверджена</b>`,
+                ``,
+                `🏠 ${esc(res.unit_name || '')}`,
+                `💰 ${res.total_price} ${res.currency || 'CZK'} — ✅ Оплачено`,
+                `🔗 Teya session: ${sessionId}`,
+              ].join('\n')).catch(() => {});
+            }
+          } catch (e: any) { console.error('[Payment Return] Booking payment record error:', e.message); }
+        }
       }
 
       db.prepare(`

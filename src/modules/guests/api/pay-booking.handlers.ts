@@ -1,0 +1,107 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@core/db';
+import { createCheckoutSession } from '@/lib/teya';
+import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+
+export async function payForBooking(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> },
+): Promise<NextResponse> {
+  try {
+    const { token } = await params;
+    const db = getDb();
+
+    // ── Resolve reservation by guest_page_token ─────────────────
+    const reservation = db.prepare(`
+      SELECT r.id, r.total_price, r.currency, r.payment_status, r.check_in, r.check_out,
+             r.guest_page_expires_at,
+             g.first_name, g.last_name,
+             u.name as unit_name,
+             p.phone as property_phone
+      FROM reservations r
+      JOIN guests g ON r.guest_id = g.id
+      LEFT JOIN units u ON r.unit_id = u.id
+      LEFT JOIN properties p ON r.property_id = p.id
+      WHERE r.guest_page_token = ?
+    `).get(token) as any;
+
+    if (!reservation) {
+      return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
+    }
+
+    // Check expiry
+    const now = new Date();
+    if (reservation.guest_page_expires_at && now > new Date(reservation.guest_page_expires_at)) {
+      return NextResponse.json({ error: 'Booking page expired' }, { status: 410 });
+    }
+
+    // ── Calculate remaining amount ──────────────────────────────
+    const paid = db.prepare(`
+      SELECT COALESCE(SUM(CASE WHEN type != 'refund' THEN amount ELSE 0 END), 0)
+           - COALESCE(SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END), 0) as net_paid
+      FROM payments WHERE reservation_id = ? AND status = 'completed'
+    `).get(reservation.id) as any;
+
+    const netPaid = paid?.net_paid || 0;
+    const remaining = Math.max(0, reservation.total_price - netPaid);
+
+    if (remaining <= 0) {
+      return NextResponse.json({ error: 'Booking is already fully paid' }, { status: 400 });
+    }
+
+    // ── Already paid (status check) ────────────────────────────
+    if (reservation.payment_status === 'paid') {
+      return NextResponse.json({ error: 'Booking is already paid' }, { status: 400 });
+    }
+
+    const guestName = `${reservation.first_name} ${reservation.last_name}`;
+    const description = `Booking ${reservation.unit_name || ''} · ${reservation.check_in}–${reservation.check_out}`;
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
+
+    console.log(`[Guest Pay Booking] ${guestName} | ${description} | remaining: ${remaining} ${reservation.currency}`);
+
+    // ── Create Teya session ────────────────────────────────────
+    const session = await createCheckoutSession({
+      amount: Math.round(remaining * 100),
+      currency: reservation.currency || 'CZK',
+      description,
+      items: [{
+        description,
+        quantity: 1,
+        unit_price: Math.round(remaining * 100),
+      }],
+      metadata: {
+        reservation_id: reservation.id,
+        source: 'guest_booking_payment',
+        token,
+      },
+      success_url: `${baseUrl}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(`/guest/${token}`)}&reservation_id=${reservation.id}`,
+      cancel_url: `${baseUrl}/guest/${token}?payment=cancelled`,
+    });
+
+    // ── Telegram notification ──────────────────────────────────
+    const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    sendTelegramMessage([
+      `💳 <b>Запит на оплату бронювання</b>`,
+      ``,
+      `👤 ${esc(guestName)}`,
+      `🏠 ${esc(reservation.unit_name || '')}`,
+      `📅 ${reservation.check_in} — ${reservation.check_out}`,
+      `💰 ${remaining} ${reservation.currency || 'CZK'} (залишок)`,
+      `💳 Очікує оплати через Teya`,
+    ].join('\n')).catch(() => {});
+
+    return NextResponse.json({
+      success: true,
+      session_url: session.session_url,
+      session_id: session.id,
+      amount: remaining,
+      currency: reservation.currency || 'CZK',
+    });
+
+  } catch (error: any) {
+    console.error('[Guest Pay Booking] error:', error?.message || error);
+    return NextResponse.json({ error: error?.message || 'Payment failed' }, { status: 500 });
+  }
+}

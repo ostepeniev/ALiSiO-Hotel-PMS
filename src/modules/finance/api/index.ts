@@ -9,3 +9,8 @@ export { getCapexItem, updateCapexItem, deleteCapexItem } from './capex-item.han
 export { listAccruals, createAccrual } from './accruals.handlers';
 export { getAccrual, updateAccrual, deleteAccrual } from './accrual.handlers';
 export { listBankStatements, listBankTransactions, updateBankTransaction, importBankStatement } from './bank.handlers';
+export { listInvoices, getInvoiceHtml, generateInvoiceForReservation } from './invoices.handlers';
+export { listAccounts, createAccount, updateAccount } from './accounts.handlers';
+export { listIncome, createIncome, updateIncome, deleteIncome } from './income.handlers';
+export { listTransfers, createTransfer, deleteTransfer } from './transfers.handlers';
+export { getFinanceLog } from './log.handlers';

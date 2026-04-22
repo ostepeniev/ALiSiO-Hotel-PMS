@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
-import { generateInvoiceForReservation } from '@/lib/invoices';
+import { generateInvoiceForReservation } from '@finance';
 
 export async function getReservation(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

@@ -9,6 +9,8 @@ import {
   formatDateLocalized, formatPriceLocalized,
 } from './translations';
 import { translateContent } from './content-translations';
+import { PaymentGateScreen } from '@/modules/guests/ui/PaymentGateScreen';
+import { FarBeforeScreen } from '@/modules/guests/ui/FarBeforeScreen';
 
 // ─── Helpers ────────────────────────────────────
 function parseJSON<T>(val: string | null | undefined, fallback: T): T {
@@ -30,7 +32,9 @@ function dayOfStay(checkIn: string): number {
   return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 }
 
-type Phase = 'before' | 'checkin_day' | 'during' | 'checkout';
+type Phase = 'far_before' | 'before' | 'checkin_day' | 'during' | 'checkout';
+
+const FAR_BEFORE_DAYS = 7;
 
 const ALL_LANGS: Lang[] = ['en', 'de', 'cs', 'uk', 'pl', 'nl', 'fr'];
 
@@ -142,11 +146,11 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         // Check for payment return
         if (typeof window !== 'undefined') {
           const urlParams = new URLSearchParams(window.location.search);
-          const paymentStatus = urlParams.get('payment');
+          const paymentStatus = urlParams.get('payment') || urlParams.get('payment_status');
           if (paymentStatus === 'success') {
             setTimeout(() => showToast('💳 ' + getTranslations(detectedLang).serviceOrdered), 500);
             window.history.replaceState({}, '', window.location.pathname);
-          } else if (paymentStatus === 'cancel') {
+          } else if (paymentStatus === 'cancel' || paymentStatus === 'cancelled') {
             setTimeout(() => showToast(getTranslations(detectedLang).orderError, 'error'), 500);
             window.history.replaceState({}, '', window.location.pathname);
           }
@@ -176,6 +180,15 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             documentType: g.document_type || '', documentNumber: g.document_number || '',
             nationality: g.nationality || '', address: g.address || '',
           });
+        } else if (d.reservation) {
+          // Pre-fill from reservation data (name, phone, email) — per spec
+          const res = d.reservation;
+          setRegData(prev => ({
+            ...prev,
+            fullName: prev.fullName || `${res.first_name || ''} ${res.last_name || ''}`.trim(),
+            email: prev.email || res.guest_email || '',
+            phone: prev.phone || res.guest_phone || '',
+          }));
         }
       })
       .catch(() => { setError('notFound'); setLoading(false); });
@@ -212,7 +225,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // ─── Phase/Stage logic ─────────────────────────
+  // ─── Data derivatives ─────────────────────────
   const r = data?.reservation;
   const cfg = data?.guestPageConfig;
   const requiredGuests = r?.adults || 1;
@@ -220,6 +233,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const isRegistered = registeredCount >= requiredGuests;
   const catType = r?.category_type || 'resort';
   const brandName = data?.expired ? data.brandName : getBrandName(catType);
+
+  // ─── isPaid ────────────────────────────────────
+  const isPaid = r?.payment_status === 'paid'
+    || r?.payment_status === 'prepaid'
+    || (data?.payments?.remaining != null && data.payments.remaining <= 0);
+
+  // ─── Days until check-in ────────────────────────
+  const dLeft = r?.check_in ? daysUntil(r.check_in) : 0;
 
   const phase: Phase = (() => {
     if (!r) return 'before';
@@ -230,6 +251,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     if (today.getTime() === checkOut.getTime()) return 'checkout';
     if (today.getTime() === checkIn.getTime()) return 'checkin_day';
     if (today > checkIn && today < checkOut) return 'during';
+    if (dLeft > FAR_BEFORE_DAYS) return 'far_before';
     return 'before';
   })();
 
@@ -362,13 +384,34 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     return <PostStayPage data={data} lang={lang} setLang={setLang} />;
   }
 
+  // ─── PAYMENT GATE ─────────────────────────────
+  if (!isPaid) {
+    return (
+      <div className="gp-root">
+        <PaymentGateScreen data={data} t={t} lang={lang} token={token} />
+      </div>
+    );
+  }
+
+  // ─── FAR BEFORE ───────────────────────────────
+  if (phase === 'far_before') {
+    return (
+      <div className="gp-root">
+        <FarBeforeScreen
+          data={data} t={t} lang={lang} dLeft={dLeft}
+          isRegistered={isRegistered}
+          onRegisterClick={() => setShowReg(true)}
+        />
+      </div>
+    );
+  }
+
   // ─── Data derivatives ─────────────────────────
   const amenities = parseJSON<any[]>(cfg?.amenities, []);
   const rules = parseJSON<any[]>(cfg?.rules, []);
   const usefulInfoList = parseJSON<any[]>(cfg?.useful_info, []);
   const faqItems = parseJSON<any[]>(cfg?.faq_items, []);
   const guestName = `${r.first_name || ''} ${(r.last_name || '').charAt(0)}.`.trim();
-  const dLeft = daysUntil(r.check_in);
   const currentDay = dayOfStay(r.check_in);
   const unitName = r.unit_name || r.unit_type_name || 'Your cabin';
 

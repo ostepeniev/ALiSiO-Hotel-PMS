@@ -6,6 +6,7 @@ export { registerGuests } from './register.handlers';
 export { submitFeedback } from './feedback.handlers';
 export { orderServices } from './services.handlers';
 export { payForService } from './pay.handlers';
+export { payForBooking } from './pay-booking.handlers';
 export { getChatMessages, sendChatMessage } from './chat.handlers';
 export { translateTexts } from './translate.handlers';
 

@@ -1,0 +1,177 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * ALiSiO PMS — Invoice Handlers (Finance Module)
+ *
+ * Generates and serves Faktury (invoices) for paid reservations.
+ * Kemp Carlsbad s.r.o. is NOT a VAT payer (neplátce DPH),
+ * so these are regular Faktury, not Daňové doklady.
+ *
+ * Auto-trigger: called from payments.handlers.ts and reservation.handlers.ts
+ * when reservation.payment_status transitions to 'paid'.
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@core/db';
+import { renderInvoiceHtml, type InvoiceData } from '@/lib/invoice-template';
+
+// ─── Invoice Number Generator ───────────────────────────────────────────────
+
+function getNextInvoiceNumber(db: any): string {
+  const year = new Date().getFullYear();
+  const prefix = `${year}-`;
+
+  const last = db.prepare(`
+    SELECT invoice_number FROM invoices
+    WHERE invoice_number LIKE ?
+    ORDER BY invoice_number DESC
+    LIMIT 1
+  `).get(`${prefix}%`) as { invoice_number: string } | undefined;
+
+  let nextNum = 1;
+  if (last) {
+    const parts = last.invoice_number.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+  }
+
+  return `${prefix}${String(nextNum).padStart(3, '0')}`;
+}
+
+// ─── Core Business Logic ─────────────────────────────────────────────────────
+
+/**
+ * Create an invoice record for a reservation.
+ * Idempotent — if invoice already exists for this reservation, returns existing id.
+ */
+export function generateInvoiceForReservation(reservationId: string): string | null {
+  try {
+    const db = getDb();
+
+    // Idempotency check — skip if invoice already exists (not cancelled)
+    const existing = db.prepare(
+      "SELECT id FROM invoices WHERE reservation_id = ? AND status != 'cancelled'"
+    ).get(reservationId) as { id: string } | undefined;
+
+    if (existing) {
+      return existing.id;
+    }
+
+    // Fetch reservation basic data
+    const res = db.prepare(`
+      SELECT total_price, currency, check_out
+      FROM reservations
+      WHERE id = ?
+    `).get(reservationId) as { total_price: number; currency: string; check_out: string } | undefined;
+
+    if (!res) return null;
+
+    const invoiceId = `inv_${Date.now()}`;
+    const invoiceNumber = getNextInvoiceNumber(db);
+    const today = new Date().toISOString().split('T')[0];
+    // Due date: check-out date (service rendered on departure)
+    const dueDate = res.check_out > today ? res.check_out : today;
+
+    db.prepare(`
+      INSERT INTO invoices (id, reservation_id, invoice_number, issued_at, due_date, amount, currency, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'issued')
+    `).run(invoiceId, reservationId, invoiceNumber, today, dueDate, res.total_price, res.currency || 'CZK');
+
+    console.log(`[Invoices] Created ${invoiceNumber} for reservation ${reservationId}`);
+    return invoiceId;
+  } catch (e: any) {
+    console.error('[Invoices] Error generating invoice:', e.message);
+    return null;
+  }
+}
+
+// ─── API Handlers ─────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/invoices — list all invoices
+ */
+export async function listInvoices(_request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT
+        i.id, i.invoice_number, i.issued_at, i.due_date,
+        i.amount, i.currency, i.status, i.reservation_id,
+        g.first_name as guest_first_name, g.last_name as guest_last_name,
+        u.name as unit_name
+      FROM invoices i
+      JOIN reservations r ON i.reservation_id = r.id
+      JOIN guests g ON r.guest_id = g.id
+      JOIN units u ON r.unit_id = u.id
+      ORDER BY i.issued_at DESC, i.invoice_number DESC
+      LIMIT 200
+    `).all();
+    return NextResponse.json(rows);
+  } catch (e: any) {
+    console.error('[Invoices] listInvoices error:', e.message);
+    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/invoices/[id] — render invoice as HTML (for browser view/print/PDF)
+ * ?format=download — serve as attachment
+ */
+export async function getInvoiceHtml(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const asDownload = searchParams.get('format') === 'download';
+
+    const data = db.prepare(`
+      SELECT
+        i.id, i.invoice_number, i.issued_at, i.due_date,
+        i.amount, i.currency, i.status, i.reservation_id,
+        r.check_in, r.check_out, r.nights, r.adults, r.children,
+        u.name as unit_name, u.code as unit_code,
+        g.first_name as guest_first_name, g.last_name as guest_last_name,
+        g.email as guest_email, g.address as guest_address,
+        g.city as guest_city, g.country as guest_country,
+        p.method as payment_method, p.notes as payment_notes
+      FROM invoices i
+      JOIN reservations r ON i.reservation_id = r.id
+      JOIN units u ON r.unit_id = u.id
+      JOIN guests g ON r.guest_id = g.id
+      LEFT JOIN payments p
+        ON p.reservation_id = r.id AND p.status = 'completed'
+      WHERE i.id = ?
+      ORDER BY p.paid_at DESC
+      LIMIT 1
+    `).get(id) as InvoiceData | undefined;
+
+    if (!data) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    }
+
+    const html = renderInvoiceHtml(data);
+
+    if (asDownload) {
+      return new NextResponse(html, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': `attachment; filename="faktura-${data.invoice_number}.html"`,
+        },
+      });
+    }
+
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (e: any) {
+    console.error('[Invoices] getInvoiceHtml error:', e.message);
+    return NextResponse.json({ error: 'Failed to render invoice' }, { status: 500 });
+  }
+}

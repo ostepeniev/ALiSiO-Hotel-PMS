@@ -169,6 +169,15 @@ export interface Translations {
   ourAccommodations: string;
   selectAccommodation: string;
   footerLocation: string;
+  // Payment Gate
+  paymentRequired: string;
+  completePayment: string;
+  availableAfterPayment: string;
+  remainingAmount: string;
+  bookingPaidConfirmed: string;
+  // Far Before
+  farBeforeTitle: string;
+  registerBeforeCheckin: string;
 }
 
 const translations: Record<Lang, Translations> = {
@@ -223,6 +232,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Early Booking', earlyBookingDesc: 'Book your next stay at a special rate.',
     discount: 'discount', adultsShort: 'ad.', childrenShort: 'ch.', ourAccommodations: 'Our accommodations',
     selectAccommodation: 'Select', footerLocation: 'Loketská, Karlovy Vary, Czech Republic',
+    paymentRequired: 'Complete payment to unlock full access',
+    completePayment: 'Complete payment →',
+    availableAfterPayment: 'Available after payment',
+    remainingAmount: 'Remaining to pay',
+    bookingPaidConfirmed: 'Booking confirmed & paid',
+    farBeforeTitle: 'See you soon!',
+    registerBeforeCheckin: 'Please complete your registration before check-in',
   },
 
   // ════════════════ DEUTSCH ════════════════
@@ -276,6 +292,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Frühbucher', earlyBookingDesc: 'Buchen Sie Ihren nächsten Aufenthalt zum Sonderpreis.',
     discount: 'Rabatt', adultsShort: 'Erw.', childrenShort: 'Ki.', ourAccommodations: 'Unsere Unterkünfte',
     selectAccommodation: 'Auswählen', footerLocation: 'Loketská, Karlovy Vary, Tschechien',
+    paymentRequired: 'Schließen Sie die Zahlung ab, um vollen Zugang zu erhalten',
+    completePayment: 'Zahlung abschließen →',
+    availableAfterPayment: 'Verfügbar nach Zahlung',
+    remainingAmount: 'Ausstehender Betrag',
+    bookingPaidConfirmed: 'Buchung bestätigt & bezahlt',
+    farBeforeTitle: 'Bis bald!',
+    registerBeforeCheckin: 'Bitte schließen Sie die Registrierung vor dem Check-in ab',
   },
 
   // ════════════════ ČEŠTINA ════════════════
@@ -329,6 +352,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Předčasná rezervace', earlyBookingDesc: 'Zarezervujte si další pobyt za zvýhodněnou cenu.',
     discount: 'sleva', adultsShort: 'dosp.', childrenShort: 'dětí', ourAccommodations: 'Naše ubytování',
     selectAccommodation: 'Vybrat', footerLocation: 'Loketská, Karlovy Vary, Česko',
+    paymentRequired: 'Dokončete platbu pro plný přístup',
+    completePayment: 'Dokončit platbu →',
+    availableAfterPayment: 'Dostupné po platbě',
+    remainingAmount: 'Zbývá uhradit',
+    bookingPaidConfirmed: 'Rezervace potvrzena a zaplacena',
+    farBeforeTitle: 'Brzy na viděnou!',
+    registerBeforeCheckin: 'Prosíme dokončete registraci před příjezdem',
   },
 
   // ════════════════ УКРАЇНСЬКА ════════════════
@@ -382,6 +412,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Раннє бронювання', earlyBookingDesc: 'Забронюйте наступне перебування за спеціальною ціною.',
     discount: 'знижка', adultsShort: 'дор.', childrenShort: 'діт.', ourAccommodations: 'Наші помешкання',
     selectAccommodation: 'Обрати', footerLocation: 'Loketská, Карлові Вари, Чехія',
+    paymentRequired: 'Завершіть оплату для повного доступу',
+    completePayment: 'Завершити оплату →',
+    availableAfterPayment: 'Доступно після оплати',
+    remainingAmount: 'Залишок до оплати',
+    bookingPaidConfirmed: 'Бронювання підтверджено та оплачено',
+    farBeforeTitle: 'До зустрічі!',
+    registerBeforeCheckin: 'Будь ласка, завершіть реєстрацію перед заїздом',
   },
 
   // ════════════════ POLSKI ════════════════
@@ -435,6 +472,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Wczesna rezerwacja', earlyBookingDesc: 'Zarezerwuj kolejny pobyt w specjalnej cenie.',
     discount: 'zniżka', adultsShort: 'dos.', childrenShort: 'dz.', ourAccommodations: 'Nasze zakwaterowanie',
     selectAccommodation: 'Wybierz', footerLocation: 'Loketská, Karlovy Vary, Czechy',
+    paymentRequired: 'Dokończ płatność, aby uzyskać pełny dostęp',
+    completePayment: 'Dokończ płatność →',
+    availableAfterPayment: 'Dostępne po płatności',
+    remainingAmount: 'Pozostało do zapłaty',
+    bookingPaidConfirmed: 'Rezerwacja potwierdzona i opłacona',
+    farBeforeTitle: 'Do zobaczenia!',
+    registerBeforeCheckin: 'Prosimy o wypełnienie rejestracji przed przyjazdem',
   },
 
   // ════════════════ NEDERLANDS ════════════════
@@ -488,6 +532,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Vroegboeken', earlyBookingDesc: 'Boek uw volgende verblijf tegen een speciaal tarief.',
     discount: 'korting', adultsShort: 'vol.', childrenShort: 'ki.', ourAccommodations: 'Onze accommodaties',
     selectAccommodation: 'Selecteren', footerLocation: 'Loketská, Karlovy Vary, Tsjechië',
+    paymentRequired: 'Voltooi betaling voor volledige toegang',
+    completePayment: 'Betaling voltooien →',
+    availableAfterPayment: 'Beschikbaar na betaling',
+    remainingAmount: 'Resterende betaling',
+    bookingPaidConfirmed: 'Boeking bevestigd & betaald',
+    farBeforeTitle: 'Tot snel!',
+    registerBeforeCheckin: 'Vul de registratie in voor aankomst',
   },
 
   // ════════════════ FRANÇAIS (BE) ════════════════
@@ -541,6 +592,13 @@ const translations: Record<Lang, Translations> = {
     earlyBooking: 'Réservation anticipée', earlyBookingDesc: 'Réservez votre prochain séjour à un tarif spécial.',
     discount: 'réduction', adultsShort: 'ad.', childrenShort: 'enf.', ourAccommodations: 'Nos hébergements',
     selectAccommodation: 'Sélectionner', footerLocation: 'Loketská, Karlovy Vary, République tchèque',
+    paymentRequired: 'Finalisez le paiement pour accès complet',
+    completePayment: 'Finaliser le paiement →',
+    availableAfterPayment: 'Disponible après paiement',
+    remainingAmount: 'Reste à payer',
+    bookingPaidConfirmed: 'Réservation confirmée et payée',
+    farBeforeTitle: 'À bientôt!',
+    registerBeforeCheckin: "Veuillez compléter l'inscription avant votre arrivée",
   },
 };
 

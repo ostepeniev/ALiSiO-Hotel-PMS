@@ -9,7 +9,32 @@
  * Also respects Zákon č. 563/1991 Sb. (Zákon o účetnictví)
  */
 
-import type { InvoiceData } from './invoices';
+// Inline type — avoids cross-module coupling for a pure template helper
+export interface InvoiceData {
+  id: string;
+  invoice_number: string;
+  issued_at: string;
+  due_date: string;
+  amount: number;
+  currency: string;
+  status: string;
+  reservation_id: string;
+  check_in: string;
+  check_out: string;
+  nights: number;
+  adults: number;
+  children: number;
+  unit_name: string;
+  unit_code?: string;
+  guest_first_name: string;
+  guest_last_name: string;
+  guest_email?: string;
+  guest_address?: string;
+  guest_city?: string;
+  guest_country?: string;
+  payment_method?: string;
+  payment_notes?: string;
+}
 
 const SUPPLIER = {
   name: 'Kemp Carlsbad s.r.o.',

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
-import { generateInvoiceForReservation } from '@/lib/invoices';
+import { generateInvoiceForReservation } from './invoices.handlers';
 
 
 function recalcPaymentStatus(db: any, reservationId: string) {

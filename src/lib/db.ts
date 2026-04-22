@@ -1498,6 +1498,73 @@ function runMigrations(database: any) {
   } catch { /* column already exists */ }
 
   // ═══════════════════════════════════════════════════════
+  // FINANCE MODULE PHASE 3 — Accounts, Income, Transfers
+  // ═══════════════════════════════════════════════════════
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_accounts (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'investment', 'other')),
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      initial_balance REAL NOT NULL DEFAULT 0,
+      color TEXT DEFAULT '#6366f1',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS income (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      account_id TEXT REFERENCES finance_accounts(id),
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      category TEXT,
+      counterparty TEXT,
+      description TEXT NOT NULL,
+      income_date TEXT NOT NULL,
+      month TEXT NOT NULL,
+      business_unit_id TEXT REFERENCES business_units(id),
+      notes TEXT,
+      created_by TEXT REFERENCES app_users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_income_org ON income(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_income_date ON income(income_date)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_income_month ON income(month)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS transfers (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      from_account_id TEXT REFERENCES finance_accounts(id),
+      to_account_id TEXT REFERENCES finance_accounts(id),
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      transfer_date TEXT NOT NULL,
+      notes TEXT,
+      created_by TEXT REFERENCES app_users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_org ON transfers(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_date ON transfers(transfer_date)');
+
+  try {
+    database.exec("ALTER TABLE expenses ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE payments ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
+  } catch { /* column already exists */ }
+
+  // ═══════════════════════════════════════════════════════
   // PRICING MODULE
   // ═══════════════════════════════════════════════════════
 
