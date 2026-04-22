@@ -69,9 +69,9 @@ export async function listServiceOrders(req: NextRequest) {
 
     let soDateFilter = '';
     if (period === 'day') {
-      soDateFilter = `AND so.created_at >= '${dateParam}' AND so.created_at < date('${dateParam}', '+1 day')`;
+      soDateFilter = `AND COALESCE(so.service_date, r.check_in) = '${dateParam}'`;
     } else if (period === 'week') {
-      soDateFilter = `AND so.created_at >= '${dateParam}' AND so.created_at < date('${dateParam}', '+7 days')`;
+      soDateFilter = `AND COALESCE(so.service_date, r.check_in) >= '${dateParam}' AND COALESCE(so.service_date, r.check_in) <= date('${dateParam}', '+7 days')`;
     }
 
     const guestOrders = db.prepare(`
@@ -99,7 +99,7 @@ export async function listServiceOrders(req: NextRequest) {
       serviceId: o.service_id,
       serviceName: o.name_en || o.service_name,
       serviceType: o.service_type,
-      serviceDate: o.check_in,
+      serviceDate: o.service_date || o.check_in,
       startHour: null,
       endHour: null,
       quantity: o.quantity,

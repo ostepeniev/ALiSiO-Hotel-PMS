@@ -2268,6 +2268,83 @@ function runMigrations(database: any) {
     console.error('[DB] Camping migration error:', e.message);
   }
 
+  // --- Migration: create cart_events table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS cart_events (
+      id                    TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      reservation_id        TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      guest_token           TEXT NOT NULL,
+      service_id            TEXT,
+      event_type            TEXT NOT NULL CHECK (event_type IN ('add','remove','pay_now','checkout','abandon')),
+      quantity              INTEGER DEFAULT 1,
+      phase                 TEXT,
+      cart_total            REAL,
+      items_json            TEXT,
+      abandon_notified_at   TEXT,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_cart_events_token ON cart_events(guest_token)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_cart_events_type ON cart_events(event_type, abandon_notified_at)');
+
+  // --- Migration: create booking_drafts table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS booking_drafts (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      session_id TEXT UNIQUE,
+      accommodation_type TEXT,
+      unit_type TEXT,
+      check_in TEXT,
+      check_out TEXT,
+      adults INTEGER DEFAULT 1,
+      children INTEGER DEFAULT 0,
+      extras TEXT,
+      options TEXT,
+      guest_name TEXT,
+      guest_email TEXT,
+      guest_phone TEXT,
+      total_price REAL DEFAULT 0,
+      deposit_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'pending_payment', 'paid', 'expired', 'cancelled')),
+      teya_session_id TEXT,
+      reservation_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  // Clean expired drafts older than 24h
+  try { database.exec("DELETE FROM booking_drafts WHERE status = 'draft' AND created_at < datetime('now', '-24 hours')"); } catch { /* */ }
+
+  // --- Migration: add available_in_widget to additional_services ---
+  try {
+    const asCols = database.prepare("PRAGMA table_info(additional_services)").all().map((c: any) => c.name);
+    if (!asCols.includes('available_in_widget')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN available_in_widget INTEGER DEFAULT 0");
+      console.log('[DB] Added available_in_widget to additional_services');
+    }
+  } catch { /* */ }
+
+  // --- Migration: add service_date + payment columns to service_orders ---
+  try {
+    const soCols = database.prepare("PRAGMA table_info(service_orders)").all().map((c: any) => c.name);
+    if (!soCols.includes('service_date')) {
+      database.exec("ALTER TABLE service_orders ADD COLUMN service_date TEXT");
+      // Backfill: set service_date = check_in for existing orders
+      database.exec(`
+        UPDATE service_orders
+        SET service_date = (
+          SELECT r.check_in FROM reservations r WHERE r.id = service_orders.reservation_id
+        )
+        WHERE service_date IS NULL
+      `);
+      console.log('[DB] Added service_date to service_orders + backfilled from check_in');
+    }
+    if (!soCols.includes('payment_id'))
+      database.exec("ALTER TABLE service_orders ADD COLUMN payment_id TEXT");
+    if (!soCols.includes('payment_status'))
+      database.exec("ALTER TABLE service_orders ADD COLUMN payment_status TEXT DEFAULT 'none'");
+  } catch { /* */ }
+
 }
 
 // Generate a random 12-char token for guest pages

@@ -61,12 +61,18 @@ export function getServiceForProperty(serviceId: string, propertyId: string) {
   return getDb().prepare('SELECT * FROM additional_services WHERE id = ? AND property_id = ? AND is_active = 1').get(serviceId, propertyId) as any;
 }
 
-export function createPendingServiceOrder(reservationId: string, serviceId: string, quantity: number, totalPrice: number): string {
+export function createPendingServiceOrder(
+  reservationId: string,
+  serviceId: string,
+  quantity: number,
+  totalPrice: number,
+  serviceDate?: string | null,
+): string {
   const result = getDb().prepare(`
-    INSERT INTO service_orders (reservation_id, service_id, quantity, total_price, status, payment_status)
-    VALUES (?, ?, ?, ?, 'pending', 'pending')
+    INSERT INTO service_orders (reservation_id, service_id, quantity, total_price, status, payment_status, service_date)
+    VALUES (?, ?, ?, ?, 'pending', 'pending', ?)
     RETURNING id
-  `).get(reservationId, serviceId, quantity, totalPrice) as any;
+  `).get(reservationId, serviceId, quantity, totalPrice, serviceDate || null) as any;
   return result?.id;
 }
 
@@ -76,4 +82,68 @@ export function updateOrderPaymentId(orderId: string, paymentId: string) {
 
 export function markOrderPaymentFailed(orderId: string) {
   getDb().prepare("UPDATE service_orders SET payment_status = 'failed' WHERE id = ?").run(orderId);
+}
+
+// ─── Cart Events ──────────────────────────────────────────────────────────────
+
+export interface CartEventInput {
+  reservationId?: string | null;
+  guestToken: string;
+  serviceId?: string | null;
+  eventType: 'add' | 'remove' | 'pay_now' | 'checkout' | 'abandon';
+  quantity?: number;
+  phase?: string | null;
+  cartTotal?: number | null;
+  itemsJson?: string | null;
+}
+
+export function logCartEvent(data: CartEventInput): string {
+  const result = getDb().prepare(`
+    INSERT INTO cart_events
+      (reservation_id, guest_token, service_id, event_type, quantity, phase, cart_total, items_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    RETURNING id
+  `).get(
+    data.reservationId ?? null,
+    data.guestToken,
+    data.serviceId ?? null,
+    data.eventType,
+    data.quantity ?? 1,
+    data.phase ?? null,
+    data.cartTotal ?? null,
+    data.itemsJson ?? null,
+  ) as any;
+  return result?.id;
+}
+
+/** Find abandon events older than minMinutes that have NOT been notified yet */
+export function getPendingAbandonNotifications(guestToken: string, minMinutes = 30) {
+  return getDb().prepare(`
+    SELECT ce.*, g.email as guest_email, g.first_name, g.last_name,
+           r.check_in, r.check_out, u.name as unit_name
+    FROM cart_events ce
+    LEFT JOIN reservations r ON ce.reservation_id = r.id
+    LEFT JOIN guests g ON r.guest_id = g.id
+    LEFT JOIN units u ON r.unit_id = u.id
+    WHERE ce.guest_token = ?
+      AND ce.event_type = 'abandon'
+      AND ce.abandon_notified_at IS NULL
+      AND ce.created_at <= datetime('now', '-' || ? || ' minutes')
+    ORDER BY ce.created_at DESC
+    LIMIT 1
+  `).get(guestToken, minMinutes) as any;
+}
+
+export function markAbandonNotified(eventId: string) {
+  getDb().prepare("UPDATE cart_events SET abandon_notified_at = datetime('now') WHERE id = ?").run(eventId);
+}
+
+/** Batch-fetch services by IDs for a given property */
+export function getServicesForCart(serviceIds: string[], propertyId: string) {
+  if (!serviceIds.length) return [];
+  const placeholders = serviceIds.map(() => '?').join(',');
+  return getDb().prepare(
+    `SELECT id, name, name_en, price, currency, icon FROM additional_services
+     WHERE id IN (${placeholders}) AND property_id = ? AND is_active = 1`
+  ).all(...serviceIds, propertyId) as any[];
 }
