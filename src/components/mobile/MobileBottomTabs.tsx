@@ -31,7 +31,7 @@ export default function MobileBottomTabs({ onMoreClick, onFabClick }: MobileBott
     if (onFabClick) {
       onFabClick();
     } else {
-      router.push('/bookings?new=1');
+      router.push('/bookings');
     }
   };
 

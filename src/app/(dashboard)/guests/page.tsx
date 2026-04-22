@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { useDevice } from '@/lib/useDevice';
+import MobileGuests from '@/components/mobile/pages/MobileGuests';
 import {
   Plus, Search, Eye, Edit3, X, Save, Trash2, Check,
   RefreshCw, Loader2, Mail, Phone, MapPin, FileText,
@@ -144,6 +146,8 @@ export default function GuestsPage() {
   const [toast, setToast] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const onMenuClick = useMobileMenu();
+  const { isMobile } = useDevice();
+  if (isMobile) return <MobileGuests />;
 
   /* ── fetch guests list ───────────────────────────── */
   const fetchGuests = useCallback(async () => {
