@@ -47,6 +47,7 @@ export default function MobileCalendar() {
   const [units, setUnits] = useState<UnitRow[]>([]);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState('resort');
   // startDay: first visible date column (Monday of current week by default)
   const [startDay, setStartDay] = useState<Date>(() => {
     const t = new Date();
@@ -70,14 +71,14 @@ export default function MobileCalendar() {
     setLoading(true);
     try {
       const [uRes, bRes] = await Promise.all([
-        fetch('/api/units'),
-        fetch('/api/bookings?limit=500'),
+        fetch(`/api/units?category=${category}`),
+        fetch(`/api/bookings?limit=500&category=${category}`),
       ]);
       if (uRes.ok) setUnits(await uRes.json());
       if (bRes.ok) { const d = await bRes.json(); setBookings(d.bookings || d); }
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [category]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -110,7 +111,6 @@ export default function MobileCalendar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [units]);
 
-  const gridHeight = flatUnits.length * ROW_H;
   const gridWidth = DAYS * COL_W;
 
   // Check if a booking overlaps the visible range
@@ -156,11 +156,22 @@ export default function MobileCalendar() {
     ? `${MONTH_SHORT[startDay.getMonth()]} ${startDay.getFullYear()}`
     : `${MONTH_SHORT[startDay.getMonth()]} — ${MONTH_SHORT[endDay.getMonth()]} ${endDay.getFullYear()}`;
 
-  // 52px header + 64px bottom tabs + 12px top padding + 10px toolbar margin + 48px toolbar + 10px + 28px legend
-  const gridH = 'calc(100dvh - 52px - 64px - 12px - 68px - 48px)';
+  // 52px header + 64px bottom tabs + 12px padding + 38px category toggle + 58px toolbar + 36px legend
+  const gridH = 'calc(100dvh - 52px - 64px - 12px - 38px - 58px - 36px)';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
+
+      {/* Category toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        {[{ key: 'resort', label: 'Resort' }, { key: 'camping', label: 'Camping' }].map(c => (
+          <button key={c.key} onClick={() => setCategory(c.key)} style={{
+            padding: '5px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            background: category === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+            color: category === c.key ? '#fff' : 'var(--text-secondary)',
+          }}>{c.label}</button>
+        ))}
+      </div>
 
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0 }}>

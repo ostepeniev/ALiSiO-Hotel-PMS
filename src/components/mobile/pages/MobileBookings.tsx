@@ -254,6 +254,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
   const [bookingSources, setBookingSources] = useState<unknown[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [showNewBooking, setShowNewBooking] = useState(openNew ?? false);
+  const [categoryFilter, setCategoryFilter] = useState('resort');
 
   const sourceMap = useMemo(() => {
     const map: Record<string, { label: string; color: string }> = {};
@@ -267,7 +268,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
     setLoading(true);
     try {
       const [bRes, sRes, uRes] = await Promise.all([
-        fetch('/api/bookings?category=resort'),
+        fetch(`/api/bookings?category=${categoryFilter}&limit=500`),
         fetch('/api/booking-sources'),
         fetch('/api/units'),
       ]);
@@ -276,7 +277,7 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
       if (uRes.ok) setUnits(await uRes.json());
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, []);
+  }, [categoryFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -328,6 +329,23 @@ export default function MobileBookings({ openNew }: MobileBookingsProps) {
           />
         </div>
       )}
+
+      {/* Category toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+        {[{ key: 'resort', label: 'Resort' }, { key: 'camping', label: 'Camping' }].map(c => (
+          <button
+            key={c.key}
+            onClick={() => setCategoryFilter(c.key)}
+            style={{
+              padding: '5px 16px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              background: categoryFilter === c.key ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+              color: categoryFilter === c.key ? '#fff' : 'var(--text-secondary)',
+            }}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
 
       {/* Filter chips */}
       <div className="m-chips">
