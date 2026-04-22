@@ -15,3 +15,4 @@ export { testEmail } from './email-test.handlers';
 export { pollTelegram } from './telegram-poll.handlers';
 export { handleTelegramCallback } from './telegram-callback.handlers';
 export { queryAi } from './ai-query.handlers';
+export { convertLeadToBooking } from './create-booking.handlers';
