@@ -5,32 +5,38 @@ import { notFound } from 'next/navigation';
 
 export default async function WidgetPage({ params }: { params: Promise<{ siteSlug: string }> }) {
   const { siteSlug } = await params;
-  const db = getDb();
+  
+  try {
+    const db = getDb();
+    const site = db.prepare("SELECT id, design_config, widget_config FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
 
-  const site = db.prepare("SELECT id, design_config, widget_config FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
+    if (!site) {
+      return notFound();
+    }
 
-  if (!site) {
-    return notFound();
-  }
+    let design = {};
+    if (site.design_config) {
+      try {
+        design = JSON.parse(site.design_config);
+      } catch { /* ignore */ }
+    }
 
-  let design = {};
-  if (site.design_config) {
-    try {
-      design = JSON.parse(site.design_config);
-    } catch { /* ignore */ }
-  }
+    let thankYouUrl = '';
+    if (site.widget_config) {
+      try {
+        const cfg = JSON.parse(site.widget_config);
+        thankYouUrl = cfg.thank_you_url || '';
+      } catch { /* ignore */ }
+    }
 
-  let thankYouUrl = '';
-  if (site.widget_config) {
-    try {
-      const cfg = JSON.parse(site.widget_config);
-      thankYouUrl = cfg.thank_you_url || '';
-    } catch { /* ignore */ }
-  }
-
-  return (
-    <>
+    return (
       <BookingV3 siteId={site.id} siteSlug={siteSlug} thankYouUrl={thankYouUrl} design={design} />
-    </>
-  );
+    );
+  } catch (error) {
+    console.error('WidgetPage Error:', error);
+    // Fallback to minimal version if DB fails
+    return (
+      <BookingV3 siteSlug={siteSlug} />
+    );
+  }
 }
