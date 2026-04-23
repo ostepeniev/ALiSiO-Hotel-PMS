@@ -189,6 +189,11 @@ export interface Translations {
   addedToCart: string;
   removeFromCart: string;
   cartItems: (n: number) => string;
+  // My Orders
+  myOrders: string;
+  ordersTitle: string;
+  awaitingPayment: string;
+  orderRefunded: string;
 }
 
 const translations: Record<Lang, Translations> = {
@@ -260,6 +265,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Added to cart ✓',
     removeFromCart: 'Remove',
     cartItems: (n: number) => `${n} ${n === 1 ? 'item' : 'items'}`,
+    myOrders: 'My Orders', ordersTitle: 'Your services', awaitingPayment: '⏳ Awaiting payment', orderRefunded: '↩️ Refunded',
 
   },
 
@@ -331,6 +337,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Zum Warenkorb hinzugefügt ✓',
     removeFromCart: 'Entfernen',
     cartItems: (n: number) => `${n} ${n === 1 ? 'Artikel' : 'Artikel'}`,
+    myOrders: 'Meine Bestellungen', ordersTitle: 'Ihre Dienste', awaitingPayment: '⏳ Zahlung ausstehend', orderRefunded: '↩️ Zurückgezahlt',
 
   },
 
@@ -402,6 +409,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Přidáno do košíku ✓',
     removeFromCart: 'Odebrat',
     cartItems: (n: number) => `${n} ${n === 1 ? 'položka' : n < 5 ? 'položky' : 'položek'}`,
+    myOrders: 'Moje objednávky', ordersTitle: 'Vaše služby', awaitingPayment: '⏳ Čeká na platbu', orderRefunded: '↩️ Vráceno',
 
   },
 
@@ -473,6 +481,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Додано в кошик ✓',
     removeFromCart: 'Видалити',
     cartItems: (n: number) => `${n} ${n === 1 ? 'товар' : n < 5 ? 'товари' : 'товарів'}`,
+    myOrders: 'Мої замовлення', ordersTitle: 'Ваші послуги', awaitingPayment: '⏳ Очікує оплати', orderRefunded: '↩️ Повернено',
 
   },
 
@@ -544,6 +553,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Dodano do koszyka ✓',
     removeFromCart: 'Usuń',
     cartItems: (n: number) => `${n} ${n === 1 ? 'element' : 'elementy'}`,
+    myOrders: 'Moje zamówienia', ordersTitle: 'Twoje usługi', awaitingPayment: '⏳ Oczekuje na płatność', orderRefunded: '↩️ Zwrócono',
 
   },
 
@@ -615,6 +625,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Toegevoegd aan winkelwagen ✓',
     removeFromCart: 'Verwijderen',
     cartItems: (n: number) => `${n} ${n === 1 ? 'artikel' : 'artikelen'}`,
+    myOrders: 'Mijn bestellingen', ordersTitle: 'Uw diensten', awaitingPayment: '⏳ Wacht op betaling', orderRefunded: '↩️ Terugbetaald',
 
   },
 
@@ -686,6 +697,7 @@ const translations: Record<Lang, Translations> = {
     addedToCart: 'Ajouté au panier ✓',
     removeFromCart: 'Supprimer',
     cartItems: (n: number) => `${n} ${n === 1 ? 'article' : 'articles'}`,
+    myOrders: 'Mes commandes', ordersTitle: 'Vos services', awaitingPayment: '⏳ En attente de paiement', orderRefunded: '↩️ Remboursé',
 
   },
 };

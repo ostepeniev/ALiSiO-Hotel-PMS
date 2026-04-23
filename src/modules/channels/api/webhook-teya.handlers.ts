@@ -80,6 +80,18 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
 
   console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: result3.changes });
 
+  // #1 FIX: Mark cart_events as notified so no duplicate abandon emails after payment
+  if (result2.changes > 0) {
+    try {
+      db.prepare(`
+        UPDATE cart_events SET abandon_notified_at = datetime('now')
+        WHERE reservation_id IN (
+          SELECT reservation_id FROM service_orders WHERE payment_id = ?
+        ) AND abandon_notified_at IS NULL
+      `).run(paymentRef);
+    } catch { /* non-critical */ }
+  }
+
   if (result1.changes > 0 || result2.changes > 0) recordPayment(db, paymentRef, amount, currency);
   if (result1.changes > 0) sendWidgetOrderTG(db, paymentRef, currency);
   if (result2.changes > 0) sendGuestOrderTG(db, paymentRef, currency);
@@ -159,17 +171,31 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
   } catch { /* non-critical */ }
 }
 
+// #2 FIX: Show ALL service_orders for a cart checkout (not just the first one)
 function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
   try {
-    const order = db.prepare(`
+    const orders = db.prepare(`
       SELECT so.*, ads.name as service_name, ads.name_en, r.check_in, r.check_out, g.first_name, g.last_name, u.name as unit_name
       FROM service_orders so JOIN additional_services ads ON so.service_id = ads.id
       JOIN reservations r ON so.reservation_id = r.id JOIN guests g ON r.guest_id = g.id JOIN units u ON r.unit_id = u.id
       WHERE so.payment_id = ?
-    `).get(paymentRef) as any;
-    if (!order) return;
-    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const text = [`💳 <b>Оплата послуги підтверджена</b>`, ``, `👤 ${esc(order.first_name)} ${esc(order.last_name)}`, `🏠 ${esc(order.unit_name)}`, `📅 ${order.check_in} — ${order.check_out}`, ``, `✨ ${esc(order.name_en || order.service_name)} × ${order.quantity}`, `💰 ${order.total_price} ${currency || 'CZK'} — ✅ Оплачено`].join('\n');
+    `).all(paymentRef) as any[];
+    if (!orders.length) return;
+    const first = orders[0];
+    const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    const grandTotal = orders.reduce((s: number, o: any) => s + (o.total_price || 0), 0);
+    const itemLines = orders.map((o: any) => {
+      const dateTag = o.service_date ? ` · ${o.service_date}` : '';
+      return `  • ${esc(o.name_en || o.service_name)} ×${o.quantity}${dateTag} — ${o.total_price} ${currency}`;
+    });
+    const text = [
+      `💳 <b>Оплата підтверджена</b>`, ``,
+      `👤 ${esc(first.first_name)} ${esc(first.last_name)}`,
+      `🏠 ${esc(first.unit_name)}`,
+      `📅 ${first.check_in} — ${first.check_out}`, ``,
+      ...itemLines, ``,
+      orders.length > 1 ? `💰 Разом: ${grandTotal} ${currency} — ✅ Оплачено` : `💰 ${grandTotal} ${currency} — ✅ Оплачено`,
+    ].join('\n');
     sendTelegramMessage(text).catch(() => {});
   } catch { /* non-critical */ }
 }

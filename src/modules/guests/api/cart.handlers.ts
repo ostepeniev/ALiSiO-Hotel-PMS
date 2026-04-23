@@ -56,7 +56,8 @@ export async function sendAbandonNotifications(
     try { items = JSON.parse(event.items_json || '[]'); } catch { items = []; }
 
     const guestName = [event.first_name, event.last_name].filter(Boolean).join(' ') || 'Guest';
-    const total = event.cart_total ? `${event.cart_total} Kč` : '—';
+    const currency = items[0]?.currency || 'Kč';
+    const total = event.cart_total ? `${event.cart_total} ${currency}` : '—';
     const guestPageUrl = `${process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu'}/guest/${guestToken}`;
 
     const itemLines = items.map((i: any) =>

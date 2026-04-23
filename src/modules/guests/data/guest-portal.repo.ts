@@ -64,11 +64,14 @@ export function getAvailableServices(propertyId: string, categoryType: string) {
 
 export function getOrderedServices(reservationId: string) {
   return getDb().prepare(`
-    SELECT so.*, ads.name as service_name, ads.icon as service_icon
+    SELECT so.id, so.service_id, so.quantity, so.total_price, so.status,
+           so.payment_status, so.service_date, so.created_at,
+           ads.name as service_name, ads.name_en, ads.icon as service_icon,
+           ads.currency
     FROM service_orders so
     JOIN additional_services ads ON so.service_id = ads.id
     WHERE so.reservation_id = ?
-    ORDER BY so.created_at
+    ORDER BY so.created_at DESC
   `).all(reservationId);
 }
 

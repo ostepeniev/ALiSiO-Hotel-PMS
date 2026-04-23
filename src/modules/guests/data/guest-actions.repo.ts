@@ -54,6 +54,7 @@ export function getReservationForPay(token: string) {
     JOIN guests g ON r.guest_id = g.id
     JOIN units u ON r.unit_id = u.id
     WHERE r.guest_page_token = ?
+      AND r.payment_status IN ('paid','prepaid','partial')
   `).get(token) as any;
 }
 
@@ -116,7 +117,8 @@ export function logCartEvent(data: CartEventInput): string {
   return result?.id;
 }
 
-/** Find abandon events older than minMinutes that have NOT been notified yet */
+/** Find abandon events older than minMinutes that have NOT been notified yet,
+ *  skipping cancelled/no_show reservations to avoid spamming guests unnecessarily */
 export function getPendingAbandonNotifications(guestToken: string, minMinutes = 30) {
   return getDb().prepare(`
     SELECT ce.*, g.email as guest_email, g.first_name, g.last_name,
@@ -129,6 +131,7 @@ export function getPendingAbandonNotifications(guestToken: string, minMinutes = 
       AND ce.event_type = 'abandon'
       AND ce.abandon_notified_at IS NULL
       AND ce.created_at <= datetime('now', '-' || ? || ' minutes')
+      AND (r.id IS NULL OR r.status NOT IN ('cancelled','no_show'))
     ORDER BY ce.created_at DESC
     LIMIT 1
   `).get(guestToken, minMinutes) as any;
