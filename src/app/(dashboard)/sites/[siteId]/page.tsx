@@ -133,7 +133,6 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, on
   onDelete: (id: string) => void;
   onRefresh: () => void;
   onEdit: (l: Listing) => void;
-  onEmbed: (l: Listing) => void;
 }) {
   const unitName = listing.unit_name || listing.unit_type_name || listing.id;
   return (
@@ -164,10 +163,6 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, on
       <td style={{textAlign:'center'}}><Chk val={listing.thank_you_url}/></td>
       <td style={{textAlign:'right'}} onClick={e => e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
-          <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Embed-код"
-            onClick={() => onEmbed(listing)}>
-            <Code2 size={14}/> Код
-          </button>
           <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}}
             onClick={() => onDelete(listing.id)}>
             <Trash2 size={14}/>
@@ -179,9 +174,10 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, on
 }
 
 /* ── Edit Modal Component ── */
-function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
+function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh }: {
   listing: Listing | null;
   siteId: string;
+  siteSlug: string;
   open: boolean;
   onClose: () => void;
   onRefresh: () => void;
@@ -194,6 +190,9 @@ function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [embedLang, setEmbedLang] = useState('uk');
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
 
   useEffect(() => {
     if (listing) {
@@ -329,53 +328,54 @@ function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
           </label>
         </div>
       </div>
-    </Modal>
-  );
-}
 
-/* ── Embed Modal Component ── */
-function ListingEmbedModal({ listing, siteSlug, open, onClose }: {
-  listing: Listing | null;
-  siteSlug: string;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [embedLang, setEmbedLang] = useState('uk');
-  const [origin, setOrigin] = useState('');
-  useEffect(() => { setOrigin(window.location.origin); }, []);
+      <div style={{marginTop:32, borderTop:'1px solid var(--border-primary)', paddingTop:24}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:12}}>
+          <Code2 size={18} style={{color:'var(--accent-primary)'}} />
+          <h4 style={{margin:0, fontSize:15, fontWeight:700}}>Код для вставки (Embed)</h4>
+        </div>
+        <div style={{fontSize:13, color:'var(--text-secondary)', marginBottom:16}}>
+          Використовуйте цей код, щоб додати віджет бронювання саме для цього об&apos;єкта на ваш сайт.
+        </div>
+        
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex', gap:6}}>
+            {LANGS.map(l => (
+              <button key={l} type="button" onClick={() => setEmbedLang(l)}
+                style={{
+                  padding:'5px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
+                  border:`2px solid ${embedLang===l?'var(--accent-primary)':'var(--border-primary)'}`,
+                  background:embedLang===l?'var(--accent-primary)':'var(--surface-secondary)',
+                  color:embedLang===l?'#fff':'var(--text-secondary)',
+                }}>
+                {l.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
 
-  if (!listing) return null;
-
-  const unitName = listing.unit_name || listing.unit_type_name || listing.id;
-  const unitAttr = listing.unit_id ? `data-unit="${listing.unit_id}"` : `data-unit-type="${listing.unit_type_id}"`;
-  const embedCode = `<div id="alisio-booking-widget"\n  data-site="${siteSlug}"\n  ${unitAttr}>\n</div>\n<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
-  const LANGS = ['uk','cs','en','de'];
-
-  return (
-    <Modal open={open} onClose={onClose} title={`Embed-код: ${unitName}`} size="lg">
-      <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>Вставте цей код на сторінку об&apos;єкта.</div>
-      <div style={{marginBottom:12}}>
-        <div style={{display:'flex',gap:6}}>
-          {LANGS.map(l => (
-            <button key={l} type="button" onClick={() => setEmbedLang(l)}
-              style={{
-                padding:'5px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
-                border:`2px solid ${embedLang===l?'var(--accent-primary)':'var(--border-primary)'}`,
-                background:embedLang===l?'var(--accent-primary)':'var(--surface-secondary)',
-                color:embedLang===l?'#fff':'var(--text-secondary)',
-              }}>
-              {l.toUpperCase()}
-            </button>
-          ))}
+        <div style={{position:'relative'}}>
+          <pre style={{
+            background:'var(--surface-secondary)', borderRadius:8, padding:16, 
+            fontSize:12, overflowX:'auto', fontFamily:'monospace', lineWeight:1.5,
+            border:'1px solid var(--border-primary)'
+          }}>
+{`<div id="alisio-booking-widget"
+  data-site="${siteSlug}"
+  data-unit="${listing.unit_id || listing.unit_type_id}"
+  data-lang="${embedLang}">
+</div>
+<script src="${origin || 'https://alisio.swipescape.eu'}/widget/embed.v2.js"></script>`}
+          </pre>
+          <div style={{position:'absolute', top:8, right:8}}>
+            <CopyBtn text={`<div id="alisio-booking-widget" data-site="${siteSlug}" data-unit="${listing.unit_id || listing.unit_type_id}" data-lang="${embedLang}"></div><script src="${origin || 'https://alisio.swipescape.eu'}/widget/embed.v2.js"></script>`}/>
+          </div>
         </div>
       </div>
-      <div style={{position:'relative'}}>
-        <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto'}}>{embedCode}</pre>
-        <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={embedCode}/></div>
-      </div>
     </Modal>
   );
 }
+
 
 
 
@@ -469,17 +469,14 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
           </tr></thead>
           <tbody>
             {listings.map(l => (
-              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} onDelete={handleDelete} onRefresh={fetchListings} onEdit={setEditingListing} onEmbed={setEmbedListing} />
+              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} onDelete={handleDelete} onRefresh={fetchListings} onEdit={setEditingListing} />
             ))}
           </tbody>
         </table>
       )}
 
       {/* Edit Modal */}
-      <ListingEditModal open={!!editingListing} listing={editingListing} siteId={siteId} onClose={() => setEditingListing(null)} onRefresh={fetchListings} />
-      
-      {/* Embed Modal */}
-      <ListingEmbedModal open={!!embedListing} listing={embedListing} siteSlug={siteSlug} onClose={() => setEmbedListing(null)} />
+      <ListingEditModal open={!!editingListing} listing={editingListing} siteId={siteId} siteSlug={siteSlug} onClose={() => setEditingListing(null)} onRefresh={fetchListings} />
 
       {/* Add Modal */}
       <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Додати оголошення" size="lg"

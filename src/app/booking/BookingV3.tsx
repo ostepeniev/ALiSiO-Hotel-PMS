@@ -144,7 +144,10 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       }
 
       const uId = params.get('unitId');
-      if (uId) setSelectedUnitId(uId);
+      if (uId) {
+        // We'll try to match this against availability once it's loaded
+        (window as any)._preselectedUnit = uId;
+      }
 
       const l = params.get('lang');
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
@@ -268,6 +271,16 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         setAvailability(data);
         if (data.units?.length === 0) {
           findNextAvailable(co);
+        } else {
+          // Robust pre-selection check
+          const pre = (window as any)._preselectedUnit;
+          if (pre && !selectedUnitId) {
+            const matched = data.units.find((u: any) => u.id === pre || u.code === pre);
+            if (matched) {
+              setSelectedUnitId(matched.id);
+              setStep(2);
+            }
+          }
         }
         return data;
       }
