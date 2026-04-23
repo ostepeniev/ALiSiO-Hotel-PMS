@@ -90,7 +90,7 @@ interface DesignConfig {
   show_shadow?: boolean;
 }
 
-export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig }) {
+export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPreview }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean }) {
   // ─── State ───
   const [isMounted, setIsMounted] = useState(false);
   const [lang, setLang] = useState<BookingLang>('uk');
@@ -104,6 +104,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
   const [calMonthOffset, setCalMonthOffset] = useState(0);
   const [calOpen, setCalOpen] = useState(false);
   const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
+  const [socialProof, setSocialProof] = useState<{ viewers: number, lastBooking?: string } | null>(null);
+  const [waitlistStatus, setWaitlistStatus] = useState<'none'|'submitting'|'success'>('none');
+  const [nextAvailable, setNextAvailable] = useState<string | null>(null);
   
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
@@ -115,6 +118,8 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
+  const [promoCode, setPromoCode] = useState('');
+  const [showPromo, setShowPromo] = useState(false);
 
   // Pre-select unit from query param
   useEffect(() => {
@@ -143,6 +148,37 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
         setLang(l as BookingLang);
       }
+
+      // Auto-fill dates from URL
+      const urlIn = params.get('checkin') || params.get('check_in');
+      const urlOut = params.get('checkout') || params.get('check_out');
+      const urlAdults = params.get('adults');
+      const urlKids = params.get('kids');
+
+      if (urlIn) setCheckIn(urlIn);
+      if (urlOut) setCheckOut(urlOut);
+      if (urlAdults) setAdults(parseInt(urlAdults, 10) || 2);
+      if (urlKids) setKids(parseInt(urlKids, 10) || 0);
+
+      // Pre-fill from localStorage
+      const savedGuest = localStorage.getItem('alisio_guest_data');
+      if (savedGuest) {
+        try {
+          const g = JSON.parse(savedGuest);
+          setFirstName(g.firstName || '');
+          setLastName(g.lastName || '');
+          setEmail(g.email || '');
+          setPhone(g.phone || '');
+        } catch (e) { /* ignore */ }
+      }
+
+      // Simulation: Social Proof
+      const v = Math.floor(Math.random() * 6) + 3;
+      const hours = Math.floor(Math.random() * 12) + 1;
+      setSocialProof({
+        viewers: v,
+        lastBooking: hours < 5 ? `${hours} ${hours === 1 ? 'годину' : 'години'} тому` : 'сьогодні вранці'
+      });
     }
   }, []);
 
@@ -193,6 +229,33 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
 
   // ─── Actions ───
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
+    if (isPreview) {
+      setLoadingAvail(true);
+      await new Promise(r => setTimeout(r, 800));
+      const mockData: AvailabilityResponse = {
+        checkIn: ci,
+        checkOut: co,
+        nights: Math.round((parseDate(co).getTime() - parseDate(ci).getTime()) / 86400000),
+        units: [
+          {
+            id: 'mock-1', name: 'Premium Glamping Tent', code: 'P1', beds: 2, unitTypeId: 't1', typeName: 'Tent', typeCode: 'T',
+            description: 'Beautiful tent with view', maxAdults: 2, maxChildren: 1, maxOccupancy: 3, baseOccupancy: 2,
+            avgPricePerNight: 2500, totalPrice: 2500 * 2, currency: 'Kč', extraPersonCharge: 500, petAllowed: true, petCharge: 200,
+            amenities: [{ icon: 'wifi', name: 'Wi-Fi' }, { icon: 'coffee', name: 'Coffee' }]
+          },
+          {
+            id: 'mock-2', name: 'Eco Wood Cabin', code: 'C1', beds: 4, unitTypeId: 't2', typeName: 'Cabin', typeCode: 'C',
+            description: 'Cozy cabin in woods', maxAdults: 4, maxChildren: 2, maxOccupancy: 6, baseOccupancy: 2,
+            avgPricePerNight: 3200, totalPrice: 3200 * 2, currency: 'Kč', extraPersonCharge: 600, petAllowed: false, petCharge: 0,
+            amenities: [{ icon: 'fireplace', name: 'Fireplace' }]
+          }
+        ]
+      };
+      setAvailability(mockData);
+      setLoadingAvail(false);
+      return mockData;
+    }
+
     setLoadingAvail(true);
     try {
       const params = new URLSearchParams({ checkIn: ci, checkOut: co });
@@ -201,12 +264,39 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
       if (res.ok) {
         const data = await res.json();
         setAvailability(data);
+        if (data.units?.length === 0) {
+          findNextAvailable(co);
+        }
         return data;
       }
     } catch (e) { console.error(e); }
     setLoadingAvail(false);
     return null;
   }, [siteId]);
+
+  const findNextAvailable = async (co: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/widget/calendar?month=${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}${siteId ? `&siteId=${siteId}` : ''}${siteSlug ? `&siteSlug=${siteSlug}` : ''}`);
+      const data = await res.json();
+      if (data.days) {
+        const next = data.days.find((d: any) => d.status === 'available' && d.date > co);
+        if (next) setNextAvailable(next.date);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const joinWaitlist = async () => {
+    if (!email || !checkIn || !checkOut) return;
+    setWaitlistStatus('submitting');
+    try {
+      await fetch(`${API_BASE}/api/booking/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId, checkIn, checkOut, email, phone, name: `${firstName} ${lastName}` })
+      });
+      setWaitlistStatus('success');
+    } catch (e) { console.error(e); }
+  };
 
   const handleDayClick = (dateStr: string) => {
     const clickedDate = parseDate(dateStr);
@@ -242,6 +332,23 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
 
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) return;
+    
+    if (isPreview) {
+      setSubmitting(true);
+      await new Promise(r => setTimeout(r, 1000));
+      setReservation({
+        success: true,
+        reservationId: 'MOCK-123',
+        unitName: selectedUnit?.name || 'Mock House',
+        checkIn, checkOut, nights,
+        totalPrice: totalWithDiscount,
+        currency: 'Kč'
+      });
+      setSubmitting(false);
+      goToStep(4);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/booking/reserve`, {
@@ -270,10 +377,23 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
       }
     } catch (e) { setError('Connection error'); }
     setSubmitting(false);
+
+    // Save to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('alisio_guest_data', JSON.stringify({ firstName, lastName, email, phone }));
+    }
   };
 
   const startPayment = async () => {
-    if (!reservation || !siteSlug) return;
+    if (!reservation) return;
+    if (isPreview) {
+      setSubmitting(true);
+      await new Promise(r => setTimeout(r, 1000));
+      setSubmitting(false);
+      goToStep(6);
+      return;
+    }
+    if (!siteSlug) return;
     setSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, {
@@ -325,7 +445,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
     <div className={`v3-body ${design?.theme?.toLowerCase() || ''}`} style={dynamicStyles}>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 
       <div className="v3-wrap">
         {/* TOP BAR */}
@@ -335,14 +455,12 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
               <path d="M11 4L6 9L11 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <div className="v3-brand">{t.brandName}</div>
-          <button className="v3-lang" onClick={() => {
-            const langs: BookingLang[] = ['uk', 'en', 'cs', 'de'];
-            const idx = langs.indexOf(lang);
-            setLang(langs[(idx + 1) % langs.length]);
-          }}>
-            {BOOKING_LANG_FLAGS[lang]} {lang.toUpperCase()}
-          </button>
+          <div className="v3-topbar-center">
+            {/* Brand removed as requested */}
+          </div>
+          <div className="v3-topbar-right">
+            {/* Lang removed as requested */}
+          </div>
         </div>
 
         {/* PROGRESS */}
@@ -464,6 +582,23 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
               <button className="v3-stepper-btn" onClick={() => setKids(kids + 1)}>+</button>
             </div>
           </div>
+
+          <div className="v3-promo-section">
+            <button className="v3-promo-toggle" onClick={() => setShowPromo(!showPromo)}>
+              {showPromo ? '−' : '+'} {t.promoCode} / {t.certificateCode}
+            </button>
+            {showPromo && (
+              <div className="v3-promo-field">
+                <input 
+                  className="v3-field-input" 
+                  placeholder={t.promoCode} 
+                  value={promoCode} 
+                  onChange={e => setPromoCode(e.target.value)} 
+                />
+                <button className="v3-promo-apply">{t.apply}</button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* STEP 2: HOUSE LIST / DETAILS */}
@@ -472,44 +607,102 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { s
           <p className="v3-step-sub">{t.availableForDates}</p>
 
           {loadingAvail ? (
-            <div className="v3-loading">
-              <div className="v3-spinner"></div>
+            <div className="v3-house-list">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="v3-house-lock skeleton">
+                  <div className="v3-house-lock-thumb skeleton-anim" />
+                  <div className="v3-house-lock-info">
+                    <div style={{ height: 8, width: '40%', background: 'var(--line)', borderRadius: 4, marginBottom: 8 }} className="skeleton-anim" />
+                    <div style={{ height: 12, width: '70%', background: 'var(--line)', borderRadius: 4, marginBottom: 8 }} className="skeleton-anim" />
+                    <div style={{ height: 8, width: '30%', background: 'var(--line)', borderRadius: 4 }} className="skeleton-anim" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="v3-house-list">
-              {availability?.units.map(u => {
-                const isSelected = selectedUnitId === u.id;
-                return (
-                  <div 
-                    key={u.id} 
-                    className={`v3-house-lock ${isSelected ? 'selected' : ''}`} 
-                    onClick={() => setSelectedUnitId(u.id)}
-                  >
-                    <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                      <svg viewBox="0 0 54 54">
-                        <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
-                        <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
-                      </svg>
+              {availability?.units.length === 0 ? (
+                <div className="v3-no-avail">
+                  <div className="v3-no-avail-icon">📭</div>
+                  <h3>{t.noUnitsFound}</h3>
+                  <p>{t.noAvailabilityDesc}</p>
+                  
+                  {nextAvailable && (
+                    <div className="v3-flex-dates">
+                      <div className="v3-flex-dates-label">💡 Спробуйте ці дати:</div>
+                      <button className="v3-flex-dates-btn" onClick={() => {
+                        setCheckIn(nextAvailable);
+                        setCheckOut(null);
+                        setSelectingCheckOut(true);
+                        setStep(1);
+                        setCalOpen(true);
+                      }}>
+                        Вільні місця з {formatDisplayDate(nextAvailable, lang)}
+                      </button>
                     </div>
-                    <div className="v3-house-lock-info">
-                      <div className="v3-house-lock-label">
-                        {isSelected ? `${t.youSelected || 'Ви обрали'} · ${nights} ${t.nightsShort}` : u.typeName}
-                      </div>
-                      <div className="v3-house-lock-name">{u.name}</div>
-                      <div className="v3-house-lock-feat">
-                        {u.baseOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
-                      </div>
-                    </div>
-                    {isSelected && (
-                      <div className="v3-house-lock-check">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                          <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                  )}
+
+                  <div className="v3-waitlist">
+                    <div className="v3-waitlist-title">Список очікування</div>
+                    <p>Ми повідомимо вас, якщо ці дати звільняться.</p>
+                    {waitlistStatus === 'success' ? (
+                      <div className="v3-waitlist-done">✅ Ви підписалися!</div>
+                    ) : (
+                      <div className="v3-waitlist-form">
+                        <input className="v3-waitlist-input" placeholder="Ваш email" value={email} onChange={e => setEmail(e.target.value)} />
+                        <button className="v3-waitlist-btn" onClick={joinWaitlist} disabled={waitlistStatus === 'submitting'}>
+                          {waitlistStatus === 'submitting' ? '...' : 'Підписатися'}
+                        </button>
                       </div>
                     )}
                   </div>
-                );
-              })}
+                </div>
+              ) : (
+                availability?.units.map(u => {
+                  const isSelected = selectedUnitId === u.id;
+                  return (
+                    <div 
+                      key={u.id} 
+                      className={`v3-house-lock select ${isSelected ? 'selected' : ''}`} 
+                      onClick={() => setSelectedUnitId(u.id)}
+                    >
+                      <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                        <svg viewBox="0 0 54 54">
+                          <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                          <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
+                        </svg>
+                      </div>
+                      <div className="v3-house-lock-info">
+                        <div className="v3-house-lock-label">
+                          {isSelected ? `${t.youSelected || 'Ви обрали'} · ${nights} ${t.nightsShort}` : u.typeName}
+                        </div>
+                        <div className="v3-house-lock-name">{u.name}</div>
+                        <div className="v3-house-lock-feat">
+                          {u.baseOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <div className="v3-house-lock-check">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              {availability && availability.units.length > 0 && socialProof && (
+                <div className="v3-social-badges">
+                  <div className="v3-badge viewers">
+                    <span className="v3-badge-dot pulse"></span>
+                    {socialProof.viewers} людей дивляться зараз
+                  </div>
+                  <div className="v3-badge last-book">
+                    ⏱ Остання бронь: {socialProof.lastBooking}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

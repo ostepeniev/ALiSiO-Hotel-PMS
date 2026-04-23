@@ -2408,6 +2408,21 @@ function runMigrations(database: any) {
       database.exec("ALTER TABLE reservations ADD COLUMN group_lead_id TEXT");
     database.exec('CREATE INDEX IF NOT EXISTS idx_reservations_deposit_session ON reservations(deposit_session_id)');
     console.log('[DB] Camping + deposit columns migrated');
+    // Waitlist table
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS waitlist (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        site_id TEXT NOT NULL REFERENCES booking_sites(id) ON DELETE CASCADE,
+        unit_id TEXT REFERENCES units(id) ON DELETE CASCADE,
+        check_in TEXT NOT NULL,
+        check_out TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        name TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
   } catch (e: any) {
     console.error('[DB] Camping migration error:', e.message);
   }

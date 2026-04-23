@@ -657,32 +657,32 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
       <div style={{ flex: 1, minWidth: 0, position: 'sticky', top: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
-            Актуальний приклад (Live Preview)
+            Мобільний вигляд (Smartphone)
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
             <Eye size={12} /> Попередній перегляд
           </div>
         </div>
         
-        {/* Browser chrome mockup with ACTUAL widget */}
-        <div style={{ border: '1px solid var(--border-primary)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,0.12)', background: 'var(--bg-primary)' }}>
-          {/* Fake browser bar */}
-          <div style={{ background: 'var(--surface-secondary)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--border-primary)' }}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#ff5f56' }} />
-              <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#ffbd2e' }} />
-              <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#27c93f' }} />
-            </div>
-            <div style={{ flex: 1, background: 'var(--bg-primary)', borderRadius: 6, padding: '4px 12px', fontSize: 12, color: 'var(--text-tertiary)', border: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Globe size={12} /> yoursite.com/booking
-            </div>
-          </div>
-
-          {/* Actual Widget Instance */}
-          <div style={{ height: 600, overflow: 'auto', position: 'relative' }}>
-            <div style={{ transform: 'scale(0.85)', transformOrigin: 'top center', width: '117.6%' }}>
+        {/* Smartphone Frame Mockup */}
+        <div style={{ 
+          width: 340, margin: '0 auto', 
+          border: '14px solid #1a1a1a', borderRadius: 50, 
+          boxShadow: '0 30px 60px rgba(0,0,0,0.3)', 
+          background: '#000', position: 'relative',
+          overflow: 'hidden'
+        }}>
+          {/* Speaker/Camera notch */}
+          <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 140, height: 28, background: '#1a1a1a', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, zIndex: 10 }} />
+          
+          <div style={{ height: 680, background: 'var(--bg-primary)', overflow: 'hidden', position: 'relative' }}>
+            <div style={{ 
+              height: '100%', overflowY: 'auto', overflowX: 'hidden',
+              scrollbarWidth: 'none'
+            }}>
               <BookingV3 
                 siteSlug={site.slug} 
+                isPreview={true}
                 design={{
                   theme: cfg.theme,
                   primary_color: cfg.primary_color,
@@ -692,10 +692,13 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
               />
             </div>
           </div>
+          
+          {/* Home indicator */}
+          <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', width: 100, height: 4, background: 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
         </div>
 
-        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 12, textAlign: 'center', background: 'var(--surface-secondary)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-primary)' }}>
-          💡 Це живий приклад віджета версії V3. Всі зміни кольорів та стилів кнопок відображаються миттєво.
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 20, textAlign: 'center', background: 'var(--surface-secondary)', padding: '10px 16px', borderRadius: 12, border: '1px solid var(--border-primary)' }}>
+          💡 Ваш віджет повністю адаптований під мобільні пристрої. Ви можете протестувати всі кроки прямо в цьому вікні.
         </div>
       </div>
 
