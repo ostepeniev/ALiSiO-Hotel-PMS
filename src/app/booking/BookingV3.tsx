@@ -1,0 +1,611 @@
+'use client';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import './booking-v3.css';
+import { BookingLang, BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from './translations';
+
+// API base URL
+const API_BASE = process.env.NEXT_PUBLIC_PMS_API_URL || '';
+
+// ─── Types ───
+interface UnitResult {
+  id: string;
+  name: string;
+  code: string;
+  beds: number;
+  unitTypeId: string;
+  typeName: string;
+  typeCode: string;
+  description: string;
+  maxAdults: number;
+  maxChildren: number;
+  maxOccupancy: number;
+  baseOccupancy: number;
+  avgPricePerNight: number;
+  totalPrice: number;
+  currency: string;
+  extraPersonCharge: number;
+  petAllowed: boolean;
+  petCharge: number;
+  amenities: { icon: string; name: string }[];
+}
+
+interface AvailabilityResponse {
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  units: UnitResult[];
+}
+
+interface ReserveResponse {
+  success: boolean;
+  reservationId: string;
+  unitName: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  totalPrice: number;
+  currency: string;
+}
+
+// ─── Helpers ───
+function fmtDate(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function parseDate(s: string): Date {
+  return new Date(s + 'T00:00:00');
+}
+
+function formatDisplayDate(s: string, lang: BookingLang): string {
+  const d = parseDate(s);
+  const locales: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' };
+  return d.toLocaleDateString(locales[lang] || 'uk-UA', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function formatFullDate(s: string, lang: BookingLang): string {
+  const d = parseDate(s);
+  const locales: Record<string, string> = { uk: 'uk-UA', en: 'en-GB', cs: 'cs-CZ', de: 'de-DE' };
+  return d.toLocaleDateString(locales[lang] || 'uk-UA', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function formatPrice(n: number): string {
+  return new Intl.NumberFormat('cs-CZ').format(n).replace(',', ' ');
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function getFirstDayOfMonth(year: number, month: number): number {
+  const d = new Date(year, month, 1).getDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: string, siteSlug?: string, thankYouUrl?: string }) {
+  // ─── State ───
+  const [isMounted, setIsMounted] = useState(false);
+  const [lang, setLang] = useState<BookingLang>('uk');
+  const t = useMemo(() => getBookingTranslations(lang), [lang]);
+  const [step, setStep] = useState(1);
+  const [checkIn, setCheckIn] = useState<string | null>(null);
+  const [checkOut, setCheckOut] = useState<string | null>(null);
+  const [selectingCheckOut, setSelectingCheckOut] = useState(false);
+  const [adults, setAdults] = useState(2);
+  const [kids, setKids] = useState(0);
+  const [calMonthOffset, setCalMonthOffset] = useState(0);
+  const [calOpen, setCalOpen] = useState(false);
+  
+  const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
+  const [loadingAvail, setLoadingAvail] = useState(false);
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reservation, setReservation] = useState<ReserveResponse | null>(null);
+
+  // Pre-select unit from query param
+  useEffect(() => {
+    setIsMounted(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const uId = params.get('unitId');
+      if (uId) setSelectedUnitId(uId);
+    }
+  }, []);
+
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    return d;
+  }, []);
+
+  const nights = useMemo(() => {
+    if (!checkIn || !checkOut) return 0;
+    return Math.round((parseDate(checkOut).getTime() - parseDate(checkIn).getTime()) / 86400000);
+  }, [checkIn, checkOut]);
+
+  const selectedUnit = useMemo(() => {
+    if (!availability || !selectedUnitId) return null;
+    return availability.units.find(u => u.id === selectedUnitId) || null;
+  }, [availability, selectedUnitId]);
+
+  const totalWithDiscount = useMemo(() => {
+    if (!selectedUnit) return 0;
+    // Simple logic for now, similar to page.tsx
+    const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
+    const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
+    return selectedUnit.totalPrice + extraCharge;
+  }, [selectedUnit, adults, nights]);
+
+  // ─── Actions ───
+  const fetchAvailability = useCallback(async (ci: string, co: string) => {
+    setLoadingAvail(true);
+    try {
+      const params = new URLSearchParams({ checkIn: ci, checkOut: co });
+      if (siteId) params.set('siteId', siteId);
+      const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailability(data);
+        return data;
+      }
+    } catch (e) { console.error(e); }
+    setLoadingAvail(false);
+    return null;
+  }, [siteId]);
+
+  const handleDayClick = (dateStr: string) => {
+    const clickedDate = parseDate(dateStr);
+    if (clickedDate < today) return;
+
+    if (!checkIn || (checkIn && checkOut) || !selectingCheckOut) {
+      setCheckIn(dateStr);
+      setCheckOut(null);
+      setSelectingCheckOut(true);
+    } else {
+      if (clickedDate <= parseDate(checkIn!)) {
+        setCheckIn(dateStr);
+        setCheckOut(null);
+      } else {
+        setCheckOut(dateStr);
+        setSelectingCheckOut(false);
+        setCalOpen(false);
+        fetchAvailability(checkIn!, dateStr);
+      }
+    }
+  };
+
+  const goToStep = (s: number) => {
+    setStep(s);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Notify parent of resize if in iframe
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      setTimeout(() => {
+        window.parent.postMessage({ source: 'alisio-widget', event: 'resize', height: document.body.scrollHeight }, '*');
+      }, 100);
+    }
+  };
+
+  const submitBooking = async () => {
+    if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/booking/reserve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unitId: selectedUnitId,
+          checkIn,
+          checkOut,
+          adults,
+          children: kids,
+          firstName,
+          lastName,
+          email,
+          phone,
+          siteId: siteId || undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReservation(data);
+        goToStep(4);
+      } else {
+        const err = await res.json();
+        setError(err.error || 'Failed to book');
+      }
+    } catch (e) { setError('Connection error'); }
+    setSubmitting(false);
+  };
+
+  // ─── Render ───
+  return (
+    <div className="v3-body">
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+      <div className="v3-wrap">
+        {/* TOP BAR */}
+        <div className="v3-topbar">
+          <button className="v3-back-btn" onClick={() => step > 1 && goToStep(step - 1)}>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M11 4L6 9L11 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <div className="v3-brand">{t.brandName}</div>
+          <button className="v3-lang" onClick={() => {
+            const langs: BookingLang[] = ['uk', 'en', 'cs', 'de'];
+            const idx = langs.indexOf(lang);
+            setLang(langs[(idx + 1) % langs.length]);
+          }}>
+            {BOOKING_LANG_FLAGS[lang]} {lang.toUpperCase()}
+          </button>
+        </div>
+
+        {/* PROGRESS */}
+        {step < 6 && (
+          <div className="v3-progress">
+            {[1, 2, 3, 4, 5].map(s => (
+              <div key={s} className={`v3-progress-step ${step >= s ? 'active' : ''}`} />
+            ))}
+          </div>
+        )}
+
+        {/* STEP 1: DATES + GUESTS */}
+        <div className={`v3-step ${step === 1 ? 'visible' : ''}`}>
+          <h1 className="v3-step-title">{t.selectDates}</h1>
+          <p className="v3-step-sub">{selectedUnit ? `${t.youSelected} ${selectedUnit.name}. ${t.checkDetailsBelow}` : t.checkDetailsBelow}</p>
+
+          {selectedUnit && (
+            <div className="v3-house-lock">
+              <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                <svg viewBox="0 0 54 54">
+                  <polygon points="12,30 27,16 42,30 42,44 12,44" fill="#C9844A" />
+                  <polygon points="8,30 27,14 46,30" fill="#8B5A2B" />
+                  <rect x="23" y="34" width="8" height="10" fill="#1F3220" />
+                </svg>
+              </div>
+              <div className="v3-house-lock-info">
+                <div className="v3-house-lock-label">{t.accommodation}</div>
+                <div className="v3-house-lock-name">{selectedUnit.name}</div>
+                <div className="v3-house-lock-feat">
+                  {selectedUnit.baseOccupancy} {t.guestsShort} · {selectedUnit.typeName}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="v3-dates" onClick={() => setCalOpen(!calOpen)}>
+            <div className="v3-date-cell">
+              <div className="v3-date-cell-label">{t.checkIn}</div>
+              <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
+              <div className="v3-date-cell-sub">{t.from} 15:00</div>
+            </div>
+            <div className="v3-date-div"></div>
+            <div className="v3-date-cell">
+              <div className="v3-date-cell-label">{t.checkOut}</div>
+              <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
+              <div className="v3-date-cell-sub">
+                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} · {t.to} 11:00
+              </div>
+            </div>
+          </div>
+
+          <div className={`v3-cal-wrap ${calOpen ? 'open' : ''}`}>
+            <div className="v3-cal-head">
+              <div className="v3-cal-month">
+                {new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'en-GB', { month: 'long', year: 'numeric' })}
+              </div>
+              <div className="v3-cal-nav">
+                <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
+                <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
+              </div>
+            </div>
+            <div className="v3-cal-weekdays">
+              {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
+            </div>
+            <div className="v3-cal-days">
+              {(() => {
+                const year = today.getFullYear();
+                const month = today.getMonth() + calMonthOffset;
+                const daysInM = getDaysInMonth(year, month);
+                const first = getFirstDayOfMonth(year, month);
+                const cells = [];
+                for (let i = 0; i < first; i++) cells.push(<div key={`e-${i}`} className="v3-cal-day muted" />);
+                for (let d = 1; d <= daysInM; d++) {
+                  const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                  const isPast = parseDate(ds) < today;
+                  let cls = 'v3-cal-day';
+                  if (isPast) cls += ' muted';
+                  if (ds === checkIn) cls += ' start';
+                  if (ds === checkOut) cls += ' end';
+                  if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
+                  cells.push(
+                    <div key={d} className={cls} onClick={(e) => { e.stopPropagation(); if (!isPast) handleDayClick(ds); }}>
+                      <span>{d}</span>
+                    </div>
+                  );
+                }
+                return cells;
+              })()}
+            </div>
+          </div>
+
+          <div className="v3-guests">
+            <div>
+              <div className="v3-guests-label">{t.adults}</div>
+              <div className="v3-guests-sub">18+</div>
+            </div>
+            <div className="v3-stepper">
+              <button className="v3-stepper-btn" onClick={() => setAdults(Math.max(1, adults - 1))}>−</button>
+              <span className="v3-stepper-val">{adults}</span>
+              <button className="v3-stepper-btn" onClick={() => setAdults(adults + 1)}>+</button>
+            </div>
+          </div>
+
+          <div className="v3-guests">
+            <div>
+              <div className="v3-guests-label">{t.children}</div>
+              <div className="v3-guests-sub">0-17</div>
+            </div>
+            <div className="v3-stepper">
+              <button className="v3-stepper-btn" onClick={() => setKids(Math.max(0, kids - 1))}>−</button>
+              <span className="v3-stepper-val">{kids}</span>
+              <button className="v3-stepper-btn" onClick={() => setKids(kids + 1)}>+</button>
+            </div>
+          </div>
+        </div>
+
+        {/* STEP 2: HOUSE LIST / DETAILS */}
+        <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
+          <h1 className="v3-step-title">{t.selectAccommodation}</h1>
+          <p className="v3-step-sub">{t.availableForDates}</p>
+
+          {loadingAvail ? (
+            <div className="v3-loading">
+              <div className="v3-spinner"></div>
+            </div>
+          ) : (
+            <div className="v3-house-list">
+              {availability?.units.map(u => {
+                const isSelected = selectedUnitId === u.id;
+                return (
+                  <div 
+                    key={u.id} 
+                    className={`v3-house-lock ${isSelected ? 'selected' : ''}`} 
+                    onClick={() => setSelectedUnitId(u.id)}
+                  >
+                    <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                      <svg viewBox="0 0 54 54">
+                        <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                        <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
+                      </svg>
+                    </div>
+                    <div className="v3-house-lock-info">
+                      <div className="v3-house-lock-label">
+                        {isSelected ? `${t.youSelected || 'Ви обрали'} · ${nights} ${t.nightsShort}` : u.typeName}
+                      </div>
+                      <div className="v3-house-lock-name">{u.name}</div>
+                      <div className="v3-house-lock-feat">
+                        {u.baseOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div className="v3-house-lock-check">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                          <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedUnit && (
+            <div className="v3-house-detail-fade">
+              <div className="v3-gallery">
+                <div className="v3-gallery-main">
+                  <svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+                    <defs>
+                      <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#A4B996" stopOpacity=".6" />
+                        <stop offset="100%" stopColor="#2F4F2B" />
+                      </linearGradient>
+                    </defs>
+                    <rect width="400" height="300" fill="url(#sky2)" />
+                    <path d="M0,300 L0,180 L30,150 L25,125 L40,100 L55,125 L50,150 L80,170 L75,140 L90,115 L105,140 L110,170 L140,190 L160,300 Z" fill="#1F3220" opacity=".85" />
+                    <path d="M260,300 L260,170 L290,145 L285,120 L300,95 L315,120 L310,145 L340,165 L350,300 Z" fill="#1F3220" opacity=".85" />
+                    <g transform="translate(150,120)">
+                      <polygon points="-10,40 50,0 110,40 110,100 -10,100" fill="#C9844A" />
+                      <polygon points="-15,40 50,-5 115,40" fill="#8B5A2B" />
+                      <rect x="20" y="55" width="20" height="30" fill="#F6F1E8" opacity=".9" />
+                      <rect x="65" y="55" width="20" height="30" fill="#F6F1E8" opacity=".9" />
+                      <rect x="42" y="70" width="18" height="30" fill="#5A3A1A" />
+                      <circle cx="50" cy="0" r="3" fill="#FFD580" />
+                      <line x1="50" y1="-5" x2="50" y2="-18" stroke="#5A3A1A" strokeWidth="1.5" />
+                    </g>
+                    <ellipse cx="200" cy="270" rx="250" ry="10" fill="#F6F1E8" opacity=".3" />
+                  </svg>
+                </div>
+                <div className="v3-gallery-count">1 / 1</div>
+              </div>
+              <h1 className="v3-house-detail-name">{selectedUnit.name}</h1>
+              <div className="v3-house-detail-meta">{selectedUnit.typeName} · {selectedUnit.baseOccupancy} {t.guestsShort}</div>
+              <div className="v3-amenities">
+                {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a, i) => (
+                  <div key={i} className="v3-amenity">
+                    <span className="v3-amenity-icon">{a.icon || '✓'}</span>
+                    {a.name}
+                  </div>
+                )) : (
+                  <>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">🛁</span>Джакузі на терасі</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">🔥</span>Камін дров'яний</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">☕</span>Кухня повна</div>
+                    <div className="v3-amenity"><span className="v3-amenity-icon">📶</span>Wi-Fi 100 Mbps</div>
+                  </>
+                )}
+              </div>
+              <div className="v3-house-desc">{selectedUnit.description}</div>
+            </div>
+          )}
+        </div>
+
+        {/* STEP 3: CONTACTS */}
+        <div className={`v3-step ${step === 3 ? 'visible' : ''}`}>
+          <h1 className="v3-step-title">{t.guestInfoTitle}</h1>
+          <p className="v3-step-sub">{t.confirmationEmailNote}</p>
+
+          <div className="v3-field">
+            <label className="v3-field-label">{t.firstName} & {t.lastName}</label>
+            <div className="v3-field-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <input className="v3-field-input" placeholder={t.firstName} value={firstName} onChange={e => setFirstName(e.target.value)} />
+              <input className="v3-field-input" placeholder={t.lastName} value={lastName} onChange={e => setLastName(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="v3-field">
+            <label className="v3-field-label">{t.email}</label>
+            <input className="v3-field-input" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+
+          <div className="v3-field">
+            <label className="v3-field-label">{t.phone}</label>
+            <input className="v3-field-input" type="tel" placeholder="+420..." value={phone} onChange={e => setPhone(e.target.value)} />
+          </div>
+        </div>
+
+        {/* STEP 4: SERVICES */}
+        <div className={`v3-step ${step === 4 ? 'visible' : ''}`}>
+          <h1 className="v3-step-title">{t.addToStayTitle || 'Додати до відпочинку?'}</h1>
+          <p className="v3-step-sub">{t.everythingOptional || 'Все опційне. Можна пропустити і додати пізніше.'}</p>
+
+          <div className="v3-service-card" onClick={(e) => e.currentTarget.classList.toggle('selected')}>
+            <div className="v3-service-body">
+              <div className="v3-service-visual">🥐</div>
+              <div className="v3-service-info">
+                <div className="v3-service-name">Сніданок у будинок</div>
+                <div className="v3-service-reason">Привозимо о 9:00 — свіже пекарське, кава, фреш.</div>
+                <div className="v3-service-price-row">
+                  <span className="v3-service-price">+ 600 Kč</span>
+                  <div className="v3-service-toggle"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="v3-service-card" onClick={(e) => e.currentTarget.classList.toggle('selected')}>
+            <div className="v3-service-body">
+              <div className="v3-service-visual s2">🧖</div>
+              <div className="v3-service-info">
+                <div className="v3-service-name">Фінська сауна на 2 години</div>
+                <div className="v3-service-reason">Приватна сауна з видом на ліс.</div>
+                <div className="v3-service-price-row">
+                  <span className="v3-service-price">+ 800 Kč</span>
+                  <div className="v3-service-toggle"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button className="v3-skip-link" onClick={() => goToStep(5)}>{t.skipLink || 'Пропустити — не треба нічого'}</button>
+        </div>
+
+        {/* STEP 5: PAYMENT (Breakdown) */}
+        <div className={`v3-step ${step === 5 ? 'visible' : ''}`}>
+          <h1 className="v3-step-title">{t.paymentTitle}</h1>
+          <p className="v3-step-sub">{t.securePaymentNote}</p>
+
+          <div className="v3-breakdown">
+            <div className="v3-breakdown-row">
+              <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
+              <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0)} Kč</span>
+            </div>
+            {totalWithDiscount > (selectedUnit?.totalPrice || 0) && (
+              <div className="v3-breakdown-row">
+                <span>{t.additionalServices}</span>
+                <span className="v3-breakdown-val">{formatPrice(totalWithDiscount - (selectedUnit?.totalPrice || 0))} Kč</span>
+              </div>
+            )}
+            <div className="v3-breakdown-row total">
+              <span>{t.total}</span>
+              <span className="v3-breakdown-val">{formatPrice(totalWithDiscount)} Kč</span>
+            </div>
+          </div>
+
+          <div className="v3-pay-method selected">
+            <div className="v3-pay-method-radio"></div>
+            <div className="v3-pay-method-info">
+              <div className="v3-pay-method-name">Teya Payment Gateway</div>
+              <div className="v3-pay-method-sub">Visa · Mastercard · Apple Pay</div>
+            </div>
+          </div>
+
+          <div className="v3-trust-block">
+            <div className="v3-trust-block-line"><span>{t.securePaymentNote}</span></div>
+          </div>
+        </div>
+
+        {/* STEP 6: SUCCESS */}
+        <div className={`v3-step ${step === 6 || !!reservation ? 'visible' : ''} success`}>
+          <div className="v3-success-icon">
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M7 15L12 20L23 9" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </div>
+          <h1 className="v3-success-title">{t.bookedSuccess}</h1>
+          <p className="v3-success-sub">{t.supportContactNote}</p>
+
+          <div className="v3-success-details">
+            <div className="v3-success-row"><span>{t.bookingNumber}</span><strong>#{reservation?.reservationId.slice(-4).toUpperCase()}</strong></div>
+            <div className="v3-success-row"><span>{t.accommodation}</span><strong>{reservation?.unitName}</strong></div>
+            <div className="v3-success-row"><span>{t.checkIn}</span><strong>{reservation ? formatFullDate(reservation.checkIn, lang) : ''}</strong></div>
+            <div className="v3-success-row"><span>{t.checkOut}</span><strong>{reservation ? formatFullDate(reservation.checkOut, lang) : ''}</strong></div>
+          </div>
+        </div>
+
+        {/* STICKY CTA */}
+        {step < 6 && !reservation && (
+          <div className="v3-cta-bar">
+            <div className="v3-cta-inner">
+              <div className="v3-cta-summary">
+                <div className="v3-cta-summary-line1">
+                  {nights > 0 ? `${nights} ${t.nightsShort.toUpperCase()}` : ''} · {adults + kids} {t.guestsShort.toUpperCase()}
+                </div>
+                <div className="v3-cta-summary-line2">{formatPrice(totalWithDiscount)} Kč</div>
+              </div>
+              <button
+                className="v3-cta-btn"
+                disabled={
+                  (step === 1 && (!checkIn || !checkOut)) || 
+                  (step === 2 && !selectedUnitId) ||
+                  (step === 3 && (!firstName || !lastName || !phone || !email))
+                }
+                onClick={() => {
+                  if (step === 1) {
+                    goToStep(2);
+                  }
+                  else if (step === 2) goToStep(3);
+                  else if (step === 3) submitBooking();
+                  else if (step === 4) goToStep(5);
+                  else if (step === 5) { /* Redirect to Teya logic */ goToStep(6); }
+                }}
+              >
+                <span>{step === 5 ? t.payNow : (step === 3 ? (submitting ? t.processing : t.next) : t.next)}</span>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

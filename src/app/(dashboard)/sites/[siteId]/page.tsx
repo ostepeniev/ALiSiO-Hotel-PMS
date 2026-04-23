@@ -113,9 +113,10 @@ const Chk = ({ val }: { val?: string | null }) =>
   val ? <span style={{color:'#22c55e',fontSize:16}}>✓</span> : <span style={{color:'var(--text-tertiary)',fontSize:14}}>—</span>;
 
 /* ── ListingRow: click → edit modal ── */
-function ListingRow({ listing, siteId, onDelete, onRefresh }: {
+function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh }: {
   listing: Listing;
   siteId: string;
+  siteSlug: string;
   onDelete: (id: string) => void;
   onRefresh: () => void;
 }) {
@@ -151,7 +152,8 @@ function ListingRow({ listing, siteId, onDelete, onRefresh }: {
   const unitAttr = listing.unit_id
     ? `data-unit="${listing.unit_id}"`
     : `data-unit-type="${listing.unit_type_id}"`;
-  const embedCode = `<script\n  src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.js"\n  data-site="${siteId}"\n  ${unitAttr}\n  data-lang="${embedLang}">\n</script>`;
+  
+  const embedCode = `<div id="alisio-booking-widget"\n  data-site="${siteSlug}"\n  ${unitAttr}>\n</div>\n<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
 
   const LANGS = ['uk','cs','en','de'];
 
@@ -267,7 +269,7 @@ function ListingRow({ listing, siteId, onDelete, onRefresh }: {
 /* ════════════════════════════════════════════════
    TAB: LISTINGS
    ════════════════════════════════════════════════ */
-function ListingsTab({ siteId }: { siteId: string }) {
+function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string }) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -350,7 +352,7 @@ function ListingsTab({ siteId }: { siteId: string }) {
           </tr></thead>
           <tbody>
             {listings.map(l => (
-              <ListingRow key={l.id} listing={l} siteId={siteId} onDelete={handleDelete} onRefresh={fetchListings} />
+              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} onDelete={handleDelete} onRefresh={fetchListings} />
             ))}
           </tbody>
         </table>
@@ -729,11 +731,8 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   const lang = cfg.default_lang || 'uk';
 
-  const scriptTag = `<script
-  src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.js"
-  data-site="${site.id}"
-  data-lang="${lang}">
-</script>`;
+  const scriptTag = `<div id="alisio-booking-widget" data-site="${site.slug}"></div>
+<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
 
   const iframeEmbed = `<iframe
   src="${origin || 'https://YOUR_DOMAIN'}/booking?site=${site.id}&lang=${lang}"
@@ -746,11 +745,8 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 <script>
   window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
 </script>
-<script
-  src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.js"
-  data-site="${site.id}"
-  data-lang-from="window.__BOOKING_LANG__">
-</script>`;
+<div id="alisio-booking-widget" data-site="${site.slug}" data-lang-from="window.__BOOKING_LANG__"></div>
+<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
 
   const save = async () => {
     setSaving(true);
@@ -1328,7 +1324,7 @@ export default function SiteDetailPage() {
         </div>
 
         {/* Tab content */}
-        {activeTab === 'listings'    && <ListingsTab siteId={siteId} />}
+        {activeTab === 'listings'    && <ListingsTab siteId={siteId} siteSlug={site?.slug || ''} />}
         {activeTab === 'services'    && <ServicesTab siteId={siteId} />}
         {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,design_config:cfg}:s)} />}
         {activeTab === 'widget'      && <WidgetTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,widget_config:cfg}:s)} />}

@@ -16,20 +16,35 @@ const WIDGET_OPTIONS: { value: WidgetType; label: string; icon: string; desc: st
 
 export default function BookingWidgetSettingsPage() {
   const onMenuClick = useMobileMenu();
-  const [properties, setProperties] = useState<any[]>([]);
-  const [selectedProperty, setSelectedProperty] = useState('');
+  const [sites, setSites] = useState<any[]>([]);
+  const [selectedSite, setSelectedSite] = useState('');
+  const [units, setUnits] = useState<any[]>([]);
+  const [selectedUnit, setSelectedUnit] = useState('');
   const [widgetType, setWidgetType] = useState<WidgetType>('booking');
   const [lang, setLang] = useState('uk');
   const [color, setColor] = useState('#1a1a2e');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    fetch('/api/booking-sites')
+      .then(r => r.json())
+      .then(data => {
+        const list = data.sites || [];
+        setSites(list);
+        if (list.length > 0 && !selectedSite) setSelectedSite(list[0].id);
+      })
+      .catch(() => {});
+
     fetch('/api/properties')
       .then(r => r.json())
       .then(data => {
         const list = data.properties || data || [];
-        setProperties(list);
-        if (list.length > 0 && !selectedProperty) setSelectedProperty(list[0].id);
+        if (list.length > 0) {
+          fetch(`/api/properties/${list[0].id}/units`)
+            .then(r => r.json())
+            .then(uData => setUnits(uData.units || []))
+            .catch(() => {});
+        }
       })
       .catch(() => {});
   }, []);
@@ -37,8 +52,11 @@ export default function BookingWidgetSettingsPage() {
   const domain = typeof window !== 'undefined' ? window.location.origin : 'https://your-pms-domain.com';
 
   const isService = widgetType !== 'booking';
-  const scriptFile = isService ? 'service-embed.js' : 'embed.js';
+  const scriptFile = isService ? 'service-embed.js' : 'embed.v2.js';
   const containerId = isService ? 'alisio-service-widget' : 'alisio-booking-widget';
+
+  const currentSite = sites.find(s => s.id === selectedSite);
+  const siteSlug = currentSite?.slug || '';
 
   const embedCode = isService
     ? `<div id="${containerId}"></div>
@@ -48,13 +66,11 @@ export default function BookingWidgetSettingsPage() {
   data-lang="${lang}"
   data-color="${color}"
 ></script>`
-    : `<div id="${containerId}"></div>
-<script
-  src="${domain}/widget/${scriptFile}"
-  data-property="${selectedProperty}"
-  data-lang="${lang}"
-  data-color="${color}"
-></script>`;
+    : `<div id="${containerId}" 
+     data-site="${siteSlug}" 
+     ${selectedUnit ? `data-unit="${selectedUnit}"` : ''}>
+</div>
+<script src="${domain}/widget/${scriptFile}"></script>`;
 
   function copyCode() {
     navigator.clipboard.writeText(embedCode).then(() => {
@@ -68,8 +84,8 @@ export default function BookingWidgetSettingsPage() {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5}</style>
 </head><body>
-<div id="alisio-${isService ? 'service' : 'booking'}-widget"></div>
-<script src="${domain}/widget/${scriptFile}" ${!isService ? `data-property="${selectedProperty}"` : `data-service="${widgetType}"`} data-lang="${lang}" data-color="${color}"></script>
+<div id="alisio-${isService ? 'service' : 'booking'}-widget" data-site="${siteSlug}" ${selectedUnit ? `data-unit="${selectedUnit}"` : ''}></div>
+<script src="${domain}/widget/${scriptFile}"></script>
 </body></html>`;
 
   return (
@@ -120,26 +136,48 @@ export default function BookingWidgetSettingsPage() {
               </div>
             </div>
 
-            {/* Property (only for booking widget) */}
+            {/* Site selector (only for booking widget) */}
             {!isService && (
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Об&apos;єкт
-                </label>
-                <select
-                  value={selectedProperty}
-                  onChange={e => setSelectedProperty(e.target.value)}
-                  style={{
-                    width: '100%', padding: '8px 12px', borderRadius: 8,
-                    border: '1px solid var(--border-primary)', fontSize: 14,
-                    background: 'var(--bg-primary)', color: 'var(--text-primary)',
-                  }}
-                >
-                  {properties.map((p: any) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Сайт бронювання
+                  </label>
+                  <select
+                    value={selectedSite}
+                    onChange={e => setSelectedSite(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 8,
+                      border: '1px solid var(--border-primary)', fontSize: 14,
+                      background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                    }}
+                  >
+                    {sites.map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.slug})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Конкретний об&apos;єкт (опціонально)
+                  </label>
+                  <select
+                    value={selectedUnit}
+                    onChange={e => setSelectedUnit(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 8,
+                      border: '1px solid var(--border-primary)', fontSize: 14,
+                      background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                    }}
+                  >
+                    <option value="">Всі об&apos;єкти</option>
+                    {units.map((u: any) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
 
             {/* Language */}

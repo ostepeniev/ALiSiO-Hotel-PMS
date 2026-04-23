@@ -27,12 +27,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="uk">
+    <html lang="uk" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
       <link rel="apple-touch-startup-image" href="/icons/icon-512.svg" />
       </head>
-      <body>{children}</body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
