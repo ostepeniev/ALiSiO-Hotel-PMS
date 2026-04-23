@@ -60,6 +60,33 @@ export async function getTeyaAccessToken(scope = 'checkout/sessions/create'): Pr
   return cachedToken!;
 }
 
+/**
+ * Get a Teya access token using specific credentials (no caching for dynamic ones).
+ */
+export async function getTeyaAccessTokenWithCreds(clientId: string, clientSecret: string, scope = 'checkout/sessions/create'): Promise<string> {
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope,
+  });
+
+  const res = await fetch(TEYA_OAUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('[Teya OAuth] Dynamic Error:', res.status, errorText);
+    throw new Error(`Teya OAuth failed with custom credentials: ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.access_token;
+}
+
 // ─── Types ───
 export interface TeyaLineItem {
   description: string;
@@ -76,6 +103,12 @@ export interface CheckoutSessionOptions {
   success_url?: string;
   cancel_url?: string;
   expiresAt?: string;     // ISO 8601 — e.g. new Date(Date.now() + 24*3600*1000).toISOString()
+  // Optional credentials for dynamic override
+  credentials?: {
+    client_id: string;
+    client_secret: string;
+    store_id: string;
+  };
 }
 
 export interface CheckoutSessionResult {
@@ -89,10 +122,14 @@ export interface CheckoutSessionResult {
  * Create a Teya Checkout Session for Embedded Checkout or Hosted Checkout.
  */
 export async function createCheckoutSession(opts: CheckoutSessionOptions): Promise<CheckoutSessionResult> {
-  const token = await getTeyaAccessToken();
+  const token = opts.credentials 
+    ? await getTeyaAccessTokenWithCreds(opts.credentials.client_id, opts.credentials.client_secret)
+    : await getTeyaAccessToken();
+
+  const storeId = opts.credentials?.store_id || TEYA_STORE_ID;
 
   const payload: Record<string, unknown> = {
-    store_id: TEYA_STORE_ID,
+    store_id: storeId,
     amount: {
       currency: opts.currency || 'CZK',
       value: opts.amount,

@@ -28,8 +28,12 @@ export async function handlePaymentReturn(req: Request) {
       `).run(sessionId);
 
       // reservation_id can come from URL query param OR embedded in return path
+      const returnUrlObj = new URL(returnPath, url.origin);
       const reservationId = url.searchParams.get('reservation_id')
-        || new URL(returnPath, url.origin).searchParams.get('success');
+        || url.searchParams.get('res_id')
+        || returnUrlObj.searchParams.get('res_id')
+        || returnUrlObj.searchParams.get('reservation_id')
+        || returnUrlObj.searchParams.get('success');
 
       let resResult = { changes: 0 };
       if (reservationId) {

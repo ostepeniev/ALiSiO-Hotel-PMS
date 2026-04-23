@@ -113,6 +113,21 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
     setIsMounted(true);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
+      
+      const payStatus = params.get('payment_status');
+      const resId = params.get('res_id');
+      if (payStatus === 'success' && resId) {
+        fetch(`${API_BASE}/api/booking/reserve/${resId}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.reservationId) {
+              setReservation(data);
+              setStep(6);
+            }
+          })
+          .catch(err => console.error('Fetch res error:', err));
+      }
+
       const uId = params.get('unitId');
       if (uId) setSelectedUnitId(uId);
 
@@ -225,6 +240,32 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
         setError(err.error || 'Failed to book');
       }
     } catch (e) { setError('Connection error'); }
+    setSubmitting(false);
+  };
+
+  const startPayment = async () => {
+    if (!reservation || !siteSlug) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/booking/checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservation_id: reservation.reservationId,
+          site_slug: siteSlug,
+          return_path: window.location.href.split('?')[0] + `?res_id=${reservation.reservationId}&payment_status=success`
+        }),
+      });
+      const data = await res.json();
+      if (data.session_url) {
+        window.location.href = data.session_url;
+      } else {
+        setError(data.error || 'Payment failed to start');
+      }
+    } catch (e) { 
+      console.error(e);
+      setError('Payment gateway error'); 
+    }
     setSubmitting(false);
   };
 
@@ -599,7 +640,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
                   else if (step === 2) goToStep(3);
                   else if (step === 3) submitBooking();
                   else if (step === 4) goToStep(5);
-                  else if (step === 5) { /* Redirect to Teya logic */ goToStep(6); }
+                  else if (step === 5) startPayment();
                 }}
               >
                 <span>{step === 5 ? t.payNow : (step === 3 ? (submitting ? t.processing : t.next) : t.next)}</span>

@@ -182,12 +182,12 @@ export async function createWidgetReservation(request: NextRequest) {
 
     const resId = `r_${Date.now()}`;
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, payment_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      'tentative', 'unpaid', 'direct', finalPrice,
+      'tentative', 'unpaid', 'direct', finalPrice, null
     );
 
     return NextResponse.json({
@@ -206,5 +206,28 @@ export async function createWidgetReservation(request: NextRequest) {
   } catch (error: any) {
     console.error('POST /api/booking/reserve error:', error?.message || error);
     return NextResponse.json({ error: 'Failed to create reservation' }, { status: 500, headers: CORS_HEADERS });
+  }
+}
+
+export async function getWidgetReservation(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const db = getDb();
+    
+    const res = db.prepare(`
+      SELECT r.id as reservationId, r.check_in as checkIn, r.check_out as checkOut, r.nights, r.total_price as totalPrice, r.currency,
+             u.name as unitName
+      FROM reservations r
+      JOIN units u ON r.unit_id = u.id
+      WHERE r.id = ?
+    `).get(id) as any;
+
+    if (!res) {
+      return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
+    }
+
+    return NextResponse.json(res, { headers: CORS_HEADERS });
+  } catch (error: any) {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: CORS_HEADERS });
   }
 }

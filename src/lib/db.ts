@@ -606,8 +606,20 @@ function runMigrations(database: any) {
   if (!rgCols.includes('document_number')) {
     try { database.exec("ALTER TABLE reservation_guests ADD COLUMN document_number TEXT"); } catch { /* already exists */ }
   }
+  // --- Migration: add guest_id column to reservation_guests ---
   if (!rgCols.includes('guest_id')) {
     try { database.exec("ALTER TABLE reservation_guests ADD COLUMN guest_id TEXT REFERENCES guests(id)"); } catch { /* already exists */ }
+  }
+
+  // --- Migration: add payment_id to reservations ---
+  try {
+    const resCols = database.prepare("PRAGMA table_info(reservations)").all() as { name: string }[];
+    if (!resCols.some((c: any) => c.name === 'payment_id')) {
+      database.exec("ALTER TABLE reservations ADD COLUMN payment_id TEXT");
+      console.log('[DB] Added payment_id column to reservations');
+    }
+  } catch (e: any) {
+    console.log('[DB] payment_id migration note:', e.message);
   }
 
   // --- Migration: create additional_services table ---
@@ -2263,6 +2275,10 @@ function runMigrations(database: any) {
     if (!bsCols.includes('site_url')) {
       database.exec("ALTER TABLE booking_sites ADD COLUMN site_url TEXT");
       console.log('[DB] Added site_url to booking_sites');
+    }
+    if (!bsCols.includes('payment_config')) {
+      database.exec("ALTER TABLE booking_sites ADD COLUMN payment_config TEXT");
+      console.log('[DB] Added payment_config to booking_sites');
     }
   } catch (e: any) {
     console.log('[DB] booking_sites extension note:', e.message);

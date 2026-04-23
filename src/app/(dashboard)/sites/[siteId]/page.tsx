@@ -23,6 +23,16 @@ interface Site {
   status: string;
   design_config: DesignConfig;
   widget_config: WidgetConfig;
+  payment_config: PaymentConfig;
+}
+interface PaymentConfig {
+  provider?: 'teya' | 'stripe' | 'manual';
+  enabled?: boolean;
+  teya?: {
+    client_id?: string;
+    client_secret?: string;
+    store_id?: string;
+  };
 }
 interface DesignConfig {
   theme?: string;
@@ -995,13 +1005,84 @@ function RatePlansTab({ siteId }: { siteId: string }) {
    TAB: PAYMENTS (stub — payment_accounts not yet
    fully wired; shows placeholder UI)
    ════════════════════════════════════════════════ */
-function PaymentsTab({ siteId }: { siteId: string }) {
+function PaymentsTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: PaymentConfig) => void }) {
+  const [cfg, setCfg] = useState<PaymentConfig>(site.payment_config || { provider: 'teya', enabled: false });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    await fetch(`/api/booking-sites/${site.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_config: cfg }),
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    onUpdate(cfg);
+  };
+
   return (
-    <div style={{textAlign:'center',padding:'60px 20px',color:'var(--text-secondary)'}}>
-      <CreditCard size={40} style={{margin:'0 auto 12px',opacity:0.3}}/>
-      <div style={{fontSize:16,fontWeight:600,marginBottom:8}}>Платіжні акаунти</div>
-      <div style={{fontSize:13,marginBottom:20}}>Підключіть Stripe або PayPal для прийому онлайн-оплат через цей сайт.</div>
-      <button className="btn btn-primary" disabled><Plus size={16}/> Підключити акаунт (скоро)</button>
+    <div style={{ maxWidth: 600 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, padding: 16, background: 'var(--surface-secondary)', borderRadius: 12, border: '1px solid var(--border-primary)' }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Прийом платежів</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Дозволити гостям оплачувати бронювання онлайн</div>
+        </div>
+        <button className="btn btn-ghost" onClick={() => setCfg(c => ({ ...c, enabled: !c.enabled }))}>
+          {cfg.enabled ? <ToggleRight size={32} style={{ color: '#22c55e' }} /> : <ToggleLeft size={32} style={{ color: 'var(--text-tertiary)' }} />}
+        </button>
+      </div>
+
+      {cfg.enabled && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div className="form-group">
+            <label className="form-label">Платіжний провайдер</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className={`btn ${cfg.provider === 'teya' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setCfg(c => ({ ...c, provider: 'teya' }))} style={{ flex: 1 }}>
+                Teya Online
+              </button>
+              <button className="btn btn-ghost" disabled style={{ flex: 1, opacity: 0.5, cursor: 'not-allowed' }}>
+                Stripe (скоро)
+              </button>
+            </div>
+          </div>
+
+          {cfg.provider === 'teya' && (
+            <div style={{ padding: 20, border: '1px solid var(--border-primary)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <img src="https://teya.com/favicon.ico" style={{ width: 20, height: 20 }} alt="" />
+                <span style={{ fontWeight: 700 }}>Налаштування Teya</span>
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label">Client ID</label>
+                <input className="form-input" type="password" value={cfg.teya?.client_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_id: e.target.value } }))} placeholder="Введіть Client ID" />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Client Secret</label>
+                <input className="form-input" type="password" value={cfg.teya?.client_secret || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_secret: e.target.value } }))} placeholder="Введіть Client Secret" />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Store ID</label>
+                <input className="form-input" value={cfg.teya?.store_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, store_id: e.target.value } }))} placeholder="Введіть Store ID" />
+              </div>
+
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: 12, borderRadius: 8, border: '1px solid var(--border-primary)' }}>
+                💡 Ви можете знайти ці дані в особистому кабінеті Teya (Developer Portal).
+              </div>
+            </div>
+          )}
+
+          <button className="btn btn-primary" onClick={save} disabled={saving} style={{ marginTop: 8 }}>
+            {saving ? <Loader2 size={16} className="spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
+            {saved ? 'Збережено!' : 'Зберегти налаштування платежів'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1349,7 +1430,7 @@ export default function SiteDetailPage() {
         {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,design_config:cfg}:s)} />}
         {activeTab === 'widget'      && <WidgetTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,widget_config:cfg}:s)} />}
         {activeTab === 'rate-plans'  && <RatePlansTab siteId={siteId} />}
-        {activeTab === 'payments'    && <PaymentsTab siteId={siteId} />}
+        {activeTab === 'payments'    && <PaymentsTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,payment_config:cfg}:s)} />}
         {activeTab === 'promo-codes' && <PromoCodesTab siteId={siteId} />}
       </div>
     </div>
