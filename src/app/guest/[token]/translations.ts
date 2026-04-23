@@ -178,6 +178,17 @@ export interface Translations {
   // Far Before
   farBeforeTitle: string;
   registerBeforeCheckin: string;
+  // Cart
+  addToCart: string;
+  payNow: string;
+  yourCart: string;
+  payAll: (total: string) => string;
+  cartEmpty: string;
+  browseServices: string;
+  inCart: string;
+  addedToCart: string;
+  removeFromCart: string;
+  cartItems: (n: number) => string;
 }
 
 const translations: Record<Lang, Translations> = {
@@ -239,6 +250,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Booking confirmed & paid',
     farBeforeTitle: 'See you soon!',
     registerBeforeCheckin: 'Please complete your registration before check-in',
+    addToCart: 'Add to cart',
+    payNow: 'Pay now',
+    yourCart: 'Your cart',
+    payAll: (total: string) => `Pay all — ${total}`,
+    cartEmpty: 'Your cart is empty',
+    browseServices: 'Browse services',
+    inCart: 'In cart ✓',
+    addedToCart: 'Added to cart ✓',
+    removeFromCart: 'Remove',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'item' : 'items'}`,
+
   },
 
   // ════════════════ DEUTSCH ════════════════
@@ -299,6 +321,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Buchung bestätigt & bezahlt',
     farBeforeTitle: 'Bis bald!',
     registerBeforeCheckin: 'Bitte schließen Sie die Registrierung vor dem Check-in ab',
+    addToCart: 'In den Warenkorb',
+    payNow: 'Jetzt bezahlen',
+    yourCart: 'Ihr Warenkorb',
+    payAll: (total: string) => `Alles bezahlen — ${total}`,
+    cartEmpty: 'Ihr Warenkorb ist leer',
+    browseServices: 'Zum Angebot',
+    inCart: 'Im Warenkorb ✓',
+    addedToCart: 'Zum Warenkorb hinzugefügt ✓',
+    removeFromCart: 'Entfernen',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'Artikel' : 'Artikel'}`,
+
   },
 
   // ════════════════ ČEŠTINA ════════════════
@@ -359,6 +392,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Rezervace potvrzena a zaplacena',
     farBeforeTitle: 'Brzy na viděnou!',
     registerBeforeCheckin: 'Prosíme dokončete registraci před příjezdem',
+    addToCart: 'Přidat do košíku',
+    payNow: 'Zaplatit nyní',
+    yourCart: 'Váš košík',
+    payAll: (total: string) => `Zaplatit vše — ${total}`,
+    cartEmpty: 'Váš košík je prázdný',
+    browseServices: 'Procházet služby',
+    inCart: 'V košíku ✓',
+    addedToCart: 'Přidáno do košíku ✓',
+    removeFromCart: 'Odebrat',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'položka' : n < 5 ? 'položky' : 'položek'}`,
+
   },
 
   // ════════════════ УКРАЇНСЬКА ════════════════
@@ -419,6 +463,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Бронювання підтверджено та оплачено',
     farBeforeTitle: 'До зустрічі!',
     registerBeforeCheckin: 'Будь ласка, завершіть реєстрацію перед заїздом',
+    addToCart: 'Додати в кошик',
+    payNow: 'Оплатити зараз',
+    yourCart: 'Ваш кошик',
+    payAll: (total: string) => `Оплатити все — ${total}`,
+    cartEmpty: 'Ваш кошик порожній',
+    browseServices: 'Переглянути послуги',
+    inCart: 'У кошику ✓',
+    addedToCart: 'Додано в кошик ✓',
+    removeFromCart: 'Видалити',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'товар' : n < 5 ? 'товари' : 'товарів'}`,
+
   },
 
   // ════════════════ POLSKI ════════════════
@@ -479,6 +534,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Rezerwacja potwierdzona i opłacona',
     farBeforeTitle: 'Do zobaczenia!',
     registerBeforeCheckin: 'Prosimy o wypełnienie rejestracji przed przyjazdem',
+    addToCart: 'Dodaj do koszyka',
+    payNow: 'Zapłać teraz',
+    yourCart: 'Twój koszyk',
+    payAll: (total: string) => `Zapłać wszystko — ${total}`,
+    cartEmpty: 'Twój koszyk jest pusty',
+    browseServices: 'Przeglądaj usługi',
+    inCart: 'W koszyku ✓',
+    addedToCart: 'Dodano do koszyka ✓',
+    removeFromCart: 'Usuń',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'element' : 'elementy'}`,
+
   },
 
   // ════════════════ NEDERLANDS ════════════════
@@ -539,6 +605,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Boeking bevestigd & betaald',
     farBeforeTitle: 'Tot snel!',
     registerBeforeCheckin: 'Vul de registratie in voor aankomst',
+    addToCart: 'Aan winkelwagen toevoegen',
+    payNow: 'Nu betalen',
+    yourCart: 'Uw winkelwagen',
+    payAll: (total: string) => `Alles betalen — ${total}`,
+    cartEmpty: 'Uw winkelwagen is leeg',
+    browseServices: 'Bekijk diensten',
+    inCart: 'In winkelwagen ✓',
+    addedToCart: 'Toegevoegd aan winkelwagen ✓',
+    removeFromCart: 'Verwijderen',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'artikel' : 'artikelen'}`,
+
   },
 
   // ════════════════ FRANÇAIS (BE) ════════════════
@@ -599,6 +676,17 @@ const translations: Record<Lang, Translations> = {
     bookingPaidConfirmed: 'Réservation confirmée et payée',
     farBeforeTitle: 'À bientôt!',
     registerBeforeCheckin: "Veuillez compléter l'inscription avant votre arrivée",
+    addToCart: 'Ajouter au panier',
+    payNow: 'Payer maintenant',
+    yourCart: 'Votre panier',
+    payAll: (total: string) => `Tout payer — ${total}`,
+    cartEmpty: 'Votre panier est vide',
+    browseServices: 'Voir les services',
+    inCart: 'Dans le panier ✓',
+    addedToCart: 'Ajouté au panier ✓',
+    removeFromCart: 'Supprimer',
+    cartItems: (n: number) => `${n} ${n === 1 ? 'article' : 'articles'}`,
+
   },
 };
 
