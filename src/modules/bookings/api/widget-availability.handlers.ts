@@ -20,6 +20,7 @@ export async function getAvailability(request: NextRequest) {
     const checkOut = searchParams.get('checkOut');
     const promoCode = searchParams.get('promoCode') || '';
     const certificateCode = searchParams.get('certificateCode') || '';
+    const siteId = searchParams.get('siteId');
 
     if (!checkIn || !checkOut) {
       return NextResponse.json({ error: 'checkIn and checkOut required' }, { status: 400, headers: CORS_HEADERS });
@@ -50,14 +51,19 @@ export async function getAvailability(request: NextRequest) {
              ut.base_occupancy, ut.beds_single, ut.beds_double, ut.beds_sofa,
              ut.extra_person_charge, ut.pet_allowed, ut.pet_charge,
              c.name as category_name, c.type as category_type,
-             gpc.amenities as gpc_amenities
+             gpc.amenities as gpc_amenities,
+             sl.photos as listing_photos
       FROM units u
       JOIN unit_types ut ON u.unit_type_id = ut.id
       JOIN categories c ON u.category_id = c.id
       LEFT JOIN guest_page_config gpc ON gpc.unit_type_id = ut.id
-      WHERE c.type = 'glamping' AND u.is_active = 1 AND u.room_status = 'available'
+      LEFT JOIN site_listings sl ON (sl.unit_id = u.id OR (sl.unit_type_id = ut.id AND sl.unit_id IS NULL))
+      WHERE c.type = 'glamping' 
+        AND u.is_active = 1 
+        AND u.room_status = 'available'
+        ${siteId ? 'AND sl.site_id = ?' : ''}
       ORDER BY u.sort_order, u.name
-    `).all() as any[];
+    `).all(...(siteId ? [siteId] : [])) as any[];
 
     const results = [];
 
@@ -148,6 +154,10 @@ export async function getAvailability(request: NextRequest) {
         extraPersonCharge: unit.extra_person_charge || 1000,
         petAllowed: unit.pet_allowed !== 0,
         petCharge: unit.pet_charge || 400,
+        photos: (() => {
+          const photoStr = unit.listing_photos || unit.type_photos || '';
+          return photoStr ? photoStr.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+        })(),
         amenities: (() => { try { return JSON.parse(unit.gpc_amenities || '[]'); } catch { return []; } })(),
       });
     }

@@ -607,6 +607,17 @@ function runMigrations(database: any) {
     console.log('[DB] unit_types photos migration note:', e.message);
   }
 
+  // --- Migration: add photos column to site_listings ---
+  try {
+    const slCols = database.prepare("PRAGMA table_info(site_listings)").all() as { name: string }[];
+    if (!slCols.some((c: any) => c.name === 'photos')) {
+      database.exec("ALTER TABLE site_listings ADD COLUMN photos TEXT");
+      console.log('[DB] Added photos column to site_listings');
+    }
+  } catch (e: any) {
+    console.log('[DB] site_listings photos migration note:', e.message);
+  }
+
   // --- Migration: add document & nationality fields to reservation_guests ---
   const rgCols = database.prepare("PRAGMA table_info(reservation_guests)").all().map((c: any) => c.name);
   if (!rgCols.includes('nationality')) {

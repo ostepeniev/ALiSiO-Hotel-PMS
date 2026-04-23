@@ -48,7 +48,7 @@ interface WidgetConfig {
   enable_prefill?: boolean;
   default_lang?: string;
 }
-interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; unit_type_photos?: string; actual_unit_type_id?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
+interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; unit_type_photos?: string; photos?: string; actual_unit_type_id?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
 interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; }
 interface RatePlan { id: string; name: string; is_default: number; cancellation_policy: string; payment_schedule: {percent:number;trigger:string}[]; meals_included: string[]; min_stay: number; max_stay: number; min_days_before_checkin: number; pricing_mode: string; applied_listings: string[]; }
 
@@ -145,9 +145,9 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, on
             background:'var(--surface-secondary)', border:'1px solid var(--border-primary)',
             display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0
           }}>
-            {listing.unit_type_photos ? (
+            {listing.photos || listing.unit_type_photos ? (
               <img 
-                src={listing.unit_type_photos.split(',')[0]} 
+                src={(listing.photos || listing.unit_type_photos || '').split(',')[0]} 
                 alt="" 
                 style={{width:'100%',height:'100%',objectFit:'cover'}} 
               />
@@ -202,7 +202,8 @@ function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
         thank_you_url: listing.thank_you_url || '',
         default_lang:  listing.default_lang  || '',
       });
-      setPhotoUrls(listing.unit_type_photos ? listing.unit_type_photos.split(',').map(s=>s.trim()).filter(Boolean) : []);
+      const photoStr = listing.photos || listing.unit_type_photos || '';
+      setPhotoUrls(photoStr ? photoStr.split(',').map(s=>s.trim()).filter(Boolean) : []);
     }
   }, [listing]);
 
@@ -217,7 +218,8 @@ function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
       body: JSON.stringify({
         external_url:  form.external_url.trim()  || null,
         thank_you_url: form.thank_you_url.trim() || null,
-        default_lang:  form.default_lang || null,
+        default_lang:  form.default_lang  || null,
+        photos: photoUrls.length > 0 ? photoUrls.join(',') : null,
       }),
     });
 
