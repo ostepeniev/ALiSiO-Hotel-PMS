@@ -392,7 +392,7 @@ export default function BookingPage() {
       const data = await res.json();
       setAvailability(data);
     } catch {
-      setError(t.errorOccurred);
+      setError(t.errorOccurred || 'An error occurred. Please try again.');
     }
     setLoadingAvail(false);
   }, [checkIn, checkOut, promoApplied, certInput, t]);
@@ -401,7 +401,7 @@ export default function BookingPage() {
   const applyPromo = useCallback(async () => {
     if (!promoInput.trim()) return;
     setPromoApplied(promoInput.trim());
-    setPromoMessage({ type: 'success', text: t.promoApplied });
+    setPromoMessage({ type: 'success', text: t.promoApplied || 'Promo code applied' });
   }, [promoInput, t]);
 
   // ─── Navigation ──────

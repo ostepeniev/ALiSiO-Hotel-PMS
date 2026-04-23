@@ -124,6 +124,47 @@ export interface BookingTranslations {
   to?: string;
   duration?: string;
   nightsWord: (n: number) => string;
+  // Step 2 — house selection
+  yourChoice?: string;
+  yourHouse?: string;
+  reviewSelection?: string;
+  yourSelection?: string;
+  photos?: string;
+  bookingDetails?: string;
+  // Services step
+  tubDesc?: string;
+  tubPerHour?: string;
+  tubAddToBooking?: string;
+  breakfastInfo?: string;
+  wantButton?: string;
+  servicesEmpty?: string;
+  lateCheckoutDesc?: string;
+  earlyCheckinDesc?: string;
+  serviceTotal?: string;
+  skipToThankYou?: string;
+  confirmServices?: string;
+  // Payment step
+  paymentSubtitle?: string;
+  houseName?: string;
+  nights?: string;
+  discount?: string;
+  redirectingToPayment?: string;
+  paymentFailed?: string;
+  paymentFailedDesc?: string;
+  tryAgain?: string;
+  // Success
+  paymentSuccess?: string;
+  paymentSuccessDesc?: string;
+  bookingSuccess?: string;
+  bookingSuccessDesc?: string;
+  weWillContact?: string;
+  bookingId?: string;
+  purchasedServicesTitle?: string;
+  backToStart?: string;
+  poweredBy?: string;
+  // Error / misc
+  errorOccurred?: string;
+  promoApplied?: string;
 }
 
 const translations: Record<BookingLang, any> = {
@@ -225,6 +266,42 @@ const translations: Record<BookingLang, any> = {
     to: 'до',
     duration: 'Тривалість',
     nightsWord: (n: number) => n === 1 ? 'ніч' : n < 5 ? 'ночі' : 'ночей',
+    yourChoice: 'Твій вибір',
+    yourHouse: 'Твій будинок',
+    reviewSelection: 'Перевір вибір',
+    yourSelection: 'Ти обрав',
+    photos: 'Фото',
+    bookingDetails: 'Деталі бронювання',
+    tubDesc: 'Розслабся у гарячому чані під зоряним небом',
+    tubPerHour: 'год',
+    tubAddToBooking: 'Додати чан',
+    breakfastInfo: 'Сніданок подається з 8:00 до 10:30',
+    wantButton: 'Хочу',
+    servicesEmpty: 'Немає доступних сервісів',
+    lateCheckoutDesc: 'Виїзд до 14:00 замість 12:00',
+    earlyCheckinDesc: 'Заїзд з 12:00 замість 14:00',
+    serviceTotal: 'Разом за сервіси',
+    skipToThankYou: 'Пропустити і завершити',
+    confirmServices: 'Підтвердити і продовжити',
+    paymentSubtitle: 'Підсумок бронювання',
+    houseName: 'Будинок',
+    nights: 'ночей',
+    discount: 'Знижка',
+    redirectingToPayment: 'Перенаправляємо до оплати...',
+    paymentFailed: 'Помилка оплати',
+    paymentFailedDesc: 'Щось пішло не так. Спробуйте ще раз.',
+    tryAgain: 'Спробувати знову',
+    paymentSuccess: 'Оплата успішна!',
+    paymentSuccessDesc: 'Ваше бронювання підтверджено',
+    bookingSuccess: 'Заброньовано!',
+    bookingSuccessDesc: 'Підтвердження надіслано на ваш email',
+    weWillContact: 'Ми зв\'яжемося з вами незабаром',
+    bookingId: 'Номер бронювання',
+    purchasedServicesTitle: 'Придбані сервіси',
+    backToStart: 'На початок',
+    poweredBy: 'Працює на',
+    errorOccurred: 'Виникла помилка. Спробуйте ще раз.',
+    promoApplied: 'Промокод застосовано',
   },
   en: {
     brandName: 'QA Glamping',
@@ -324,6 +401,42 @@ const translations: Record<BookingLang, any> = {
     to: 'to',
     duration: 'Duration',
     nightsWord: (n: number) => n === 1 ? 'night' : 'nights',
+    yourChoice: 'Your choice',
+    yourHouse: 'Your house',
+    reviewSelection: 'Review selection',
+    yourSelection: 'You selected',
+    photos: 'Photos',
+    bookingDetails: 'Booking details',
+    tubDesc: 'Relax in a hot tub under the stars',
+    tubPerHour: 'hr',
+    tubAddToBooking: 'Add hot tub',
+    breakfastInfo: 'Breakfast served 8:00–10:30',
+    wantButton: 'I want it',
+    servicesEmpty: 'No services available',
+    lateCheckoutDesc: 'Check-out by 14:00 instead of 12:00',
+    earlyCheckinDesc: 'Check-in from 12:00 instead of 14:00',
+    serviceTotal: 'Services total',
+    skipToThankYou: 'Skip and finish',
+    confirmServices: 'Confirm and continue',
+    paymentSubtitle: 'Booking summary',
+    houseName: 'House',
+    nights: 'nights',
+    discount: 'Discount',
+    redirectingToPayment: 'Redirecting to payment...',
+    paymentFailed: 'Payment failed',
+    paymentFailedDesc: 'Something went wrong. Please try again.',
+    tryAgain: 'Try again',
+    paymentSuccess: 'Payment successful!',
+    paymentSuccessDesc: 'Your booking is confirmed',
+    bookingSuccess: 'Booked!',
+    bookingSuccessDesc: 'Confirmation sent to your email',
+    weWillContact: 'We will contact you shortly',
+    bookingId: 'Booking ID',
+    purchasedServicesTitle: 'Purchased services',
+    backToStart: 'Back to start',
+    poweredBy: 'Powered by',
+    errorOccurred: 'An error occurred. Please try again.',
+    promoApplied: 'Promo code applied',
   },
   cs: {
     brandName: 'QA Glamping',
@@ -423,6 +536,42 @@ const translations: Record<BookingLang, any> = {
     to: 'do',
     duration: 'Délka',
     nightsWord: (n: number) => n === 1 ? 'noc' : n < 5 ? 'noci' : 'nocí',
+    yourChoice: 'Váš výběr',
+    yourHouse: 'Váš dům',
+    reviewSelection: 'Zkontrolovat výběr',
+    yourSelection: 'Vybrali jste',
+    photos: 'Fotografie',
+    bookingDetails: 'Detaily rezervace',
+    tubDesc: 'Relaxujte v horkém sudu pod hvězdnou oblohou',
+    tubPerHour: 'hod',
+    tubAddToBooking: 'Přidat koupací sud',
+    breakfastInfo: 'Snídaně se podává od 8:00 do 10:30',
+    wantButton: 'Chci',
+    servicesEmpty: 'Žádné dostupné služby',
+    lateCheckoutDesc: 'Odjezd do 14:00 místo 12:00',
+    earlyCheckinDesc: 'Příjezd od 12:00 místo 14:00',
+    serviceTotal: 'Celkem za služby',
+    skipToThankYou: 'Přeskočit a dokončit',
+    confirmServices: 'Potvrdit a pokračovat',
+    paymentSubtitle: 'Shrnutí rezervace',
+    houseName: 'Dům',
+    nights: 'nocí',
+    discount: 'Sleva',
+    redirectingToPayment: 'Přesměrování na platbu...',
+    paymentFailed: 'Platba selhala',
+    paymentFailedDesc: 'Něco se pokazilo. Zkuste to znovu.',
+    tryAgain: 'Zkusit znovu',
+    paymentSuccess: 'Platba úspěšná!',
+    paymentSuccessDesc: 'Vaše rezervace je potvrzena',
+    bookingSuccess: 'Rezervováno!',
+    bookingSuccessDesc: 'Potvrzení odesláno na váš e-mail',
+    weWillContact: 'Brzy vás kontaktujeme',
+    bookingId: 'Číslo rezervace',
+    purchasedServicesTitle: 'Zakoupené služby',
+    backToStart: 'Na začátek',
+    poweredBy: 'Provozováno na',
+    errorOccurred: 'Došlo k chybě. Zkuste to znovu.',
+    promoApplied: 'Slevový kód použit',
   },
   de: {
     brandName: 'QA Glamping',
@@ -522,6 +671,42 @@ const translations: Record<BookingLang, any> = {
     to: 'bis',
     duration: 'Dauer',
     nightsWord: (n: number) => n === 1 ? 'Nacht' : 'Nächte',
+    yourChoice: 'Ihre Wahl',
+    yourHouse: 'Ihr Haus',
+    reviewSelection: 'Auswahl prüfen',
+    yourSelection: 'Ihre Auswahl',
+    photos: 'Fotos',
+    bookingDetails: 'Buchungsdetails',
+    tubDesc: 'Entspannen Sie sich im heißen Zuber unter dem Sternenhimmel',
+    tubPerHour: 'Std',
+    tubAddToBooking: 'Zuber hinzufügen',
+    breakfastInfo: 'Frühstück wird von 8:00 bis 10:30 Uhr serviert',
+    wantButton: 'Ich möchte es',
+    servicesEmpty: 'Keine Dienste verfügbar',
+    lateCheckoutDesc: 'Check-out bis 14:00 statt 12:00',
+    earlyCheckinDesc: 'Check-in ab 12:00 statt 14:00',
+    serviceTotal: 'Gesamtbetrag Services',
+    skipToThankYou: 'Überspringen und beenden',
+    confirmServices: 'Bestätigen und fortfahren',
+    paymentSubtitle: 'Buchungsübersicht',
+    houseName: 'Haus',
+    nights: 'Nächte',
+    discount: 'Rabatt',
+    redirectingToPayment: 'Weiterleitung zur Zahlung...',
+    paymentFailed: 'Zahlung fehlgeschlagen',
+    paymentFailedDesc: 'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
+    tryAgain: 'Erneut versuchen',
+    paymentSuccess: 'Zahlung erfolgreich!',
+    paymentSuccessDesc: 'Ihre Buchung ist bestätigt',
+    bookingSuccess: 'Gebucht!',
+    bookingSuccessDesc: 'Bestätigung an Ihre E-Mail gesendet',
+    weWillContact: 'Wir werden Sie in Kürze kontaktieren',
+    bookingId: 'Buchungs-ID',
+    purchasedServicesTitle: 'Gebuchte Services',
+    backToStart: 'Zum Anfang',
+    poweredBy: 'Betrieben von',
+    errorOccurred: 'Ein Fehler ist aufgetreten. Bitte erneut versuchen.',
+    promoApplied: 'Gutscheincode angewendet',
   },
 };
 
