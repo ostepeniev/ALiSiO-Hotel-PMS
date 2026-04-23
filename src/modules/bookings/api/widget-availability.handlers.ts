@@ -138,7 +138,6 @@ export async function getAvailability(request: NextRequest) {
         typeName: unit.type_name,
         typeCode: unit.type_code,
         description: unit.type_description,
-        photos: unit.type_photos ? unit.type_photos.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         maxAdults: unit.max_adults,
         maxChildren: unit.max_children,
         maxOccupancy: unit.max_occupancy,
@@ -155,6 +154,7 @@ export async function getAvailability(request: NextRequest) {
         petAllowed: unit.pet_allowed !== 0,
         petCharge: unit.pet_charge || 400,
         photos: (() => {
+          // Prefer site_listings photos (more curated), fallback to unit_type photos
           const photoStr = unit.listing_photos || unit.type_photos || '';
           return photoStr ? photoStr.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
         })(),
