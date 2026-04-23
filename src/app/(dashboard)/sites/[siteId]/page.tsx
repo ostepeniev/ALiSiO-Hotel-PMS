@@ -7,8 +7,9 @@ import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Globe, ArrowLeft, Loader2, Plus, Trash2, X, Copy, Check,
   LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent,
-  ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil,
+  ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil, Eye,
 } from 'lucide-react';
+import BookingV3 from '@/app/booking/BookingV3';
 
 /* ════════════════════════════════════════════════
    TYPES
@@ -607,17 +608,34 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
 
         {/* Button style */}
         <div style={{marginBottom:24}}>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.05em'}}>Стиль кнопки</div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-            {BUTTON_STYLES.map(bs => (
-              <button key={bs.value} onClick={()=>setCfg(c=>({...c,button_style:bs.value}))}
-                style={{padding:'8px 14px',borderRadius:bs.value.includes('pill')?99:bs.value.includes('rounded')?8:2,
-                  fontSize:12,border:`2px solid ${cfg.button_style===bs.value?'var(--accent-primary)':'var(--border-primary)'}`,
-                  background:cfg.button_style===bs.value?'var(--accent-primary-dim)':'var(--surface-secondary)',
-                  fontWeight:cfg.button_style===bs.value?700:400,cursor:'pointer',color:'var(--text-primary)'}}>
-                {bs.label}
-              </button>
-            ))}
+          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:12,textTransform:'uppercase',letterSpacing:'0.05em'}}>Стиль кнопок та елементів</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {BUTTON_STYLES.map(bs => {
+              const isPill = bs.value.includes('pill');
+              const isSharp = bs.value.includes('sharp');
+              const isOutline = bs.value.includes('outline');
+              return (
+                <button key={bs.value} onClick={()=>setCfg(c=>({...c,button_style:bs.value}))}
+                  style={{
+                    padding:'12px', borderRadius:12, textAlign:'left',
+                    fontSize:12, border:`2px solid ${cfg.button_style===bs.value?'var(--accent-primary)':'var(--border-primary)'}`,
+                    background:cfg.button_style===bs.value?'var(--accent-primary-dim)':'var(--surface-secondary)',
+                    cursor:'pointer', color:'var(--text-primary)', transition:'all .15s'
+                  }}>
+                  <div style={{fontSize:11,fontWeight:600,marginBottom:8,color:cfg.button_style===bs.value?'var(--accent-primary)':'var(--text-secondary)'}}>{bs.label}</div>
+                  <div style={{
+                    height:32, width:'100%', display:'flex', alignItems:'center', justifyContent:'center',
+                    borderRadius: isPill ? 16 : isSharp ? 0 : 6,
+                    background: isOutline ? 'transparent' : (cfg.primary_color || '#A2845E'),
+                    color: isOutline ? (cfg.primary_color || '#A2845E') : '#fff',
+                    border: isOutline ? `1.5px solid ${cfg.primary_color || '#A2845E'}` : 'none',
+                    fontSize:11, fontWeight:700
+                  }}>
+                    Кнопка
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -636,92 +654,48 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
       </div>
 
       {/* ── Live preview column ── */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:12,textTransform:'uppercase',letterSpacing:'0.05em'}}>
-          Прев&apos;ю віджета
+      <div style={{ flex: 1, minWidth: 0, position: 'sticky', top: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+            Актуальний приклад (Live Preview)
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Eye size={12} /> Попередній перегляд
+          </div>
         </div>
-
-        {/* Browser chrome mockup */}
-        <div style={{border:'1px solid var(--border-primary)',borderRadius:12,overflow:'hidden',boxShadow:'0 4px 24px rgba(0,0,0,0.08)'}}>
+        
+        {/* Browser chrome mockup with ACTUAL widget */}
+        <div style={{ border: '1px solid var(--border-primary)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,0.12)', background: 'var(--bg-primary)' }}>
           {/* Fake browser bar */}
-          <div style={{background:'#f1f5f9',padding:'8px 12px',display:'flex',alignItems:'center',gap:8,borderBottom:'1px solid #e2e8f0'}}>
-            <div style={{display:'flex',gap:5}}>
-              <div style={{width:10,height:10,borderRadius:'50%',background:'#ef4444'}}/>
-              <div style={{width:10,height:10,borderRadius:'50%',background:'#f59e0b'}}/>
-              <div style={{width:10,height:10,borderRadius:'50%',background:'#22c55e'}}/>
+          <div style={{ background: 'var(--surface-secondary)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--border-primary)' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#ff5f56' }} />
+              <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#ffbd2e' }} />
+              <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#27c93f' }} />
             </div>
-            <div style={{flex:1,background:'#fff',borderRadius:6,padding:'3px 10px',fontSize:11,color:'#94a3b8',border:'1px solid #e2e8f0'}}>
-              yoursite.com/booking
+            <div style={{ flex: 1, background: 'var(--bg-primary)', borderRadius: 6, padding: '4px 12px', fontSize: 12, color: 'var(--text-tertiary)', border: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Globe size={12} /> yoursite.com/booking
             </div>
           </div>
 
-          {/* Widget preview area */}
-          <div style={{background:previewBg,padding:'28px 24px',minHeight:260,transition:'background .3s'}}>
-
-            {/* Hero text mock */}
-            <div style={{marginBottom:20}}>
-              <div style={{height:14,width:'55%',background:previewBorder,borderRadius:4,marginBottom:8}}/>
-              <div style={{height:10,width:'35%',background:previewCard,borderRadius:4,border:`1px solid ${previewBorder}`}}/>
-            </div>
-
-            {/* Widget card */}
-            <div style={{
-              background:previewCard,
-              border:`1px solid ${previewBorder}`,
-              borderRadius:12,
-              padding:20,
-              boxShadow:shadow,
-              transition:'all .3s',
-            }}>
-              {/* Date row */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-                {['Заїзд','Виїзд'].map(label => (
-                  <div key={label}>
-                    <div style={{fontSize:10,color:previewSub,fontWeight:600,marginBottom:4,textTransform:'uppercase'}}>{label}</div>
-                    <div style={{border:`1px solid ${previewBorder}`,borderRadius:8,padding:'8px 10px',fontSize:12,color:previewText,background:previewBg,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span>дд.мм.рррр</span>
-                      <span style={{fontSize:14}}>📅</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Guests row */}
-              <div style={{marginBottom:16}}>
-                <div style={{fontSize:10,color:previewSub,fontWeight:600,marginBottom:4,textTransform:'uppercase'}}>Гості</div>
-                <div style={{border:`1px solid ${previewBorder}`,borderRadius:8,padding:'8px 10px',fontSize:12,color:previewText,background:previewBg,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span>2 гостя</span>
-                  <span style={{fontSize:11,color:previewSub}}>▼</span>
-                </div>
-              </div>
-
-              {/* Book button */}
-              <button style={{
-                width:'100%',
-                padding:'12px 0',
-                borderRadius:btnRadius,
-                background:btnBg,
-                color:btnColor,
-                border:btnBorder,
-                fontSize:14,
-                fontWeight:700,
-                cursor:'default',
-                transition:'all .3s',
-                letterSpacing:'0.02em',
-              }}>
-                Перевірити наявність
-              </button>
-            </div>
-
-            {/* Theme label */}
-            <div style={{marginTop:12,textAlign:'center',fontSize:11,color:previewSub}}>
-              {cfg.theme || 'Classical'} · {cfg.button_style || 'rounded_filled'}
+          {/* Actual Widget Instance */}
+          <div style={{ height: 600, overflow: 'auto', position: 'relative' }}>
+            <div style={{ transform: 'scale(0.85)', transformOrigin: 'top center', width: '117.6%' }}>
+              <BookingV3 
+                siteSlug={site.slug} 
+                design={{
+                  theme: cfg.theme,
+                  primary_color: cfg.primary_color,
+                  button_style: cfg.button_style,
+                  show_shadow: cfg.show_shadow
+                }}
+              />
             </div>
           </div>
         </div>
 
-        <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:8,textAlign:'center'}}>
-          Прев&apos;ю оновлюється в реальному часі
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 12, textAlign: 'center', background: 'var(--surface-secondary)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-primary)' }}>
+          💡 Це живий приклад віджета версії V3. Всі зміни кольорів та стилів кнопок відображаються миттєво.
         </div>
       </div>
 

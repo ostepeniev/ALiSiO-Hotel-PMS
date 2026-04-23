@@ -83,7 +83,14 @@ function getFirstDayOfMonth(year: number, month: number): number {
   return d === 0 ? 6 : d - 1;
 }
 
-export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: string, siteSlug?: string, thankYouUrl?: string }) {
+interface DesignConfig {
+  theme?: string;
+  primary_color?: string;
+  button_style?: string;
+  show_shadow?: boolean;
+}
+
+export default function BookingV3({ siteId, siteSlug, thankYouUrl, design }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig }) {
   // ─── State ───
   const [isMounted, setIsMounted] = useState(false);
   const [lang, setLang] = useState<BookingLang>('uk');
@@ -96,6 +103,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
   const [kids, setKids] = useState(0);
   const [calMonthOffset, setCalMonthOffset] = useState(0);
   const [calOpen, setCalOpen] = useState(false);
+  const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
   
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
@@ -137,6 +145,27 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
       }
     }
   }, []);
+
+  // Fetch busy dates when month changes
+  useEffect(() => {
+    if (!isMounted) return;
+    const fetchBusyDates = async () => {
+      try {
+        const date = new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1);
+        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const res = await fetch(`${API_BASE}/api/widget/calendar?month=${monthStr}${siteId ? `&siteId=${siteId}` : ''}${siteSlug ? `&siteSlug=${siteSlug}` : ''}`);
+        const data = await res.json();
+        if (data.days) {
+          const busy = new Set<string>();
+          data.days.forEach((d: any) => {
+            if (d.status === 'booked') busy.add(d.date);
+          });
+          setBusyDates(busy);
+        }
+      } catch (e) { console.error('Fetch busy dates error:', e); }
+    };
+    fetchBusyDates();
+  }, [calMonthOffset, isMounted, siteId, siteSlug]);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -270,8 +299,30 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
   };
 
   // ─── Render ───
+  // Dynamic styles based on design config
+  const dynamicStyles = useMemo(() => {
+    if (!design) return {};
+    const styles: any = {};
+    if (design.primary_color) {
+      styles['--moss'] = design.primary_color;
+      // Also derive some variations
+      styles['--moss-dark'] = design.primary_color; // Simplified
+      styles['--accent-primary'] = design.primary_color;
+    }
+    if (design.button_style) {
+      const isSharp = design.button_style.includes('sharp');
+      const isPill = design.button_style.includes('pill');
+      styles['--radius'] = isSharp ? '2px' : isPill ? '24px' : '12px';
+      styles['--radius-lg'] = isSharp ? '4px' : isPill ? '32px' : '16px';
+    }
+    if (design.show_shadow !== undefined) {
+      styles['--shadow'] = design.show_shadow ? '0 8px 32px rgba(0,0,0,0.12)' : 'none';
+    }
+    return styles;
+  }, [design]);
+
   return (
-    <div className="v3-body">
+    <div className={`v3-body ${design?.theme?.toLowerCase() || ''}`} style={dynamicStyles}>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -328,13 +379,13 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
           )}
 
           <div className="v3-dates" onClick={() => setCalOpen(!calOpen)}>
-            <div className="v3-date-cell">
+            <div className={`v3-date-cell ${calOpen && !selectingCheckOut ? 'active' : ''}`}>
               <div className="v3-date-cell-label">{t.checkIn}</div>
               <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
               <div className="v3-date-cell-sub">{t.from} 15:00</div>
             </div>
             <div className="v3-date-div"></div>
-            <div className="v3-date-cell">
+            <div className={`v3-date-cell ${calOpen && selectingCheckOut ? 'active' : ''}`}>
               <div className="v3-date-cell-label">{t.checkOut}</div>
               <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
               <div className="v3-date-cell-sub">
@@ -367,13 +418,20 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
                 for (let d = 1; d <= daysInM; d++) {
                   const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                   const isPast = parseDate(ds) < today;
+                  const isBusy = busyDates.has(ds);
+                  
                   let cls = 'v3-cal-day';
-                  if (isPast) cls += ' muted';
+                  if (isPast || isBusy) cls += ' muted';
+                  if (isBusy) cls += ' busy';
                   if (ds === checkIn) cls += ' start';
                   if (ds === checkOut) cls += ' end';
                   if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
+                  
                   cells.push(
-                    <div key={d} className={cls} onClick={(e) => { e.stopPropagation(); if (!isPast) handleDayClick(ds); }}>
+                    <div key={d} className={cls} onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (!isPast && !isBusy) handleDayClick(ds); 
+                    }}>
                       <span>{d}</span>
                     </div>
                   );
@@ -627,15 +685,11 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
                 <div className="v3-cta-summary-line2">{formatPrice(totalWithDiscount)} Kč</div>
               </div>
               <button
-                className="v3-cta-btn"
-                disabled={
-                  (step === 1 && (!checkIn || !checkOut)) || 
-                  (step === 2 && !selectedUnitId) ||
-                  (step === 3 && (!firstName || !lastName || !phone || !email))
-                }
+                className={`v3-cta-btn ${((step === 1 && (!checkIn || !checkOut)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))) ? 'disabled' : ''}`}
+                disabled={(step === 1 && (!checkIn || !checkOut)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))}
                 onClick={() => {
                   if (step === 1) {
-                    goToStep(2);
+                    if (checkIn && checkOut) goToStep(2);
                   }
                   else if (step === 2) goToStep(3);
                   else if (step === 3) submitBooking();
@@ -643,7 +697,11 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
                   else if (step === 5) startPayment();
                 }}
               >
-                <span>{step === 5 ? t.payNow : (step === 3 ? (submitting ? t.processing : t.next) : t.next)}</span>
+                <span>
+                  {step === 5 ? t.payNow : 
+                   (step === 1 ? t.selectDates : 
+                   (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
+                </span>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
