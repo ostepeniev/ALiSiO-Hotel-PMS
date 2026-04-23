@@ -231,12 +231,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       if (cartItems.length === 0) return;
       const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
       try {
-        navigator.sendBeacon(`/api/guest/${token}/cart`, JSON.stringify({
+        // Blob with explicit Content-Type is required so Next.js request.json() can parse the body
+        const payload = JSON.stringify({
           event_type: 'abandon',
           cart_total: cartTotal,
           items: cartItems,
           phase: data?.phase || null,
-        }));
+        });
+        navigator.sendBeacon(
+          `/api/guest/${token}/cart`,
+          new Blob([payload], { type: 'application/json' }),
+        );
       } catch { /* ignore */ }
     };
     window.addEventListener('beforeunload', handleUnload);
@@ -390,13 +395,16 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     setCartItems(prev => prev.reduce<CartItem[]>((acc, item) => {
       if (item.serviceId !== serviceId) return [...acc, item];
       const newQty = item.quantity + delta;
-      if (newQty < 1) { logCartEvent('remove', serviceId, item.quantity); return acc; }
+      // For breakfast items with multiple serviceDates, removing means removing the whole item
+      const minQty = item.serviceDates && item.serviceDates.length > 1 ? item.serviceDates.length : 1;
+      if (newQty < minQty) { logCartEvent('remove', serviceId, item.quantity); return acc; }
       return [...acc, { ...item, quantity: newQty }];
     }, []));
   };
 
   const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
-  const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
+  // cartCount = number of distinct service lines (not total qty), for FAB badge readability
+  const cartCount = cartItems.length;
 
   const handleCartPay = async () => {
     if (cartItems.length === 0 || cartLoading) return;
