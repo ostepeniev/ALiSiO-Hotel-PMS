@@ -129,6 +129,7 @@ function initSchema(database: any) {
       beds_sofa INTEGER NOT NULL DEFAULT 0,
       extra_bed_available INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      photos TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -594,6 +595,17 @@ function runMigrations(database: any) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // --- Migration: add photos column to unit_types ---
+  try {
+    const utCols = database.prepare("PRAGMA table_info(unit_types)").all() as { name: string }[];
+    if (!utCols.some((c: any) => c.name === 'photos')) {
+      database.exec("ALTER TABLE unit_types ADD COLUMN photos TEXT");
+      console.log('[DB] Added photos column to unit_types');
+    }
+  } catch (e: any) {
+    console.log('[DB] unit_types photos migration note:', e.message);
+  }
 
   // --- Migration: add document & nationality fields to reservation_guests ---
   const rgCols = database.prepare("PRAGMA table_info(reservation_guests)").all().map((c: any) => c.name);
