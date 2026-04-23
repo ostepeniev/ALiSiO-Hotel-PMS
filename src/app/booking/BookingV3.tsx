@@ -244,13 +244,13 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         units: [
           {
             id: 'mock-1', name: 'Premium Glamping Tent', code: 'P1', beds: 2, unitTypeId: 't1', typeName: 'Tent', typeCode: 'T',
-            description: 'Beautiful tent with view', maxAdults: 2, maxChildren: 1, maxOccupancy: 3, baseOccupancy: 2,
+            description: 'Beautiful tent with view', photos: [], maxAdults: 2, maxChildren: 1, maxOccupancy: 3, baseOccupancy: 2,
             avgPricePerNight: 2500, totalPrice: 2500 * 2, currency: 'Kč', extraPersonCharge: 500, petAllowed: true, petCharge: 200,
             amenities: [{ icon: 'wifi', name: 'Wi-Fi' }, { icon: 'coffee', name: 'Coffee' }]
           },
           {
             id: 'mock-2', name: 'Eco Wood Cabin', code: 'C1', beds: 4, unitTypeId: 't2', typeName: 'Cabin', typeCode: 'C',
-            description: 'Cozy cabin in woods', maxAdults: 4, maxChildren: 2, maxOccupancy: 6, baseOccupancy: 2,
+            description: 'Cozy cabin in woods', photos: [], maxAdults: 4, maxChildren: 2, maxOccupancy: 6, baseOccupancy: 2,
             avgPricePerNight: 3200, totalPrice: 3200 * 2, currency: 'Kč', extraPersonCharge: 600, petAllowed: false, petCharge: 0,
             amenities: [{ icon: 'fireplace', name: 'Fireplace' }]
           }
