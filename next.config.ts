@@ -1,3 +1,4 @@
+// Forced restart to resolve 502 Bad Gateway
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {

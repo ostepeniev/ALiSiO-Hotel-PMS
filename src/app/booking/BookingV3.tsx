@@ -208,13 +208,6 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     fetchBusyDates();
   }, [calMonthOffset, isMounted, siteId, siteSlug]);
 
-  // Fetch availability when stepping into Step 2 if not loaded
-  useEffect(() => {
-    if (step === 2 && !availability && !loadingAvail && checkIn && checkOut) {
-      fetchAvailability(checkIn, checkOut);
-    }
-  }, [step, availability, loadingAvail, checkIn, checkOut, fetchAvailability]);
-
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -630,14 +623,6 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
           <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
           <p className="v3-step-sub">{selectedUnitId ? (t.reviewSelection || 'Перевірте деталі та продовжуйте бронювання') : t.availableForDates}</p>
-
-          {!loadingAvail && !availability && (
-             <div style={{textAlign:'center', padding:40, color:'var(--ink-2)'}}>
-               <button className="v3-main-btn" onClick={() => fetchAvailability(checkIn!, checkOut!)}>
-                 {t.search || 'Оновити пошук'}
-               </button>
-             </div>
-          )}
 
           {loadingAvail ? (
             <div className="v3-house-list">
