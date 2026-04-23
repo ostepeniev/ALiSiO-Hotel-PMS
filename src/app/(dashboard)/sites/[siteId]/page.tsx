@@ -292,22 +292,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
         <input className="form-input" placeholder="https://yoursite.com/thank-you"
           value={form.thank_you_url} onChange={e => setForm(f => ({...f, thank_you_url: e.target.value}))} />
       </div>
-      <div className="form-group">
-        <label className="form-label">Мова за замовчуванням</label>
-        <div style={{display:'flex',gap:6}}>
-          {LANGS.map(l => (
-            <button key={l} type="button" onClick={() => setForm(f => ({...f, default_lang: f.default_lang === l ? '' : l}))}
-              style={{
-                padding:'6px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
-                border:`2px solid ${form.default_lang===l?'var(--accent-primary)':'var(--border-primary)'}`,
-                background:form.default_lang===l?'var(--accent-primary)':'var(--surface-secondary)',
-                color:form.default_lang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
-              }}>
-              {l.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
+
       <div className="form-group" style={{marginTop:24}}>
         <label className="form-label" style={{display:'flex', alignItems:'center', gap:8}}>
           <ImageIcon size={16} /> Фотографії об&apos;єкта
