@@ -722,7 +722,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   </div>
                 </div>
               ) : (
-                (loadingAvail && selectedUnitId) ? null : (
+                (loadingAvail && selectedUnitId) ? null :
                 availability?.units
                   .filter(u => !selectedUnitId || selectedUnitId === u.id)
                   .map(u => {
