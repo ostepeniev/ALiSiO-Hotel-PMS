@@ -3,8 +3,17 @@ import { getDb } from '@/lib/db';
 import BookingV3 from '@/app/booking/BookingV3';
 import { notFound } from 'next/navigation';
 
-export default async function WidgetPage({ params }: { params: Promise<{ siteSlug: string }> }) {
+export const dynamic = 'force-dynamic';
+
+export default async function WidgetPage({ 
+  params,
+  searchParams 
+}: { 
+  params: Promise<{ siteSlug: string }>,
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const { siteSlug } = await params;
+  await searchParams; // required to be awaited in Next 15 even if not used
   
   try {
     const db = getDb();
@@ -34,7 +43,6 @@ export default async function WidgetPage({ params }: { params: Promise<{ siteSlu
     );
   } catch (error) {
     console.error('WidgetPage Error:', error);
-    // Fallback to minimal version if DB fails
     return (
       <BookingV3 siteSlug={siteSlug} />
     );
