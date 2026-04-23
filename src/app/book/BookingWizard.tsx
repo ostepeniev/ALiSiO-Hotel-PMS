@@ -150,7 +150,7 @@ export default function BookingWizard() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: grandTotal, currency: 'CZK', description: desc,
-          reservation_id: draft.id, return_path: `/book?payment=success&reservation_id=${draft.id}&token=${draft.guest_page_token || ''}`,
+          reservation_id: pmsReservationId, return_path: `/book?payment=success&reservation_id=${pmsReservationId}&token=${draft.guest_page_token || ''}`,
         }),
       });
       const checkout = await checkoutRes.json();

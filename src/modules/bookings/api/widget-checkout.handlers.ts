@@ -31,20 +31,23 @@ export async function createWidgetCheckoutSession(req: Request) {
     const db = getDb();
 
     // 1. Resolve Site and Payment Config
-    if (!site_slug) {
-      return NextResponse.json({ error: 'site_slug is required' }, { status: 400, headers: CORS_HEADERS });
-    }
-    const site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
-    if (!site) {
-      return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
+    let payCfg: any = {};
+    let siteUrl: string | null = null;
+    let siteId: string | null = null;
+
+    if (site_slug) {
+      const site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
+      if (site) {
+        payCfg = JSON.parse(site.payment_config || '{}');
+        siteUrl = site.site_url;
+        siteId = site.id;
+      }
     }
 
-    const payCfg = JSON.parse(site.payment_config || '{}');
-    if (!payCfg.enabled || payCfg.provider !== 'teya' || !payCfg.teya?.client_id) {
-      // Fallback to global env if not configured per site (for backward compatibility during migration)
-      if (!process.env.TEYA_CLIENT_ID) {
-        return NextResponse.json({ error: 'Online payments not configured for this site' }, { status: 403, headers: CORS_HEADERS });
-      }
+    // If no site-level Teya config, fall back to global env
+    const useSiteTeya = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
+    if (!useSiteTeya && !process.env.TEYA_CLIENT_ID) {
+      return NextResponse.json({ error: 'Online payments not configured' }, { status: 403, headers: CORS_HEADERS });
     }
 
     // 2. Resolve Amount (Recalculate from DB for security)
@@ -111,7 +114,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       const text = [
         `📦 <b>Запит на оплату: ${esc(description)}</b>`,
         `💰 ${amount} ${currency}`,
-        `🌍 Сайт: ${site_slug}`,
+        `🌍 Сайт: ${site_slug || 'kemp-carlsbad'}`,
         `💳 Очікує сесії...`,
       ].join('\n');
       sendTelegramMessage(text).catch(() => {});
@@ -124,11 +127,11 @@ export async function createWidgetCheckoutSession(req: Request) {
 
     // Validate returnTo for security (prevent open redirects)
     let returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
-    if (returnTo.startsWith('http') && site.site_url) {
-       const allowedHost = new URL(site.site_url).hostname;
+    if (returnTo.startsWith('http') && siteUrl) {
+       const allowedHost = new URL(siteUrl).hostname;
        const targetHost = new URL(returnTo).hostname;
        if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
-          returnTo = site.site_url; // Fallback to safe URL
+          returnTo = siteUrl; // Fallback to safe URL
        }
     }
 
@@ -137,8 +140,8 @@ export async function createWidgetCheckoutSession(req: Request) {
         amount: amountMinor,
         currency: currency || 'CZK',
         description,
-        metadata: reservation_id ? { reservation_id, site_id: site.id } : { site_id: site.id },
-        credentials: payCfg.teya?.client_id ? {
+        metadata: reservation_id ? { reservation_id, site_id: siteId || 'kemp' } : { site_id: siteId || 'kemp' },
+        credentials: useSiteTeya ? {
           client_id: payCfg.teya.client_id,
           client_secret: payCfg.teya.client_secret,
           store_id: payCfg.teya.store_id

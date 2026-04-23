@@ -67,8 +67,7 @@ export async function createBookingDraft(req: Request) {
       nights = Math.max(1, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000));
     }
 
-    // ─── 4. Find a suitable unit (for camping/buildings/glamping) ───
-    // For camping: use a generic camping unit; for glamping/buildings: match unit type
+    // ─── 4. Find a suitable unit ─────────────────────
     let unitId: string | null = null;
     const accommodationType = body.accommodation_type || 'camping';
     const accommodationData = body.accommodation_data || {};
@@ -94,18 +93,19 @@ export async function createBookingDraft(req: Request) {
         LIMIT 1
       `).get(`%${building || ''}%`, `%${building || ''}%`) as any;
       unitId = unit?.id || null;
+    } else if (accommodationType === 'camping') {
+      // Pick a free camping unit (category.type = 'camping')
+      const campUnit = db.prepare(`
+        SELECT u.id FROM units u
+        JOIN categories c ON u.category_id = c.id
+        WHERE c.type = 'camping' AND u.is_active = 1 AND u.room_status = 'available'
+          AND u.property_id = ?
+        LIMIT 1
+      `).get(property.id) as any;
+      unitId = campUnit?.id || null;
     }
 
-    // Fallback: get any available unit
-    if (!unitId) {
-      const anyUnit = db.prepare(
-        "SELECT id FROM units WHERE property_id = ? AND is_active = 1 AND room_status = 'available' LIMIT 1"
-      ).get(property.id) as any;
-      unitId = anyUnit?.id || null;
-    }
-
-    // If still no unit, create a virtual reservation without unit
-    // (edge case for camping where we don't have fixed units)
+    // NOTE: No generic fallback — each type must match its own category
 
     // ─── 5. Create reservation in PMS ────────────────
     const resId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
