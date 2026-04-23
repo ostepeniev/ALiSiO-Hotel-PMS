@@ -44,6 +44,7 @@ export async function getAvailability(request: NextRequest) {
     const units = db.prepare(`
       SELECT u.id, u.name, u.code, u.beds, u.room_status, u.is_active,
              ut.id as unit_type_id, ut.name as type_name, ut.code as type_code,
+             ut.photos as type_photos,
              ut.description as type_description,
              ut.max_adults, ut.max_children, ut.max_occupancy,
              ut.base_occupancy, ut.beds_single, ut.beds_double, ut.beds_sofa,
@@ -131,6 +132,7 @@ export async function getAvailability(request: NextRequest) {
         typeName: unit.type_name,
         typeCode: unit.type_code,
         description: unit.type_description,
+        photos: unit.type_photos ? unit.type_photos.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         maxAdults: unit.max_adults,
         maxChildren: unit.max_children,
         maxOccupancy: unit.max_occupancy,

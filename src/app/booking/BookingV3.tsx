@@ -18,6 +18,7 @@ interface UnitResult {
   typeName: string;
   typeCode: string;
   description: string;
+  photos: string[];
   maxAdults: number;
   maxChildren: number;
   maxOccupancy: number;
@@ -111,6 +112,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [currentImgIndex, setCurrentImgIndex] = useState(0);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -603,8 +605,8 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
         {/* STEP 2: HOUSE LIST / DETAILS */}
         <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
-          <h1 className="v3-step-title">{t.selectAccommodation}</h1>
-          <p className="v3-step-sub">{t.availableForDates}</p>
+          <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
+          <p className="v3-step-sub">{selectedUnitId ? (t.reviewSelection || 'Перевірте деталі та продовжуйте бронювання') : t.availableForDates}</p>
 
           {loadingAvail ? (
             <div className="v3-house-list">
@@ -658,7 +660,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   </div>
                 </div>
               ) : (
-                availability?.units.map(u => {
+                availability?.units
+                  .filter(u => !selectedUnitId || selectedUnitId === u.id)
+                  .map(u => {
                   const isSelected = selectedUnitId === u.id;
                   return (
                     <div
@@ -692,6 +696,11 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   );
                 })
               )}
+              {selectedUnitId && availability && availability.units.length > 1 && (
+                <button className="v3-change-unit-btn" onClick={() => setSelectedUnitId(null)}>
+                  ↺ Обрати інший варіант
+                </button>
+              )}
               {availability && availability.units.length > 0 && socialProof && (
                 <div className="v3-social-badges">
                   <div className="v3-badge viewers">
@@ -709,30 +718,57 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
           {selectedUnit && (
             <div className="v3-house-detail-fade">
               <div className="v3-gallery">
-                <div className="v3-gallery-main">
-                  <svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
-                    <defs>
-                      <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#A4B996" stopOpacity=".6" />
-                        <stop offset="100%" stopColor="#2F4F2B" />
-                      </linearGradient>
-                    </defs>
-                    <rect width="400" height="300" fill="url(#sky2)" />
-                    <path d="M0,300 L0,180 L30,150 L25,125 L40,100 L55,125 L50,150 L80,170 L75,140 L90,115 L105,140 L110,170 L140,190 L160,300 Z" fill="#1F3220" opacity=".85" />
-                    <path d="M260,300 L260,170 L290,145 L285,120 L300,95 L315,120 L310,145 L340,165 L350,300 Z" fill="#1F3220" opacity=".85" />
-                    <g transform="translate(150,120)">
-                      <polygon points="-10,40 50,0 110,40 110,100 -10,100" fill="#C9844A" />
-                      <polygon points="-15,40 50,-5 115,40" fill="#8B5A2B" />
-                      <rect x="20" y="55" width="20" height="30" fill="#F6F1E8" opacity=".9" />
-                      <rect x="65" y="55" width="20" height="30" fill="#F6F1E8" opacity=".9" />
-                      <rect x="42" y="70" width="18" height="30" fill="#5A3A1A" />
-                      <circle cx="50" cy="0" r="3" fill="#FFD580" />
-                      <line x1="50" y1="-5" x2="50" y2="-18" stroke="#5A3A1A" strokeWidth="1.5" />
-                    </g>
-                    <ellipse cx="200" cy="270" rx="250" ry="10" fill="#F6F1E8" opacity=".3" />
-                  </svg>
+                <div className="v3-gallery-main" onClick={() => {
+                  if (selectedUnit.photos?.length > 1) {
+                    setCurrentImgIndex(prev => (prev + 1) % selectedUnit.photos.length);
+                  }
+                }}>
+                  {selectedUnit.photos && selectedUnit.photos.length > 0 ? (
+                    <img 
+                      src={selectedUnit.photos[currentImgIndex % selectedUnit.photos.length]} 
+                      alt={selectedUnit.name} 
+                      className="v3-gallery-img"
+                    />
+                  ) : (
+                    <svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+                      <defs>
+                        <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#A4B996" stopOpacity=".6" />
+                          <stop offset="100%" stopColor="#2F4F2B" />
+                        </linearGradient>
+                      </defs>
+                      <rect width="400" height="300" fill="url(#sky2)" />
+                      <path d="M0,300 L0,180 L30,150 L25,125 L40,100 L55,125 L50,150 L80,170 L75,140 L90,115 L105,140 L110,170 L140,190 L160,300 Z" fill="#1F3220" opacity=".85" />
+                      <path d="M260,300 L260,170 L290,145 L285,120 L300,95 L315,120 L310,145 L340,165 L350,300 Z" fill="#1F3220" opacity=".85" />
+                      <g transform="translate(150,120)">
+                        <polygon points="-10,40 50,0 110,40 110,100 -10,100" fill="#C9844A" />
+                        <polygon points="-15,40 50,-5 115,40" fill="#8B5A2B" />
+                        <rect x="20" y="55" width="20" height="30" fill="#F6F1E8" opacity=".9" />
+                        <rect x="65" y="55" width="20" height="30" fill="#F6F1E8" opacity=".9" />
+                        <rect x="42" y="70" width="18" height="30" fill="#5A3A1A" />
+                        <circle cx="50" cy="0" r="3" fill="#FFD580" />
+                        <line x1="50" y1="-5" x2="50" y2="-18" stroke="#5A3A1A" strokeWidth="1.5" />
+                      </g>
+                      <ellipse cx="200" cy="270" rx="250" ry="10" fill="#F6F1E8" opacity=".3" />
+                    </svg>
+                  )}
+                  {selectedUnit.photos?.length > 1 && (
+                    <div className="v3-gallery-nav">
+                      <button className="v3-gallery-arrow left" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev - 1 + selectedUnit.photos.length) % selectedUnit.photos.length); }}>‹</button>
+                      <button className="v3-gallery-arrow right" onClick={(e) => { e.stopPropagation(); setCurrentImgIndex(prev => (prev + 1) % selectedUnit.photos.length); }}>›</button>
+                    </div>
+                  )}
                 </div>
-                <div className="v3-gallery-count">1 / 1</div>
+                {selectedUnit.photos?.length > 1 && (
+                  <div className="v3-gallery-dots">
+                    {selectedUnit.photos.map((_, i) => (
+                      <div key={i} className={`v3-gallery-dot ${i === currentImgIndex ? 'active' : ''}`} onClick={() => setCurrentImgIndex(i)} />
+                    ))}
+                  </div>
+                )}
+                {selectedUnit.photos?.length > 0 && (
+                  <div className="v3-gallery-count">{(currentImgIndex % selectedUnit.photos.length) + 1} / {selectedUnit.photos.length}</div>
+                )}
               </div>
               <h1 className="v3-house-detail-name">{selectedUnit.name}</h1>
               <div className="v3-house-detail-meta">{selectedUnit.typeName} · до {selectedUnit.maxOccupancy} {t.guestsShort}</div>

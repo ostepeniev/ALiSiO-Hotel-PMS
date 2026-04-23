@@ -232,6 +232,30 @@
   margin-bottom: 18px;
 }
 
+.v3-change-unit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+  margin-bottom: 20px;
+}
+
+.v3-change-unit-btn:hover {
+  border-color: var(--moss);
+  color: var(--moss);
+  background: rgba(47, 79, 43, 0.05);
+}
+
 /* ── HOUSE LOCK ── */
 .v3-house-lock {
   background: var(--card);
@@ -580,6 +604,52 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.v3-gallery-nav {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s;
+}
+
+.v3-gallery-main:hover .v3-gallery-nav {
+  opacity: 1;
+}
+
+.v3-gallery-arrow {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background .15s;
+}
+
+.v3-gallery-arrow:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.v3-gallery-img {
+  animation: v3-galleryFade 0.3s ease-in-out;
+}
+
+@keyframes v3-galleryFade {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
 }
 
 .v3-gallery-dots {
