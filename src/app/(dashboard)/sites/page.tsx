@@ -360,18 +360,16 @@ export default function SitesPage() {
           </div>
         </div>
         {/* Type explanation */}
-        <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 8, fontSize: 13, border: '1px solid var(--border-primary)', background: 'var(--surface-secondary)', lineHeight: 1.5 }}>
+        <div style={{ marginBottom: 8, padding: '12px 16px', borderRadius: 10, fontSize: 13, border: '1px solid var(--border-primary)', background: 'var(--surface-secondary)', lineHeight: 1.5 }}>
           {newType === 'self-hosted' ? (
             <>
-              <span style={{ fontWeight: 600 }}>🌐 Self-hosted</span> — окремий сайт бронювання на власному домені
-              (<code style={{ fontSize: 12 }}>booking.yoursite.com</code>). Гість заходить і одразу бронює.
-              Підходить, якщо у вас ще немає сайту або хочете окремий landing для бронювань.
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>🌐 Повноцінний сайт</div>
+              Вибирайте цей варіант, <span style={{color:'var(--accent-primary)',fontWeight:600}}>якщо у вас немає свого сайту</span>. Ми створимо окрему сторінку з усіма вашими будиночками на нашому домені.
             </>
           ) : (
             <>
-              <span style={{ fontWeight: 600 }}>📌 Лише віджет</span> — кнопка або форма, яка вставляється на ваш вже
-              існуючий сайт (Wix, WordPress тощо) одним рядком коду. Гість залишається на вашому сайті.
-              Підходить, якщо сайт вже є і ви хочете просто додати бронювання.
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>📌 Тільки віджет</div>
+              Вибирайте цей варіант, <span style={{color:'var(--accent-primary)',fontWeight:600}}>якщо у вас вже є свій сайт</span> (Wix, WordPress тощо). Ви отримаєте код, який просто вставите на свою сторінку.
             </>
           )}
         </div>
