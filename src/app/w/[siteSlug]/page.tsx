@@ -1,7 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb } from '@/lib/db';
-import BookingV3 from '@/app/booking/BookingV3';
 import { notFound } from 'next/navigation';
+import dynamicImport from 'next/dynamic';
+
+// Use dynamic import with SSR disabled to avoid server-side errors with complex client components
+const BookingV3 = dynamicImport(() => import('@/app/booking/BookingV3'), { 
+  ssr: false,
+  loading: () => <div style={{ minHeight: '100vh', background: '#FAFAF7' }} />
+});
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +18,7 @@ export default async function WidgetPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
   const { siteSlug } = await params;
-  await searchParams; // required to be awaited in Next 15 even if not used
+  await searchParams;
   
   try {
     const db = getDb();
