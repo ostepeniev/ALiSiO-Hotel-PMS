@@ -179,11 +179,11 @@ export type CampingItemCode = 'small_tent' | 'large_tent' | 'car' | 'minibus' | 
 
 export const CAMPING_ITEMS: { code: CampingItemCode; label: string; emoji: string }[] = [
   { code: 'small_tent', label: 'Small tent', emoji: '⛺' },
-  { code: 'large_tent', label: 'Large tent', emoji: '🏕️' },
+  { code: 'large_tent', label: 'Large tent', emoji: '🎪' },
   { code: 'car', label: 'Car', emoji: '🚗' },
   { code: 'minibus', label: 'Minibus / Van', emoji: '🚐' },
-  { code: 'caravan', label: 'Caravan', emoji: '🏠' },
-  { code: 'motorhome', label: 'Motorhome', emoji: '🚌' },
+  { code: 'caravan', label: 'Caravan', emoji: '🏕️' },
+  { code: 'motorhome', label: 'Motorhome', emoji: '🚍' },
   { code: 'motorcycle', label: 'Motorcycle', emoji: '🏍️' },
 ];
 

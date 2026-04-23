@@ -86,23 +86,29 @@ export default function StepCamping({ prices, onNext }: Props) {
       <h1 className="kc-title">Camping</h1>
       <p className="kc-subtitle">Select everything you're bringing</p>
 
-      {/* Equipment multi-select */}
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Your setup</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         {CAMPING_ITEMS.map(item => {
           const active = selectedItems.includes(item.code);
           const rateItem = getRate(prices, item.code);
           const rate = rateItem?.rate_standard ?? 0;
           return (
-            <div key={item.code} className={`kc-svc-card ${active ? 'added' : ''}`} onClick={() => toggleItem(item.code)}>
-              <div className="kc-svc-icon">{item.emoji}</div>
-              <div className="kc-svc-info">
-                <div className="kc-svc-name">{item.label}</div>
-                <div className="kc-svc-price">{formatPrice(rate)} Kč / night</div>
-              </div>
-              <div style={{ width: 24, height: 24, borderRadius: 6, border: active ? 'none' : '2px solid var(--kc-border)', background: active ? 'var(--kc-green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
-                {active ? '✓' : ''}
-              </div>
+            <div key={item.code} onClick={() => toggleItem(item.code)}
+              style={{
+                position: 'relative', padding: '14px 10px', borderRadius: 'var(--kc-radius-sm)',
+                background: active ? 'var(--kc-green-light)' : 'var(--kc-card-bg)',
+                border: active ? '2px solid var(--kc-green)' : '2px solid var(--kc-border)',
+                cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s ease',
+                userSelect: 'none',
+              }}>
+              {active && (
+                <div style={{ position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: 5,
+                  background: 'var(--kc-green)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</div>
+              )}
+              <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 4 }}>{item.emoji}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--kc-text)' }}>{item.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--kc-text-muted)', marginTop: 2 }}>{formatPrice(rate)} Kč / night</div>
             </div>
           );
         })}
