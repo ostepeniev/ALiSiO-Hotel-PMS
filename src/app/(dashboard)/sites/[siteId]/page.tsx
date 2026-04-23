@@ -136,10 +136,28 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, on
   onEmbed: (l: Listing) => void;
 }) {
   const unitName = listing.unit_name || listing.unit_type_name || listing.id;
-
   return (
     <tr style={{cursor:'pointer'}} onClick={() => onEdit(listing)}>
-      <td style={{fontWeight:600}}>{unitName}</td>
+      <td>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{
+            width:40, height:40, borderRadius:8, overflow:'hidden', 
+            background:'var(--surface-secondary)', border:'1px solid var(--border-primary)',
+            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0
+          }}>
+            {listing.unit_type_photos ? (
+              <img 
+                src={listing.unit_type_photos.split(',')[0]} 
+                alt="" 
+                style={{width:'100%',height:'100%',objectFit:'cover'}} 
+              />
+            ) : (
+              <ImageIcon size={18} style={{color:'var(--text-tertiary)',opacity:0.5}} />
+            )}
+          </div>
+          <div style={{fontWeight:600}}>{unitName}</div>
+        </div>
+      </td>
       <td style={{fontSize:12,color:'var(--text-secondary)'}}>{listing.unit_id ? 'Юніт' : 'Тип юніту'}</td>
       <td style={{fontSize:13}}>{listing.price_override ? `${listing.price_override} CZK` : 'За прайсом'}</td>
       <td style={{textAlign:'center'}}><Chk val={listing.external_url}/></td>
