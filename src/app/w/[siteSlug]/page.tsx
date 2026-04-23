@@ -1,29 +1,18 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { getDb } from '@/lib/db';
-import BookingV3 from '@/app/booking/BookingV3';
-import { notFound } from 'next/navigation';
+'use client';
 
-export default async function WidgetPage({ params }: { params: Promise<{ siteSlug: string }> }) {
-  const { siteSlug } = await params;
-  const db = getDb();
+import dynamicImport from 'next/dynamic';
+import { useParams } from 'next/navigation';
 
-  const site = db.prepare("SELECT id, widget_config FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
+const BookingV3 = dynamicImport(() => import('@/app/booking/BookingV3'), { 
+  ssr: false,
+  loading: () => <div style={{ minHeight: '100vh', background: '#FAFAF7' }} />
+});
 
-  if (!site) {
-    return notFound();
-  }
-
-  let thankYouUrl = '';
-  if (site.widget_config) {
-    try {
-      const cfg = JSON.parse(site.widget_config);
-      thankYouUrl = cfg.thank_you_url || '';
-    } catch { /* ignore */ }
-  }
-
+export default function WidgetPage() {
+  const params = useParams();
+  const siteSlug = params.siteSlug as string;
+  
   return (
-    <>
-      <BookingV3 siteId={site.id} siteSlug={siteSlug} thankYouUrl={thankYouUrl} />
-    </>
+    <BookingV3 siteSlug={siteSlug} />
   );
 }

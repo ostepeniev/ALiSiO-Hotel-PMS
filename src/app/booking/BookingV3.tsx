@@ -145,7 +145,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
       const uId = params.get('unitId');
       if (uId) {
-        // We'll try to match this against availability once it's loaded
+        // Store pre-selected unit for matching after availability loads
         (window as any)._preselectedUnit = uId;
       }
 
@@ -208,6 +208,47 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     fetchBusyDates();
   }, [calMonthOffset, isMounted, siteId, siteSlug]);
 
+  // Auto-fetch availability when unitId is pre-selected via URL
+  const autoFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!isMounted || autoFetchedRef.current) return;
+    const pre = typeof window !== 'undefined' ? (window as any)._preselectedUnit : null;
+    if (!pre) return;
+
+    autoFetchedRef.current = true;
+
+    // Read dates directly from URL (state may not be updated yet due to React batching)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlIn = urlParams.get('checkin') || urlParams.get('check_in');
+    const urlOut = urlParams.get('checkout') || urlParams.get('check_out');
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const ci = urlIn || fmt(now);
+    const co = urlOut || fmt(tomorrow);
+
+    // Set state as well so the calendar shows the right dates
+    setCheckIn(ci);
+    setCheckOut(co);
+
+    fetchAvailability(ci, co).then((data) => {
+      if (data?.units) {
+        const matched = data.units.find((u: any) => u.id === pre || u.code === pre);
+        if (matched) {
+          setSelectedUnitId(matched.id);
+          setStep(2);
+        }
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted]);
+
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -265,6 +306,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     try {
       const params = new URLSearchParams({ checkIn: ci, checkOut: co });
       if (siteId) params.set('siteId', siteId);
+      if (siteSlug) params.set('siteSlug', siteSlug);
       const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
@@ -284,7 +326,10 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         }
         return data;
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e); 
+      setLoadingAvail(false);
+    }
     setLoadingAvail(false);
     return null;
   }, [siteId]);
@@ -494,12 +539,16 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
           {selectedUnit && (
             <div className="v3-house-lock">
-              <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                <svg viewBox="0 0 54 54">
-                  <polygon points="12,30 27,16 42,30 42,44 12,44" fill="#C9844A" />
-                  <polygon points="8,30 27,14 46,30" fill="#8B5A2B" />
-                  <rect x="23" y="34" width="8" height="10" fill="#1F3220" />
-                </svg>
+              <div className="v3-house-lock-thumb" style={selectedUnit.photos?.length ? {} : { background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                {selectedUnit.photos?.length > 0 ? (
+                  <img src={selectedUnit.photos[0]} alt={selectedUnit.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                ) : (
+                  <svg viewBox="0 0 54 54">
+                    <polygon points="12,30 27,16 42,30 42,44 12,44" fill="#C9844A" />
+                    <polygon points="8,30 27,14 46,30" fill="#8B5A2B" />
+                    <rect x="23" y="34" width="8" height="10" fill="#1F3220" />
+                  </svg>
+                )}
               </div>
               <div className="v3-house-lock-info">
                 <div className="v3-house-lock-label">{t.accommodation}</div>
@@ -621,7 +670,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
           <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
           <p className="v3-step-sub">{selectedUnitId ? (t.reviewSelection || 'Перевірте деталі та продовжуйте бронювання') : t.availableForDates}</p>
 
-          {loadingAvail ? (
+          {loadingAvail && !selectedUnitId ? (
             <div className="v3-house-list">
               {[1, 2, 3].map(i => (
                 <div key={i} className="v3-house-lock skeleton">
@@ -673,6 +722,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   </div>
                 </div>
               ) : (
+                (loadingAvail && selectedUnitId) ? null : (
                 availability?.units
                   .filter(u => !selectedUnitId || selectedUnitId === u.id)
                   .map(u => {
@@ -683,11 +733,15 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                       className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
                       onClick={() => setSelectedUnitId(u.id)}
                     >
-                      <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                        <svg viewBox="0 0 54 54">
-                          <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
-                          <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
-                        </svg>
+                      <div className="v3-house-lock-thumb" style={u.photos?.length ? {} : { background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                        {u.photos?.length > 0 ? (
+                          <img src={u.photos[0]} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                        ) : (
+                          <svg viewBox="0 0 54 54">
+                            <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                            <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
+                          </svg>
+                        )}
                       </div>
                       <div className="v3-house-lock-info">
                         <div className="v3-house-lock-label">
