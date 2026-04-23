@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    let file: File | null = null;
+    try {
+      const formData = await request.formData();
+      file = formData.get('file') as File;
+    } catch (e: any) {
+      console.error('[UploadProxy] FormData error:', e);
+      return NextResponse.json({ error: `Помилка читання файлу: ${e.message}` }, { status: 400 });
+    }
+
     if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 });
 
     // --- Try Catbox.moe first ---

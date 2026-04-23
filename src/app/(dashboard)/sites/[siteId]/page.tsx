@@ -239,11 +239,12 @@ function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
           throw new Error(url);
         }
       } else {
-        throw new Error('Upload failed');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Помилка сервера (${res.status})`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Помилка завантаження. Спробуйте інше фото або перевірте мережу.');
+      alert(err.message || 'Помилка завантаження. Спробуйте інше фото або перевірте мережу.');
     } finally {
       setUploading(false);
     }
