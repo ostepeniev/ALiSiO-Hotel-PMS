@@ -762,6 +762,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                     </div>
                   );
                 })
+                )
               )}
               {selectedUnitId && availability && availability.units.length > 1 && (
                 <button className="v3-change-unit-btn" onClick={() => setSelectedUnitId(null)}>
