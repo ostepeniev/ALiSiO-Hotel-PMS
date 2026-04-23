@@ -6,11 +6,20 @@ import { formatPrice } from '../lib/pricing';
 interface Service { id: string; name: string; name_en: string; price: number; unit_label: string; icon: string; category: string; }
 interface Props {
   accommodationType: string;
+  nights: number;
   onNext: (services: { id: string; name: string; quantity: number; price: number }[]) => void;
   onSkip: () => void;
 }
 
-export default function StepExtras({ accommodationType, onNext, onSkip }: Props) {
+// Default extras for Kemp Carlsbad
+const DEFAULT_EXTRAS: Service[] = [
+  { id: 'ext_sauna', name: 'Sauna', name_en: 'Sauna session', price: 1500, unit_label: '2h session / up to 6 ppl', icon: '🧖', category: 'wellness' },
+  { id: 'ext_hottub', name: 'Koupací sud', name_en: 'Hot tub', price: 2000, unit_label: '2h session / up to 6 ppl', icon: '🛁', category: 'wellness' },
+  { id: 'ext_grill', name: 'Grill set', name_en: 'Grill set', price: 350, unit_label: 'per set (charcoal + tools)', icon: '🔥', category: 'bbq' },
+  { id: 'ext_breakfast', name: 'Snídaně', name_en: 'Breakfast', price: 180, unit_label: 'per person / day', icon: '🥐', category: 'food' },
+];
+
+export default function StepExtras({ accommodationType, nights, onNext, onSkip }: Props) {
   const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -19,10 +28,16 @@ export default function StepExtras({ accommodationType, onNext, onSkip }: Props)
     fetch('/api/widget/config')
       .then(r => r.json())
       .then(data => {
-        const svcs = (data.services || []).filter((s: Service) => s.category !== 'other');
-        setServices(svcs);
+        const apiSvcs = (data.services || []).filter((s: Service) => s.category !== 'other');
+        // Merge: API services + defaults (avoid duplicates by id)
+        const apiIds = new Set(apiSvcs.map((s: Service) => s.id));
+        const merged = [...apiSvcs, ...DEFAULT_EXTRAS.filter(d => !apiIds.has(d.id))];
+        setServices(merged);
       })
-      .catch(() => {})
+      .catch(() => {
+        // API failed — use defaults
+        setServices(DEFAULT_EXTRAS);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -58,15 +73,16 @@ export default function StepExtras({ accommodationType, onNext, onSkip }: Props)
       <h1 className="kc-title">Extras</h1>
       <p className="kc-subtitle">Make your stay even better</p>
 
-      {services.length === 0 ? (
-        <div className="kc-alert info"><span className="kc-alert-icon">ℹ️</span> No extras available for this accommodation type</div>
-      ) : (
-        services.map(s => (
+      {services.map(s => {
+        const isPerPerson = s.unit_label.includes('person');
+        const hint = isPerPerson ? `💡 Tip: set quantity = guests × ${nights} night${nights > 1 ? 's' : ''}` : null;
+        return (
           <div key={s.id} className={`kc-svc-card ${selected[s.id] ? 'added' : ''}`} onClick={() => !selected[s.id] && toggle(s.id)}>
             <div className="kc-svc-icon">{s.icon}</div>
             <div className="kc-svc-info">
               <div className="kc-svc-name">{s.name_en || s.name}</div>
               <div className="kc-svc-price">{formatPrice(s.price)} Kč · {s.unit_label}</div>
+              {selected[s.id] && hint && <div style={{ fontSize: 11, color: 'var(--kc-green)', marginTop: 2 }}>{hint}</div>}
             </div>
             {selected[s.id] ? (
               <div className="kc-stepper" onClick={e => e.stopPropagation()}>
@@ -78,8 +94,8 @@ export default function StepExtras({ accommodationType, onNext, onSkip }: Props)
               <button className="kc-svc-action" type="button">+ Add</button>
             )}
           </div>
-        ))
-      )}
+        );
+      })}
 
       {totalExtras > 0 && (
         <div className="kc-breakdown">

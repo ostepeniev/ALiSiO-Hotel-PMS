@@ -268,6 +268,7 @@ export default function BookingWizard() {
         {step === 'extras' && (
           <StepExtras
             accommodationType={state.accommodationType || ''}
+            nights={nights}
             onNext={(extras) => { setState(s => ({ ...s, extras })); setStep('summary'); }}
             onSkip={() => { setState(s => ({ ...s, extras: [] })); setStep('summary'); }}
           />
