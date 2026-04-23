@@ -92,6 +92,8 @@ export default function StepCamping({ prices, onNext }: Props) {
           const active = selectedItems.includes(item.code);
           const rateItem = getRate(prices, item.code);
           const rate = rateItem?.rate_standard ?? 0;
+          const rateSide = rateItem?.rate_side_season;
+          const hasRange = rateSide != null && rateSide !== rate;
           return (
             <div key={item.code} onClick={() => toggleItem(item.code)}
               style={{
@@ -108,7 +110,7 @@ export default function StepCamping({ prices, onNext }: Props) {
               )}
               <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 4 }}>{item.emoji}</div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--kc-text)' }}>{item.label}</div>
-              <div style={{ fontSize: 11, color: 'var(--kc-text-muted)', marginTop: 2 }}>{formatPrice(rate)} Kč / night</div>
+              <div style={{ fontSize: 11, color: 'var(--kc-text-muted)', marginTop: 2 }}>{hasRange ? `${formatPrice(Math.min(rate, rateSide!))}–${formatPrice(Math.max(rate, rateSide!))}` : formatPrice(rate)} Kč / night</div>
             </div>
           );
         })}

@@ -295,6 +295,7 @@ export default function BookingWizard() {
             accommodationLabel={getAccommodationLabel(state)}
             checkIn={state.checkIn} checkOut={state.checkOut}
             nights={nights} total={state.total}
+            adults={Number(state.accommodationData?.adults) || 1}
             guestPageToken={guestPageToken}
             paymentUrl={paymentUrl} qrCodeUrl={qrCodeUrl}
             onReset={resetAll} onAdminConfirm={handleAdminConfirm}

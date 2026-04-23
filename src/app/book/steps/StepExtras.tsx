@@ -28,17 +28,22 @@ export default function StepExtras({ accommodationType, nights, onNext, onSkip }
       .finally(() => setLoading(false));
   }, []);
 
+  // Services that require minimum 2 hours
+  const MIN_2H_IDS = new Set(['svc_sauna', 'svc_tub', 'svc_pool']);
+  const getMinQty = (id: string) => MIN_2H_IDS.has(id) ? 2 : 1;
+
   const toggle = (id: string) => {
     setSelected(prev => {
       const copy = { ...prev };
       if (copy[id]) delete copy[id];
-      else copy[id] = 1;
+      else copy[id] = getMinQty(id);
       return copy;
     });
   };
 
   const setQty = (id: string, qty: number) => {
-    if (qty <= 0) {
+    const min = getMinQty(id);
+    if (qty < min) {
       setSelected(prev => { const c = { ...prev }; delete c[id]; return c; });
     } else {
       setSelected(prev => ({ ...prev, [id]: qty }));
@@ -65,7 +70,9 @@ export default function StepExtras({ accommodationType, nights, onNext, onSkip }
       ) : (
         services.map(s => {
           const isPerPerson = s.unit_label.includes('особу') || s.unit_label.includes('person');
-          const hint = isPerPerson && selected[s.id] ? `💡 Tip: set quantity = guests × ${nights} night${nights > 1 ? 's' : ''}` : null;
+          const isMin2h = MIN_2H_IDS.has(s.id);
+          const hint = isPerPerson && selected[s.id] ? `💡 Tip: set quantity = guests × ${nights} night${nights > 1 ? 's' : ''}` 
+            : isMin2h && !selected[s.id] ? '⏰ min. 2 hours' : null;
           return (
             <div key={s.id} className={`kc-svc-card ${selected[s.id] ? 'added' : ''}`} onClick={() => !selected[s.id] && toggle(s.id)}>
               <div className="kc-svc-icon">{s.icon}</div>
