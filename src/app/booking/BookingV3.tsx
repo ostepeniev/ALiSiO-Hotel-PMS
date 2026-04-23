@@ -145,7 +145,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
       const uId = params.get('unitId');
       if (uId) {
-        // We'll try to match this against availability once it's loaded
+        // Store pre-selected unit for matching after availability loads
         (window as any)._preselectedUnit = uId;
       }
 
@@ -208,6 +208,47 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     fetchBusyDates();
   }, [calMonthOffset, isMounted, siteId, siteSlug]);
 
+  // Auto-fetch availability when unitId is pre-selected via URL
+  const autoFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!isMounted || autoFetchedRef.current) return;
+    const pre = typeof window !== 'undefined' ? (window as any)._preselectedUnit : null;
+    if (!pre) return;
+
+    autoFetchedRef.current = true;
+
+    // Read dates directly from URL (state may not be updated yet due to React batching)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlIn = urlParams.get('checkin') || urlParams.get('check_in');
+    const urlOut = urlParams.get('checkout') || urlParams.get('check_out');
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const ci = urlIn || fmt(now);
+    const co = urlOut || fmt(tomorrow);
+
+    // Set state as well so the calendar shows the right dates
+    setCheckIn(ci);
+    setCheckOut(co);
+
+    fetchAvailability(ci, co).then((data) => {
+      if (data?.units) {
+        const matched = data.units.find((u: any) => u.id === pre || u.code === pre);
+        if (matched) {
+          setSelectedUnitId(matched.id);
+          setStep(2);
+        }
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted]);
+
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -265,6 +306,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     try {
       const params = new URLSearchParams({ checkIn: ci, checkOut: co });
       if (siteId) params.set('siteId', siteId);
+      if (siteSlug) params.set('siteSlug', siteSlug);
       const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();

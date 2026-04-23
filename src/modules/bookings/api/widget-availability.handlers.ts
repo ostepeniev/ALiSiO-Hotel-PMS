@@ -20,7 +20,14 @@ export async function getAvailability(request: NextRequest) {
     const checkOut = searchParams.get('checkOut');
     const promoCode = searchParams.get('promoCode') || '';
     const certificateCode = searchParams.get('certificateCode') || '';
-    const siteId = searchParams.get('siteId');
+    let siteId = searchParams.get('siteId');
+    const siteSlug = searchParams.get('siteSlug');
+
+    // Resolve siteSlug to siteId if needed
+    if (!siteId && siteSlug) {
+      const site = db.prepare("SELECT id FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
+      if (site) siteId = site.id;
+    }
 
     if (!checkIn || !checkOut) {
       return NextResponse.json({ error: 'checkIn and checkOut required' }, { status: 400, headers: CORS_HEADERS });
