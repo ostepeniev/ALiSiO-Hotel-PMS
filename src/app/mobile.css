@@ -7,8 +7,8 @@
 .m-app {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   background: var(--bg-primary);
   overflow: hidden;
   position: relative;
@@ -17,7 +17,7 @@
 .m-content {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   padding: 12px 16px;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
@@ -147,30 +147,7 @@
   background: var(--accent-primary);
 }
 
-/* ─── FAB (Floating Action Button) ─────────────────── */
-.m-fab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border: none;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #14b8a6, #3b82f6);
-  color: #fff;
-  cursor: pointer;
-  position: relative;
-  top: -16px;
-  box-shadow: 0 4px 20px rgba(20, 184, 166, 0.4);
-  transition: transform 0.2s, box-shadow 0.2s;
-  -webkit-tap-highlight-color: transparent;
-  z-index: 2;
-}
-
-.m-fab:active {
-  transform: scale(0.9);
-  box-shadow: 0 2px 10px rgba(20, 184, 166, 0.3);
-}
+/* FAB removed — new booking is inside MobileBookings sheet */
 
 /* ─── Bottom Sheet ──────────────────────────────────── */
 .m-sheet-backdrop {
@@ -554,6 +531,9 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ─── Gantt Calendar ────────────────────────────────── */
+#gantt-left::-webkit-scrollbar { display: none; }
 
 /* ─── Global Mobile Overrides ───────────────────────── */
 .m-app .badge {

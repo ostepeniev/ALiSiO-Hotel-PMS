@@ -61,15 +61,21 @@ export interface BookingTranslations {
   enterPersonalInfo: string;
   firstName: string;
   lastName: string;
-  gender: string;
-  genderFemale: string;
-  genderMale: string;
-  genderOther: string;
   phone: string;
   email: string;
   // Promo & Certificate
   promoCode: string;
   certificateCode: string;
+  // Step 3 → Pay action
+  payAndConfirm: string;
+  // Step 4 — upsell after room payment
+  bookingConfirmedTitle: string;
+  bookingConfirmedDesc: string;
+  skipToThankYou: string;
+  confirmServices: string;
+  servicesOptional: string;
+  // Step 5 — purchased services section
+  purchasedServicesTitle: string;
   apply: string;
   promoApplied: string;
   promoInvalid: string;
@@ -208,14 +214,17 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Введіть особисту інформацію',
     firstName: "Ім'я",
     lastName: 'Прізвище',
-    gender: 'Стать',
-    genderFemale: 'Жіноча',
-    genderMale: 'Чоловіча',
-    genderOther: 'Інше',
     phone: 'Номер телефону',
     email: 'Email',
     promoCode: 'Промокод',
     certificateCode: 'Код сертифікату',
+    payAndConfirm: 'Оплатити бронь',
+    bookingConfirmedTitle: 'Бронь підтверджена',
+    bookingConfirmedDesc: 'Оплата за номер пройшла. За бажанням додайте послуги — оплата окремим платежем.',
+    skipToThankYou: 'Пропустити',
+    confirmServices: 'Підтвердити послуги',
+    servicesOptional: 'Послуги опціональні — можна пропустити і замовити пізніше за посиланням з email.',
+    purchasedServicesTitle: 'Замовлені послуги',
     apply: 'Застосувати',
     promoApplied: 'Промокод застосовано!',
     promoInvalid: 'Промокод недійсний',
@@ -343,14 +352,17 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Enter personal information',
     firstName: 'First name',
     lastName: 'Last name',
-    gender: 'Gender',
-    genderFemale: 'Female',
-    genderMale: 'Male',
-    genderOther: 'Other',
     phone: 'Phone number',
     email: 'Email',
     promoCode: 'Promo code',
     certificateCode: 'Certificate code',
+    payAndConfirm: 'Pay & book',
+    bookingConfirmedTitle: 'Booking confirmed',
+    bookingConfirmedDesc: 'Your room is paid. Add optional services — they are billed as a separate payment.',
+    skipToThankYou: 'Skip',
+    confirmServices: 'Confirm services',
+    servicesOptional: 'Services are optional — you can skip and add them later via the link in your email.',
+    purchasedServicesTitle: 'Purchased services',
     apply: 'Apply',
     promoApplied: 'Promo code applied!',
     promoInvalid: 'Invalid promo code',
@@ -476,14 +488,17 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Zadejte osobní údaje',
     firstName: 'Jméno',
     lastName: 'Příjmení',
-    gender: 'Pohlaví',
-    genderFemale: 'Žena',
-    genderMale: 'Muž',
-    genderOther: 'Jiné',
     phone: 'Telefonní číslo',
     email: 'E-mail',
     promoCode: 'Slevový kód',
     certificateCode: 'Kód certifikátu',
+    payAndConfirm: 'Zaplatit a rezervovat',
+    bookingConfirmedTitle: 'Rezervace potvrzena',
+    bookingConfirmedDesc: 'Pokoj je zaplacen. Volitelně přidejte služby — ty se platí zvlášť.',
+    skipToThankYou: 'Přeskočit',
+    confirmServices: 'Potvrdit služby',
+    servicesOptional: 'Služby jsou volitelné — lze přeskočit a přidat později přes odkaz z e-mailu.',
+    purchasedServicesTitle: 'Objednané služby',
     apply: 'Použít',
     promoApplied: 'Slevový kód uplatněn!',
     promoInvalid: 'Neplatný slevový kód',
@@ -609,14 +624,17 @@ const translations: Record<BookingLang, BookingTranslations> = {
     enterPersonalInfo: 'Persönliche Daten eingeben',
     firstName: 'Vorname',
     lastName: 'Nachname',
-    gender: 'Geschlecht',
-    genderFemale: 'Weiblich',
-    genderMale: 'Männlich',
-    genderOther: 'Andere',
     phone: 'Telefonnummer',
     email: 'E-Mail',
     promoCode: 'Aktionscode',
     certificateCode: 'Gutscheincode',
+    payAndConfirm: 'Bezahlen & buchen',
+    bookingConfirmedTitle: 'Buchung bestätigt',
+    bookingConfirmedDesc: 'Ihr Zimmer ist bezahlt. Optional können Sie Zusatzleistungen hinzufügen — separate Zahlung.',
+    skipToThankYou: 'Überspringen',
+    confirmServices: 'Leistungen bestätigen',
+    servicesOptional: 'Leistungen sind optional — Sie können später über den Link in der E-Mail hinzufügen.',
+    purchasedServicesTitle: 'Bestellte Leistungen',
     apply: 'Anwenden',
     promoApplied: 'Aktionscode angewendet!',
     promoInvalid: 'Ungültiger Aktionscode',

@@ -75,6 +75,7 @@ export interface CheckoutSessionOptions {
   metadata?: Record<string, string>;
   success_url?: string;
   cancel_url?: string;
+  expiresAt?: string;     // ISO 8601 — e.g. new Date(Date.now() + 24*3600*1000).toISOString()
 }
 
 export interface CheckoutSessionResult {
@@ -118,6 +119,9 @@ export async function createCheckoutSession(opts: CheckoutSessionOptions): Promi
   }
   if (opts.cancel_url) {
     payload.cancel_url = opts.cancel_url;
+  }
+  if (opts.expiresAt) {
+    payload.expires_at = opts.expiresAt;
   }
 
   const res = await fetch(`${TEYA_API_URL}/v2/checkout/sessions`, {

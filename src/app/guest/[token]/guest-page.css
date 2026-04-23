@@ -696,3 +696,288 @@
 }
 .gp-empty-icon { font-size: 40px; margin-bottom: 12px; }
 .gp-empty-text { font-size: 14px; color: var(--gp-sub); line-height: 1.5; }
+
+/* ══════════════════════════════════════════════════
+   Payment Gate Screen
+   ══════════════════════════════════════════════════ */
+.gp-payment-gate { padding: 0 0 32px; }
+
+.gp-payment-banner {
+  background: linear-gradient(135deg, #FF9500 0%, #FF6B00 100%);
+  color: #fff; font-size: 13px; font-weight: 600;
+  text-align: center; padding: 14px 20px;
+}
+
+.gp-wallet-card {
+  background: linear-gradient(135deg, var(--gp-tint) 0%, var(--gp-tint-dark) 100%);
+  border-radius: var(--gp-radius); padding: 20px;
+  color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  position: relative; overflow: hidden;
+}
+.gp-wallet-card::before {
+  content: ''; position: absolute; top: -30px; right: -30px;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+}
+.gp-wallet-unit { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+.gp-wallet-dates { display: flex; align-items: center; gap: 12px; }
+.gp-wallet-label { font-size: 10px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.08em; }
+.gp-wallet-val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+.gp-wallet-sep { font-size: 18px; opacity: 0.5; padding-top: 12px; }
+.gp-wallet-countdown {
+  margin-top: 12px; font-size: 13px; opacity: 0.85; font-weight: 500;
+  border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px;
+}
+
+.gp-pg-card {
+  margin: 0 16px 12px; background: var(--gp-card);
+  border-radius: var(--gp-radius); padding: 16px; box-shadow: var(--gp-shadow);
+}
+.gp-pg-card--pay { background: var(--gp-forest-light); text-align: center; }
+.gp-pg-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.gp-pg-icon { font-size: 18px; }
+.gp-pg-label { font-size: 14px; color: var(--gp-text); }
+.gp-pg-remaining-label {
+  font-size: 12px; color: var(--gp-sub);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;
+}
+.gp-pg-remaining-amount {
+  font-size: 32px; font-weight: 800; color: var(--gp-tint);
+  margin-bottom: 16px; letter-spacing: -0.02em;
+}
+.gp-pg-pay-btn {
+  width: 100%; padding: 16px;
+  background: linear-gradient(135deg, var(--gp-tint) 0%, var(--gp-tint-dark) 100%);
+  color: #fff; border: none; border-radius: 12px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  transition: opacity 0.2s; box-shadow: 0 4px 12px rgba(46,107,79,0.3);
+}
+.gp-pg-pay-btn:hover { opacity: 0.9; }
+.gp-pg-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.gp-pg-contact { margin-top: 12px; font-size: 12px; color: var(--gp-sub); }
+.gp-pg-contact a { color: var(--gp-tint); font-weight: 600; }
+
+.gp-pg-locked {
+  margin: 0 16px; background: var(--gp-card);
+  border-radius: var(--gp-radius); overflow: hidden; box-shadow: var(--gp-shadow);
+}
+.gp-pg-locked-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 16px; border-bottom: 1px solid var(--gp-sep); font-size: 14px;
+}
+.gp-pg-locked-item:last-child { border-bottom: none; }
+.gp-pg-locked-badge {
+  font-size: 11px; color: var(--gp-sub);
+  background: var(--gp-bg); padding: 3px 8px; border-radius: 20px;
+}
+
+/* ══════════════════════════════════════════════════
+   Far Before Screen
+   ══════════════════════════════════════════════════ */
+.gp-far-before { padding: 0 0 32px; }
+
+.gp-fb-card {
+  margin: 0 16px 12px; background: var(--gp-card);
+  border-radius: var(--gp-radius); padding: 16px; box-shadow: var(--gp-shadow);
+}
+.gp-fb-card--urgent { border: 2px solid var(--gp-orange); background: #FFF8F0; }
+.gp-fb-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.gp-fb-icon { font-size: 18px; }
+.gp-fb-text { font-size: 14px; color: var(--gp-text); }
+.gp-fb-reg-btn {
+  width: 100%; margin-top: 12px; padding: 14px;
+  background: linear-gradient(135deg, var(--gp-tint) 0%, var(--gp-tint-dark) 100%);
+  color: #fff; border: none; border-radius: 12px;
+  font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity 0.2s;
+}
+.gp-fb-reg-btn:hover { opacity: 0.9; }
+.gp-fb-locked-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-bottom: 1px solid var(--gp-sep); font-size: 14px;
+}
+.gp-fb-locked-row:last-child { border-bottom: none; }
+.gp-fb-locked-badge {
+  font-size: 11px; color: var(--gp-sub);
+  background: var(--gp-bg); padding: 3px 8px; border-radius: 20px;
+}
+.gp-info-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--gp-sep); font-size: 14px;
+}
+.gp-info-row:last-child { border-bottom: none; }
+.gp-amenity-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
+.gp-amenity-chip {
+  background: var(--gp-forest-light); color: var(--gp-tint);
+  border-radius: 20px; padding: 6px 12px; font-size: 13px; font-weight: 500;
+}
+
+/* ─── Cart FAB ─── */
+.gp-cart-fab {
+  position: fixed;
+  bottom: 88px; /* above tab bar */
+  right: 16px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--gp-tint);
+  color: #fff;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(46,107,79,0.4);
+  z-index: 100;
+  animation: gp-fab-in 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  position: fixed;
+}
+@keyframes gp-fab-in {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.gp-cart-fab:active { transform: scale(0.92); }
+
+.gp-cart-badge {
+  position: absolute;
+  top: -2px; right: -2px;
+  min-width: 20px; height: 20px;
+  background: var(--gp-red);
+  color: #fff; font-size: 11px; font-weight: 700;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+  border: 2px solid #fff;
+}
+
+/* ─── Service buttons (dual: Pay Now + Add to Cart) ─── */
+.gp-service-btns {
+  display: flex; gap: 10px; margin-top: 16px;
+}
+.gp-btn-pay-now {
+  flex: 1;
+  padding: 14px 0; border-radius: 12px; border: none;
+  background: var(--gp-tint); color: #fff;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  transition: opacity 0.15s;
+}
+.gp-btn-pay-now:active { opacity: 0.8; }
+.gp-btn-pay-now:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.gp-btn-add-cart {
+  flex: 1;
+  padding: 14px 0; border-radius: 12px;
+  background: transparent; color: var(--gp-tint);
+  border: 2px solid var(--gp-tint);
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.gp-btn-add-cart:active { background: var(--gp-forest-light); }
+.gp-btn-add-cart.in-cart {
+  background: var(--gp-forest-light); color: var(--gp-tint);
+  border-color: var(--gp-forest-light);
+}
+
+/* ─── Cart Sheet ─── */
+.gp-cart-empty {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 40px 20px; gap: 12px; text-align: center;
+}
+.gp-cart-empty-icon { font-size: 56px; }
+.gp-cart-empty-text { font-size: 16px; color: var(--gp-sub); }
+.gp-cart-empty-btn {
+  margin-top: 8px; padding: 12px 28px;
+  background: var(--gp-tint); color: #fff;
+  border: none; border-radius: 12px; font-size: 15px; font-weight: 600;
+  cursor: pointer;
+}
+
+.gp-cart-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 0; border-bottom: 1px solid var(--gp-sep);
+}
+.gp-cart-item:last-child { border-bottom: none; }
+.gp-cart-item-icon { font-size: 24px; flex-shrink: 0; }
+.gp-cart-item-info { flex: 1; min-width: 0; }
+.gp-cart-item-name { font-size: 14px; font-weight: 500; }
+.gp-cart-item-price { font-size: 13px; color: var(--gp-sub); }
+
+.gp-cart-stepper {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.gp-cart-stepper-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid var(--gp-tint); background: transparent;
+  color: var(--gp-tint); font-size: 18px; font-weight: 300;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; line-height: 1;
+}
+.gp-cart-stepper-btn:active { background: var(--gp-forest-light); }
+.gp-cart-stepper-btn.remove {
+  border-color: var(--gp-red); color: var(--gp-red);
+}
+.gp-cart-stepper-qty {
+  min-width: 22px; text-align: center;
+  font-size: 15px; font-weight: 600;
+}
+
+.gp-cart-total {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 0 8px; font-size: 16px;
+}
+.gp-cart-total-label { font-weight: 500; }
+.gp-cart-total-value { font-weight: 700; color: var(--gp-tint); font-size: 18px; }
+
+.gp-cart-pay-btn {
+  width: 100%; padding: 16px;
+  background: var(--gp-tint); color: #fff;
+  border: none; border-radius: 14px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  margin-top: 4px; transition: opacity 0.15s;
+}
+.gp-cart-pay-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.gp-cart-pay-btn:active { opacity: 0.85; }
+
+/* ─── Breakfast / Service Date Picker ─── */
+.gp-service-dates {
+  background: var(--gp-bg);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+}
+
+.gp-service-dates-auto {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; color: var(--gp-text);
+}
+.gp-service-dates-icon { font-size: 18px; flex-shrink: 0; }
+
+.gp-service-dates-label {
+  font-size: 13px; font-weight: 600; color: var(--gp-sub);
+  margin-bottom: 10px;
+}
+
+.gp-service-dates-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.gp-service-date-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--gp-card);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.gp-service-date-row:active { background: var(--gp-forest-light); }
+.gp-service-date-row input[type="checkbox"] {
+  width: 20px; height: 20px;
+  accent-color: var(--gp-tint);
+  cursor: pointer; flex-shrink: 0;
+}
+.gp-service-date-label {
+  font-size: 14px; font-weight: 500; color: var(--gp-text);
+}
+
+/* Disabled state for cart/pay buttons when date not selected */
+.gp-btn-add-cart.disabled {
+  opacity: 0.45; cursor: not-allowed;
+  background: transparent;
+}

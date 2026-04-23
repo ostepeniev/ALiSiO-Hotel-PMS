@@ -295,6 +295,37 @@ export async function updateReservationRemarks(stayCode: string, remarks: string
   }
 }
 
+/**
+ * Write a custom field to a Hostex reservation.
+ * Custom fields can be referenced in Hostex automated message templates as {{cf.field_name}}.
+ *
+ * Example: set guest_page_url → use {{cf.guest_page_url}} in Hostex message templates.
+ *
+ * API docs: https://hostex-openapi.readme.io/reference/custom-fields-guide
+ */
+export async function updateReservationCustomField(
+  stayCode: string,
+  fields: Record<string, string>
+): Promise<boolean> {
+  await rateLimitWait();
+  try {
+    const res = await hostexRequest<any>('PATCH', `/reservations/${stayCode}/custom_fields`, {
+      custom_fields: fields,
+    });
+    const ok = res.error_code === 200 || res.error_code === 0;
+    if (ok) {
+      console.log(`[Hostex] Custom fields set for ${stayCode}:`, Object.keys(fields).join(', '));
+    } else {
+      console.warn(`[Hostex] Custom field error for ${stayCode}:`, res.error_msg);
+    }
+    return ok;
+  } catch (e: any) {
+    console.error(`[Hostex] Failed to set custom fields for ${stayCode}:`, e.message);
+    return false;
+  }
+}
+
+
 // ─── Exchange rate (ČNB mid-rate EUR/CZK) ─────────────────
 
 let cachedRate: { rate: number; fetchedAt: number } | null = null;

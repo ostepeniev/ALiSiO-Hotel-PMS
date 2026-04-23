@@ -8,6 +8,7 @@ import {
   getAllReservations,
   getEurCzkRate,
   updateReservationRemarks,
+  updateReservationCustomField,
   type HostexReservation,
 } from './hostex';
 
@@ -292,13 +293,14 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       if (!hasPay) createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
     }
 
-    // Push guest page URL to Hostex
+    // Push guest page URL to Hostex as custom field → use {{cf.guest_page_url}} in message templates
     const activeToken = newToken || existingToken;
     if (activeToken) {
       const guestPageUrl = `${PMS_BASE_URL}/guest/${activeToken}`;
-      if (!(res.remarks || '').includes(guestPageUrl)) {
-        const newRemarks = `${res.remarks ? res.remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
-        updateReservationRemarks(res.stay_code, newRemarks).catch(() => {});
+      // Only update if URL changed (avoid unnecessary API calls)
+      const currentUrl = (res.custom_fields as any)?.guest_page_url || '';
+      if (currentUrl !== guestPageUrl) {
+        updateReservationCustomField(res.stay_code, { guest_page_url: guestPageUrl }).catch(() => {});
       }
     }
 
@@ -345,8 +347,8 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
 
     if (guestPageToken) {
       const guestPageUrl = `${PMS_BASE_URL}/guest/${guestPageToken}`;
-      const newRemarks = `${res.remarks ? res.remarks + '\n\n' : ''}🔗 Гостьова сторінка: ${guestPageUrl}`;
-      updateReservationRemarks(res.stay_code, newRemarks).catch(() => {});
+      // Write to Hostex custom field — use {{cf.guest_page_url}} in Hostex message templates
+      updateReservationCustomField(res.stay_code, { guest_page_url: guestPageUrl }).catch(() => {});
     }
 
     result.created++;

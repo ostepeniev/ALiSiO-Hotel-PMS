@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   X, DollarSign, BarChart3, Users, FileText,
   Settings, Wallet, Receipt, TrendingUp,
-  CalendarDays, LogOut, MessageSquare, GitBranch,
+  LogOut, MessageSquare, GitBranch, List,
 } from 'lucide-react';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 
@@ -27,6 +27,7 @@ const moreItems = [
   ]},
   { section: 'Фінанси', items: [
     { label: 'Огляд', href: '/finance', icon: Wallet },
+    { label: 'Журнал транзакцій', href: '/finance/log', icon: List },
     { label: 'Витрати', href: '/finance/expenses', icon: Receipt },
     { label: 'Cash Flow', href: '/finance/cashflow', icon: TrendingUp },
   ]},

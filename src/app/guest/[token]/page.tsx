@@ -9,6 +9,8 @@ import {
   formatDateLocalized, formatPriceLocalized,
 } from './translations';
 import { translateContent } from './content-translations';
+import { PaymentGateScreen } from '@/modules/guests/ui/PaymentGateScreen';
+import { FarBeforeScreen } from '@/modules/guests/ui/FarBeforeScreen';
 
 // ─── Helpers ────────────────────────────────────
 function parseJSON<T>(val: string | null | undefined, fallback: T): T {
@@ -30,7 +32,9 @@ function dayOfStay(checkIn: string): number {
   return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 }
 
-type Phase = 'before' | 'checkin_day' | 'during' | 'checkout';
+type Phase = 'far_before' | 'before' | 'checkin_day' | 'during' | 'checkout';
+
+const FAR_BEFORE_DAYS = 7;
 
 const ALL_LANGS: Lang[] = ['en', 'de', 'cs', 'uk', 'pl', 'nl', 'fr'];
 
@@ -107,6 +111,18 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const [widgetService, setWidgetService] = useState<'sauna' | 'tub' | 'breakfast' | null>(null);
   const widgetContainerRef = useRef<HTMLDivElement>(null);
 
+  // ─── Cart ─────────────────────────────────────────────────
+  interface CartItem {
+    serviceId: string; serviceName: string; price: number;
+    currency: string; quantity: number; icon: string;
+    serviceDates?: string[]; // for breakfast-type: dates breakfast is needed
+  }
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartLoading, setCartLoading] = useState(false);
+
+  // Breakfast date selection (per open service sheet)
+  const [selectedBreakfastDates, setSelectedBreakfastDates] = useState<string[]>([]);
+
   // Registration state
   const [showReg, setShowReg] = useState(false);
   const [regStep, setRegStep] = useState(1);
@@ -142,11 +158,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         // Check for payment return
         if (typeof window !== 'undefined') {
           const urlParams = new URLSearchParams(window.location.search);
-          const paymentStatus = urlParams.get('payment');
+          const paymentStatus = urlParams.get('payment') || urlParams.get('payment_status');
           if (paymentStatus === 'success') {
             setTimeout(() => showToast('💳 ' + getTranslations(detectedLang).serviceOrdered), 500);
+            // Clear cart after successful payment
+            setCartItems([]);
+            localStorage.removeItem(`cart_${token}`);
             window.history.replaceState({}, '', window.location.pathname);
-          } else if (paymentStatus === 'cancel') {
+          } else if (paymentStatus === 'cancel' || paymentStatus === 'cancelled') {
             setTimeout(() => showToast(getTranslations(detectedLang).orderError, 'error'), 500);
             window.history.replaceState({}, '', window.location.pathname);
           }
@@ -176,21 +195,67 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             documentType: g.document_type || '', documentNumber: g.document_number || '',
             nationality: g.nationality || '', address: g.address || '',
           });
+        } else if (d.reservation) {
+          // Pre-fill from reservation data (name, phone, email) — per spec
+          const res = d.reservation;
+          setRegData(prev => ({
+            ...prev,
+            fullName: prev.fullName || `${res.first_name || ''} ${res.last_name || ''}`.trim(),
+            email: prev.email || res.guest_email || '',
+            phone: prev.phone || res.guest_phone || '',
+          }));
         }
       })
       .catch(() => { setError('notFound'); setLoading(false); });
   }, [token]);
 
-  // Enhanced translateContent: uses static dictionary + DB pre-computed translations
+  // ─── Cart: restore from localStorage ──────────────────────
+  useEffect(() => {
+    if (!token) return;
+    try {
+      const saved = localStorage.getItem(`cart_${token}`);
+      if (saved) setCartItems(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, [token]);
+
+  // ─── Cart: persist to localStorage on change ───────────────
+  useEffect(() => {
+    if (!token) return;
+    localStorage.setItem(`cart_${token}`, JSON.stringify(cartItems));
+  }, [cartItems, token]);
+
+  // ─── Cart: beforeunload abandon beacon ─────────────────────
+  useEffect(() => {
+    if (!token) return;
+    const handleUnload = () => {
+      if (cartItems.length === 0) return;
+      const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+      try {
+        navigator.sendBeacon(`/api/guest/${token}/cart`, JSON.stringify({
+          event_type: 'abandon',
+          cart_total: cartTotal,
+          items: cartItems,
+          phase: data?.phase || null,
+        }));
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [token, cartItems, data?.phase]);
+
+  // Translate DB content (stored in Ukrainian) to the active language.
+  // Priority: static dictionary → server-side cache (DB + static fallback) → original.
+  // Text is trimmed before all lookups to handle whitespace inconsistencies.
   const tc = useCallback((text: string): string => {
     if (!text || lang === 'uk') return text;
-    // 1. Try static dictionary
-    const dictResult = translateContent(text, lang);
-    if (dictResult !== text) return dictResult;
-    // 2. Try DB pre-computed translations (from data.translations)
-    const dbTranslation = data?.translations?.[text]?.[lang];
-    if (dbTranslation) return dbTranslation;
-    // 3. Fallback: original text
+    const trimmed = text.trim();
+    // 1. Static dictionary (instant, no network)
+    const dictResult = translateContent(trimmed, lang);
+    if (dictResult !== trimmed) return dictResult;
+    // 2. Server-side cache returned by the API (includes static dict as fallback)
+    const cached = data?.translations?.[trimmed]?.[lang];
+    if (cached) return cached;
+    // 3. Original text (Ukrainian) — only for truly custom untranslated content
     return text;
   }, [lang, data?.translations]);
 
@@ -212,7 +277,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // ─── Phase/Stage logic ─────────────────────────
+  // ─── Data derivatives ─────────────────────────
   const r = data?.reservation;
   const cfg = data?.guestPageConfig;
   const requiredGuests = r?.adults || 1;
@@ -220,6 +285,14 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const isRegistered = registeredCount >= requiredGuests;
   const catType = r?.category_type || 'resort';
   const brandName = data?.expired ? data.brandName : getBrandName(catType);
+
+  // ─── isPaid ────────────────────────────────────
+  const isPaid = r?.payment_status === 'paid'
+    || r?.payment_status === 'prepaid'
+    || (data?.payments?.remaining != null && data.payments.remaining <= 0);
+
+  // ─── Days until check-in ────────────────────────
+  const dLeft = r?.check_in ? daysUntil(r.check_in) : 0;
 
   const phase: Phase = (() => {
     if (!r) return 'before';
@@ -230,16 +303,17 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     if (today.getTime() === checkOut.getTime()) return 'checkout';
     if (today.getTime() === checkIn.getTime()) return 'checkin_day';
     if (today > checkIn && today < checkOut) return 'during';
+    if (dLeft > FAR_BEFORE_DAYS) return 'far_before';
     return 'before';
   })();
 
   // ─── Service ordering (with Teya payment) ─────
-  const handleOrderService = async (serviceId: string) => {
+  const handleOrderService = async (serviceId: string, serviceDates?: string[]) => {
     setOrderingService(serviceId);
     try {
       const res = await fetch(`/api/guest/${token}/pay`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serviceId, quantity: 1 }),
+        body: JSON.stringify({ serviceId, quantity: serviceDates?.length || 1, serviceDates }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -258,6 +332,96 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       showToast(err.message || t.orderError, 'error');
     }
     setOrderingService(null);
+  };
+
+  // ─── Cart handlers ─────────────────────────────
+  const logCartEvent = (eventType: string, serviceId?: string, qty?: number, cartTotal?: number) => {
+    const phase = data?.phase || null;
+    fetch(`/api/guest/${token}/cart`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: eventType, service_id: serviceId, quantity: qty,
+        cart_total: cartTotal, phase,
+        items: eventType === 'checkout' ? cartItems : undefined,
+      }),
+    }).catch(() => {});
+  };
+
+  const addToCart = (svc: any, datesOverride?: string[]) => {
+    const dateMode = getServiceDateMode(svc);
+    let serviceDates: string[];
+    if (datesOverride) {
+      serviceDates = datesOverride;
+    } else if (dateMode === 'breakfast' && r) {
+      const breakfastDays = getBreakfastDays(r.check_in, r.check_out);
+      if (breakfastDays.length === 1) {
+        serviceDates = breakfastDays;
+      } else {
+        if (selectedBreakfastDates.length === 0) {
+          showToast('Please select at least one breakfast date', 'error');
+          return;
+        }
+        serviceDates = selectedBreakfastDates;
+      }
+    } else {
+      serviceDates = r ? [r.check_in] : [];
+    }
+    const qty = serviceDates.length || 1;
+    const serviceName = svcField(svc, 'name');
+    setCartItems(prev => {
+      const existing = prev.find(i => i.serviceId === svc.id);
+      if (existing) return prev; // already in cart
+      return [...prev, { serviceId: svc.id, serviceName, price: svc.price, currency: svc.currency || 'Kč', quantity: qty, icon: svc.icon || '✨', serviceDates }];
+    });
+    setSheet(null); setSelectedService(null); setSelectedBreakfastDates([]);
+    showToast(t.addedToCart);
+    logCartEvent('add', svc.id, qty);
+  };
+
+  const removeFromCart = (serviceId: string) => {
+    setCartItems(prev => {
+      const item = prev.find(i => i.serviceId === serviceId);
+      logCartEvent('remove', serviceId, item?.quantity);
+      return prev.filter(i => i.serviceId !== serviceId);
+    });
+  };
+
+  const updateCartQty = (serviceId: string, delta: number) => {
+    setCartItems(prev => prev.reduce<CartItem[]>((acc, item) => {
+      if (item.serviceId !== serviceId) return [...acc, item];
+      const newQty = item.quantity + delta;
+      if (newQty < 1) { logCartEvent('remove', serviceId, item.quantity); return acc; }
+      return [...acc, { ...item, quantity: newQty }];
+    }, []));
+  };
+
+  const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
+
+  const handleCartPay = async () => {
+    if (cartItems.length === 0 || cartLoading) return;
+    setCartLoading(true);
+    logCartEvent('checkout', undefined, undefined, cartTotal);
+    try {
+      const res = await fetch(`/api/guest/${token}/pay`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cartItems.map(i => ({
+            serviceId: i.serviceId,
+            quantity: i.quantity,
+            serviceDates: i.serviceDates,
+          }))
+        }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'Payment error'); }
+      const result = await res.json();
+      if (result.session_url) { window.location.href = result.session_url; return; }
+      showToast(t.serviceOrdered);
+      setSheet(null);
+    } catch (err: any) {
+      showToast(err.message || t.orderError, 'error');
+    }
+    setCartLoading(false);
   };
 
   // ─── Registration submit (one guest at a time) ──
@@ -343,11 +507,37 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     const name = ((svc.name || '') + ' ' + (svc.name_en || '') + ' ' + (svc.id || '')).toLowerCase();
     if (name.includes('саун') || name.includes('sauna')) return 'sauna';
     if (name.includes('купіль') || name.includes('чан') || name.includes('tub') || name.includes('pool') || name.includes('plunge') || name.includes('kád') || name.includes('lázeň')) return 'tub';
-    if (name.includes('сніданок') || name.includes('сніданк') || name.includes('breakfast') || name.includes('snídaně') || name.includes('frühstück')) return 'breakfast';
     // Fallback: use service_type
     if (svc.service_type === 'menu_selection') return 'breakfast';
     return null;
   }, []);
+
+  // Helper: date mode for simple services (no widget)
+  // 'breakfast' = show day-after-checkin dates; 'checkin' = auto assign check-in date
+  function getServiceDateMode(svc: any): 'breakfast' | 'checkin' {
+    const name = ((svc.name || '') + ' ' + (svc.name_en || '')).toLowerCase();
+    if (
+      name.includes('сніданок') || name.includes('сніданк') ||
+      name.includes('breakfast') || name.includes('snídaně') ||
+      name.includes('frühstück') || name.includes('petit-déjeuner')
+    ) return 'breakfast';
+    return 'checkin';
+  }
+
+  // Helper: compute available breakfast days
+  // Breakfast is served the morning AFTER each overnight stay.
+  // e.g. check_in 25th, check_out 27th (2 nights) → breakfast on 26th and 27th
+  function getBreakfastDays(checkIn: string, checkOut: string): string[] {
+    const days: string[] = [];
+    const cur = new Date(checkIn + 'T00:00:00');
+    const end = new Date(checkOut + 'T00:00:00');
+    cur.setDate(cur.getDate() + 1); // first breakfast = morning after first night
+    while (cur <= end) {
+      days.push(cur.toISOString().split('T')[0]);
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }
 
   // ─── LOADING / ERROR ──────────────────────────
   if (loading) return (
@@ -362,13 +552,36 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
     return <PostStayPage data={data} lang={lang} setLang={setLang} />;
   }
 
+  // ─── PAYMENT GATE ─────────────────────────────
+  if (!isPaid) {
+    return (
+      <div className="gp-root">
+        <PaymentGateScreen data={data} t={t} lang={lang} token={token} />
+      </div>
+    );
+  }
+
+  // ─── FAR BEFORE ───────────────────────────────
+  if (phase === 'far_before') {
+    return (
+      <div className="gp-root">
+        <FarBeforeScreen
+          data={data} t={t} lang={lang} dLeft={dLeft}
+          isRegistered={isRegistered}
+          onRegisterClick={() => setShowReg(true)}
+          checkInTime={r?.check_in_time}
+          checkOutTime={r?.check_out_time}
+        />
+      </div>
+    );
+  }
+
   // ─── Data derivatives ─────────────────────────
   const amenities = parseJSON<any[]>(cfg?.amenities, []);
   const rules = parseJSON<any[]>(cfg?.rules, []);
   const usefulInfoList = parseJSON<any[]>(cfg?.useful_info, []);
   const faqItems = parseJSON<any[]>(cfg?.faq_items, []);
   const guestName = `${r.first_name || ''} ${(r.last_name || '').charAt(0)}.`.trim();
-  const dLeft = daysUntil(r.check_in);
   const currentDay = dayOfStay(r.check_in);
   const unitName = r.unit_name || r.unit_type_name || 'Your cabin';
 
@@ -823,28 +1036,108 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       </BottomSheet>
 
       {/* Service detail (simple services) */}
-      <BottomSheet open={sheet === 'service' && !!selectedService} onClose={() => { setSheet(null); setSelectedService(null); }}
+      <BottomSheet open={sheet === 'service' && !!selectedService} onClose={() => { setSheet(null); setSelectedService(null); setSelectedBreakfastDates([]); }}
         title={selectedService ? svcField(selectedService, 'name') : ''}>
-        {selectedService && (
-          <>
-            <div className="gp-service-detail">
-              <div className="gp-service-detail-emoji">{selectedService.icon || '✨'}</div>
-              <div className="gp-service-detail-price">{formatPriceLocalized(selectedService.price, selectedService.currency)}</div>
-              {selectedService.unit_label && (
-                <div className="gp-service-detail-per">{t.per} {svcField(selectedService, 'unit_label')}</div>
+        {selectedService && (() => {
+          const isAlreadyPaid = data.orderedServices?.some(
+            (o: any) => o.service_id === selectedService.id && o.payment_status === 'paid'
+          );
+          const isInCart = cartItems.some(i => i.serviceId === selectedService.id);
+          const dateMode = getServiceDateMode(selectedService);
+          const breakfastDays = r ? getBreakfastDays(r.check_in, r.check_out) : [];
+          const isAutoBreakfast = dateMode === 'breakfast' && breakfastDays.length === 1;
+          const breakfastReady = dateMode !== 'breakfast' || isAutoBreakfast || selectedBreakfastDates.length > 0;
+
+          // Compute effective service dates for Pay Now / Add to Cart
+          const getEffectiveDates = () => {
+            if (dateMode === 'breakfast') {
+              return isAutoBreakfast ? breakfastDays : selectedBreakfastDates;
+            }
+            return r ? [r.check_in] : [];
+          };
+
+          return (
+            <>
+              <div className="gp-service-detail">
+                <div className="gp-service-detail-emoji">{selectedService.icon || '✨'}</div>
+                <div className="gp-service-detail-price">{formatPriceLocalized(selectedService.price, selectedService.currency)}</div>
+                {selectedService.unit_label && (
+                  <div className="gp-service-detail-per">{t.per} {svcField(selectedService, 'unit_label')}</div>
+                )}
+              </div>
+              <div className="gp-service-detail-desc">{svcField(selectedService, 'description')}</div>
+
+              {/* ─── Date selection for breakfast ─── */}
+              {dateMode === 'breakfast' && r && (
+                <div className="gp-service-dates">
+                  {isAutoBreakfast ? (
+                    // 1 night → auto, just show the date
+                    <div className="gp-service-dates-auto">
+                      <span className="gp-service-dates-icon">🌅</span>
+                      <span>Breakfast: <strong>{formatDateLocalized(breakfastDays[0], lang)}</strong></span>
+                    </div>
+                  ) : (
+                    // 2+ nights → let guest pick
+                    <>
+                      <div className="gp-service-dates-label">🌅 Select breakfast days:</div>
+                      <div className="gp-service-dates-list">
+                        {breakfastDays.map(d => (
+                          <label key={d} className="gp-service-date-row">
+                            <input
+                              type="checkbox"
+                              checked={selectedBreakfastDates.includes(d)}
+                              onChange={e => {
+                                if (e.target.checked) setSelectedBreakfastDates(prev => [...prev, d]);
+                                else setSelectedBreakfastDates(prev => prev.filter(x => x !== d));
+                              }}
+                            />
+                            <span className="gp-service-date-label">{formatDateLocalized(d, lang)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
-            </div>
-            <div className="gp-service-detail-desc">{svcField(selectedService, 'description')}</div>
-            {!data.orderedServices?.some((o: any) => o.service_id === selectedService.id && o.payment_status === 'paid') ? (
-              <button className="gp-btn gp-btn-primary" onClick={() => handleOrderService(selectedService.id)}
-                disabled={orderingService === selectedService.id}>
-                {orderingService === selectedService.id ? '...' : `💳 ${t.addToStay} — ${formatPriceLocalized(selectedService.price, selectedService.currency)}`}
-              </button>
-            ) : (
-              <button className="gp-btn" style={{ background: 'var(--gp-green)', color: '#FFF' }} disabled>✅ {t.done}</button>
-            )}
-          </>
-        )}
+
+              {/* ─── Auto date info for one-time services ─── */}
+              {dateMode === 'checkin' && r && (
+                <div className="gp-service-dates">
+                  <div className="gp-service-dates-auto">
+                    <span className="gp-service-dates-icon">📅</span>
+                    <span>Date: <strong>{formatDateLocalized(r.check_in, lang)}</strong></span>
+                  </div>
+                </div>
+              )}
+
+              {isAlreadyPaid ? (
+                <button className="gp-btn" style={{ background: 'var(--gp-green)', color: '#FFF' }} disabled>✅ {t.done}</button>
+              ) : (
+                <div className="gp-service-btns">
+                  <button className="gp-btn-pay-now"
+                    onClick={() => {
+                      const dates = getEffectiveDates();
+                      logCartEvent('pay_now', selectedService.id, dates.length || 1);
+                      handleOrderService(selectedService.id, dates);
+                    }}
+                    disabled={orderingService === selectedService.id || !breakfastReady}>
+                    {orderingService === selectedService.id ? '...' : `💳 ${t.payNow}`}
+                  </button>
+                  <button
+                    className={`gp-btn-add-cart${isInCart ? ' in-cart' : ''}${!breakfastReady ? ' disabled' : ''}`}
+                    disabled={!breakfastReady}
+                    onClick={() => {
+                      if (isInCart) { setSheet(null); setSelectedService(null); setSelectedBreakfastDates([]); setTimeout(() => setSheet('cart'), 50); }
+                      else addToCart(selectedService, getEffectiveDates());
+                    }}
+                  >
+                    {isInCart ? t.inCart : `🛒 ${t.addToCart}`}
+                  </button>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </BottomSheet>
 
       {/* Service widget popup (sauna / tub / breakfast) */}
@@ -1019,6 +1312,55 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
           </button>
         ))}
       </div>
+
+      {/* ════ CART FAB ════ */}
+      {cartCount > 0 && (
+        <button className="gp-cart-fab" onClick={() => setSheet('cart')}>
+          🛒
+          <span className="gp-cart-badge">{cartCount}</span>
+        </button>
+      )}
+
+      {/* ════ CART BOTTOM SHEET ════ */}
+      <BottomSheet open={sheet === 'cart'} onClose={() => setSheet(null)} title={t.yourCart}>
+        {cartItems.length === 0 ? (
+          <div className="gp-cart-empty">
+            <div className="gp-cart-empty-icon">🛒</div>
+            <div className="gp-cart-empty-text">{t.cartEmpty}</div>
+            <button className="gp-cart-empty-btn" onClick={() => { setSheet(null); setTab('services'); }}>
+              {t.browseServices}
+            </button>
+          </div>
+        ) : (
+          <div style={{ padding: '0 4px' }}>
+            {cartItems.map(item => (
+              <div key={item.serviceId} className="gp-cart-item">
+                <div className="gp-cart-item-icon">{item.icon}</div>
+                <div className="gp-cart-item-info">
+                  <div className="gp-cart-item-name">{item.serviceName}</div>
+                  <div className="gp-cart-item-price">{(item.price * item.quantity).toFixed(0)} {item.currency}</div>
+                </div>
+                <div className="gp-cart-stepper">
+                  <button
+                    className={`gp-cart-stepper-btn${item.quantity === 1 ? ' remove' : ''}`}
+                    onClick={() => updateCartQty(item.serviceId, -1)}>
+                    {item.quantity === 1 ? '×' : '−'}
+                  </button>
+                  <span className="gp-cart-stepper-qty">{item.quantity}</span>
+                  <button className="gp-cart-stepper-btn" onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
+                </div>
+              </div>
+            ))}
+            <div className="gp-cart-total">
+              <span className="gp-cart-total-label">Total</span>
+              <span className="gp-cart-total-value">{cartTotal.toFixed(0)} {cartItems[0]?.currency || 'Kč'}</span>
+            </div>
+            <button className="gp-cart-pay-btn" onClick={handleCartPay} disabled={cartLoading}>
+              {cartLoading ? '...' : t.payAll(`${cartTotal.toFixed(0)} ${cartItems[0]?.currency || 'Kč'}`)}
+            </button>
+          </div>
+        )}
+      </BottomSheet>
 
       {/* ════ TOAST ════ */}
       {toast && <div className={`gp-toast ${toast.type}`}>{toast.msg}</div>}

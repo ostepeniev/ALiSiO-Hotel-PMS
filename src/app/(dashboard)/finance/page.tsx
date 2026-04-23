@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useDevice } from '@/lib/useDevice';
+import MobileFinanceOverview from '@/components/mobile/pages/MobileFinanceOverview';
 
 interface KPI {
   revenue: number;
@@ -69,6 +71,9 @@ function getMonthLabel(m: string): string {
 }
 
 export default function FinanceOverviewPage() {
+  const { isMobile } = useDevice();
+  if (isMobile) return <MobileFinanceOverview />;
+
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(() => new Date().toISOString().substring(0, 7));

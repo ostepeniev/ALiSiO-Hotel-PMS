@@ -13,6 +13,41 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+
+  // ─── Modular Architecture Boundaries ──────────────────────────
+  // Modules must communicate ONLY through their public api/index.ts.
+  // Direct imports into domain/, data/, or events/ of ANY module are forbidden.
+  // Migration complete — enforced as error.
+  {
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/modules/*/domain", "@/modules/*/domain/*"],
+              message:
+                "Cross-module import into domain/ is forbidden. Use the module public API: import from '@<module>' instead.",
+            },
+            {
+              group: ["@/modules/*/data", "@/modules/*/data/*"],
+              message:
+                "Cross-module import into data/ is forbidden. Use the module public API: import from '@<module>' instead.",
+            },
+            {
+              group: ["@/modules/*/events", "@/modules/*/events/*"],
+              message:
+                "Cross-module import into events/ is forbidden. Use the module public API or @core/event-bus instead.",
+            },
+            {
+              group: ["@/modules/*/*/__tests__", "@/modules/*/__tests__/*"],
+              message: "Never import from test files in production code.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

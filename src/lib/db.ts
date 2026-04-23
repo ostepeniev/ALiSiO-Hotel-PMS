@@ -1498,6 +1498,73 @@ function runMigrations(database: any) {
   } catch { /* column already exists */ }
 
   // ═══════════════════════════════════════════════════════
+  // FINANCE MODULE PHASE 3 — Accounts, Income, Transfers
+  // ═══════════════════════════════════════════════════════
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_accounts (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'investment', 'other')),
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      initial_balance REAL NOT NULL DEFAULT 0,
+      color TEXT DEFAULT '#6366f1',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS income (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      account_id TEXT REFERENCES finance_accounts(id),
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      category TEXT,
+      counterparty TEXT,
+      description TEXT NOT NULL,
+      income_date TEXT NOT NULL,
+      month TEXT NOT NULL,
+      business_unit_id TEXT REFERENCES business_units(id),
+      notes TEXT,
+      created_by TEXT REFERENCES app_users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_income_org ON income(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_income_date ON income(income_date)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_income_month ON income(month)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS transfers (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      from_account_id TEXT REFERENCES finance_accounts(id),
+      to_account_id TEXT REFERENCES finance_accounts(id),
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      transfer_date TEXT NOT NULL,
+      notes TEXT,
+      created_by TEXT REFERENCES app_users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_org ON transfers(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_date ON transfers(transfer_date)');
+
+  try {
+    database.exec("ALTER TABLE expenses ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
+  } catch { /* column already exists */ }
+  try {
+    database.exec("ALTER TABLE payments ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
+  } catch { /* column already exists */ }
+
+  // ═══════════════════════════════════════════════════════
   // PRICING MODULE
   // ═══════════════════════════════════════════════════════
 
@@ -2233,23 +2300,151 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_site_services_site ON site_services(site_id)');
 
-  // --- Migration: NULL-safe ALTER on existing tables ---
-  // payment_accounts → add site_id, is_default
-  try { database.exec('ALTER TABLE payment_accounts ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
-  try { database.exec('ALTER TABLE payment_accounts ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0'); } catch { /* already exists */ }
+  // --- Migration: site_id columns for related tables ---
+  try { database.exec('ALTER TABLE payment_accounts ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
+  try { database.exec('ALTER TABLE payment_accounts ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0'); } catch { /* */ }
 
-  // promo_codes → add site_id, redemption_limit, applied_listings
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN redemption_limit INTEGER'); } catch { /* already exists */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* already exists */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN max_nights INTEGER'); } catch { /* already exists */ }
-  try { database.exec('ALTER TABLE promo_codes ADD COLUMN allowed_days TEXT'); } catch { /* already exists */ }
-  try { database.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* already exists */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN redemption_limit INTEGER'); } catch { /* */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN max_nights INTEGER'); } catch { /* */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN allowed_days TEXT'); } catch { /* */ }
+  try { database.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* */ }
 
-  // booking_service_orders → add site_id
-  try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* already exists */ }
-
+  try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
   console.log('[DB] Booking Sites module tables ready');
+
+
+  // --- Migration: create invoices table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY,
+      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      invoice_number TEXT NOT NULL UNIQUE,
+      issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+      due_date TEXT,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued', 'cancelled')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_reservation ON invoices(reservation_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_invoices_issued ON invoices(issued_at)');
+
+  // --- Migration: camping-specific fields in reservations ---
+  try {
+    const resCols = (database.prepare("PRAGMA table_info(reservations)").all() as any[]).map((c: any) => c.name);
+    if (!resCols.includes('camping_vehicle_type'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_vehicle_type TEXT");
+    if (!resCols.includes('camping_tent_type'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_tent_type TEXT");
+    if (!resCols.includes('camping_electricity'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_electricity INTEGER DEFAULT 0");
+    if (!resCols.includes('camping_pets'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_pets TEXT");
+    if (!resCols.includes('camping_notes'))
+      database.exec("ALTER TABLE reservations ADD COLUMN camping_notes TEXT");
+    // deposit / prepayment tracking
+    if (!resCols.includes('deposit_amount'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_amount INTEGER DEFAULT 0");
+    if (!resCols.includes('deposit_status'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_status TEXT DEFAULT 'none'");
+    if (!resCols.includes('deposit_session_id'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_session_id TEXT");
+    if (!resCols.includes('deposit_session_url'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_session_url TEXT");
+    if (!resCols.includes('deposit_session_expires_at'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_session_expires_at TEXT");
+    if (!resCols.includes('deposit_paid_at'))
+      database.exec("ALTER TABLE reservations ADD COLUMN deposit_paid_at TEXT");
+    if (!resCols.includes('group_lead_id'))
+      database.exec("ALTER TABLE reservations ADD COLUMN group_lead_id TEXT");
+    database.exec('CREATE INDEX IF NOT EXISTS idx_reservations_deposit_session ON reservations(deposit_session_id)');
+    console.log('[DB] Camping + deposit columns migrated');
+  } catch (e: any) {
+    console.error('[DB] Camping migration error:', e.message);
+  }
+
+  // --- Migration: create cart_events table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS cart_events (
+      id                    TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      reservation_id        TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      guest_token           TEXT NOT NULL,
+      service_id            TEXT,
+      event_type            TEXT NOT NULL CHECK (event_type IN ('add','remove','pay_now','checkout','abandon')),
+      quantity              INTEGER DEFAULT 1,
+      phase                 TEXT,
+      cart_total            REAL,
+      items_json            TEXT,
+      abandon_notified_at   TEXT,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_cart_events_token ON cart_events(guest_token)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_cart_events_type ON cart_events(event_type, abandon_notified_at)');
+
+  // --- Migration: create booking_drafts table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS booking_drafts (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      session_id TEXT UNIQUE,
+      accommodation_type TEXT,
+      unit_type TEXT,
+      check_in TEXT,
+      check_out TEXT,
+      adults INTEGER DEFAULT 1,
+      children INTEGER DEFAULT 0,
+      extras TEXT,
+      options TEXT,
+      guest_name TEXT,
+      guest_email TEXT,
+      guest_phone TEXT,
+      total_price REAL DEFAULT 0,
+      deposit_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'pending_payment', 'paid', 'expired', 'cancelled')),
+      teya_session_id TEXT,
+      reservation_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  // Clean expired drafts older than 24h
+  try { database.exec("DELETE FROM booking_drafts WHERE status = 'draft' AND created_at < datetime('now', '-24 hours')"); } catch { /* */ }
+
+  // --- Migration: add available_in_widget to additional_services ---
+  try {
+    const asCols = database.prepare("PRAGMA table_info(additional_services)").all().map((c: any) => c.name);
+    if (!asCols.includes('available_in_widget')) {
+      database.exec("ALTER TABLE additional_services ADD COLUMN available_in_widget INTEGER DEFAULT 0");
+      console.log('[DB] Added available_in_widget to additional_services');
+    }
+  } catch { /* */ }
+
+  // --- Migration: add service_date + payment columns to service_orders ---
+  try {
+    const soCols = database.prepare("PRAGMA table_info(service_orders)").all().map((c: any) => c.name);
+    if (!soCols.includes('service_date')) {
+      database.exec("ALTER TABLE service_orders ADD COLUMN service_date TEXT");
+      // Backfill: set service_date = check_in for existing orders
+      database.exec(`
+        UPDATE service_orders
+        SET service_date = (
+          SELECT r.check_in FROM reservations r WHERE r.id = service_orders.reservation_id
+        )
+        WHERE service_date IS NULL
+      `);
+      console.log('[DB] Added service_date to service_orders + backfilled from check_in');
+    }
+    if (!soCols.includes('payment_id'))
+      database.exec("ALTER TABLE service_orders ADD COLUMN payment_id TEXT");
+    if (!soCols.includes('payment_status'))
+      database.exec("ALTER TABLE service_orders ADD COLUMN payment_status TEXT DEFAULT 'none'");
+  } catch { /* */ }
+
 }
 
 
@@ -2373,6 +2568,7 @@ function seedData(database: any) {
 
   // Seed demo payments / transactions
   const insertPay = database.prepare('INSERT INTO payments (id, reservation_id, amount, method, type, status, paid_at, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+
   // r001 Jan Novák — fully paid by card (8800)
   insertPay.run('pay001', 'r001', 8800, 'card', 'full', 'completed', '2026-02-20', 'Booking.com payment');
   // r002 Maria Schmidt — fully paid cash at check-in (6200)

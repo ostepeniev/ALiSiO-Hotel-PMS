@@ -1,63 +1,37 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   CalendarDays,
-  Plus,
   BookOpen,
-  Menu,
+  Users,
+  MoreHorizontal,
 } from 'lucide-react';
 
 interface MobileBottomTabsProps {
   onMoreClick?: () => void;
-  onFabClick?: () => void;
 }
 
 const tabs = [
-  { label: 'Home', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Календар', href: '/calendar', icon: CalendarDays },
-  // FAB goes in center
-  { label: 'Бронюв.', href: '/bookings', icon: BookOpen },
-  { label: 'Більше', href: '__more__', icon: Menu },
+  { label: 'Головна',    href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Бронювання', href: '/bookings',  icon: BookOpen },
+  { label: 'Календар',   href: '/calendar',  icon: CalendarDays },
+  { label: 'Гості',      href: '/guests',    icon: Users },
+  { label: 'Більше',     href: '__more__',   icon: MoreHorizontal },
 ];
 
-export default function MobileBottomTabs({ onMoreClick, onFabClick }: MobileBottomTabsProps) {
+export default function MobileBottomTabs({ onMoreClick }: MobileBottomTabsProps) {
   const pathname = usePathname();
-  const router = useRouter();
-
-  const handleFab = () => {
-    if (onFabClick) {
-      onFabClick();
-    } else {
-      router.push('/bookings?new=1');
-    }
-  };
 
   return (
     <nav className="m-bottom-tabs">
-      {tabs.map((tab, i) => {
-        // Insert FAB after 2nd tab
-        const elements = [];
-
-        if (i === 2) {
-          elements.push(
-            <button
-              key="fab"
-              className="m-fab"
-              onClick={handleFab}
-              aria-label="Нове бронювання"
-            >
-              <Plus size={26} strokeWidth={2.5} />
-            </button>
-          );
-        }
-
+      {tabs.map((tab) => {
         if (tab.href === '__more__') {
-          elements.push(
+          return (
             <button
-              key={tab.label}
+              key="more"
               className="m-tab-item"
               onClick={onMoreClick}
             >
@@ -65,22 +39,20 @@ export default function MobileBottomTabs({ onMoreClick, onFabClick }: MobileBott
               <span>{tab.label}</span>
             </button>
           );
-        } else {
-          const isActive = pathname === tab.href || pathname.startsWith(tab.href + '/');
-          elements.push(
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`m-tab-item ${isActive ? 'm-tab-active' : ''}`}
-            >
-              <tab.icon size={22} />
-              <span>{tab.label}</span>
-              {isActive && <div className="m-tab-pill" />}
-            </Link>
-          );
         }
 
-        return elements;
+        const isActive = pathname === tab.href || pathname.startsWith(tab.href + '/');
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={`m-tab-item ${isActive ? 'm-tab-active' : ''}`}
+          >
+            <tab.icon size={22} />
+            <span>{tab.label}</span>
+            {isActive && <div className="m-tab-pill" />}
+          </Link>
+        );
       })}
     </nav>
   );
