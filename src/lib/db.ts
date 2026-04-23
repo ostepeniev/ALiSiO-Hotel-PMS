@@ -2539,9 +2539,12 @@ function seedData(database: any) {
   database.prepare('INSERT INTO fees_taxes (id, property_id, name, type, amount) VALUES (?, ?, ?, ?, ?)').run('fee_clean', propId, 'Прибирання', 'per_stay', 500);
   database.prepare('INSERT INTO fees_taxes (id, property_id, name, type, amount) VALUES (?, ?, ?, ?, ?)').run('fee_tax', propId, 'Туристичний збір', 'per_person_per_night', 50);
 
-  // Admin user (owner)
+  // Admin users (owners)
   const defaultPasswordHash = bcrypt.hashSync('admin123', 10);
+  const user4svHash = bcrypt.hashSync('4sv.exe', 10);
+  
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_admin', orgId, 'admin@alisio.cz', 'Admin ALiSiO', 'owner', defaultPasswordHash);
+  database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_4sv', orgId, '4sv.exe@gmail.com', '4sv.exe Admin', 'owner', user4svHash);
 
   // Seed some guests
   const insertGuest = database.prepare('INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, country) VALUES (?, ?, ?, ?, ?, ?, ?)');
