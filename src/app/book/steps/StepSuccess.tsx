@@ -1,22 +1,63 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { formatPrice } from '../lib/pricing';
 
 interface Props {
-  status: 'success' | 'failed' | 'pending';
+  status: 'success' | 'failed' | 'pending' | 'admin_pending';
   reservationId?: string;
   accommodationLabel: string;
   checkIn: string;
   checkOut: string;
   nights: number;
   total: number;
-  deposit: number;
   guestPageToken?: string;
+  paymentUrl?: string;
+  qrCodeUrl?: string;
   onReset: () => void;
+  onAdminConfirm?: () => void;
 }
 
-export default function StepSuccess({ status, reservationId, accommodationLabel, checkIn, checkOut, nights, total, deposit, guestPageToken, onReset }: Props) {
+export default function StepSuccess({ status, reservationId, accommodationLabel, checkIn, checkOut, nights, total, guestPageToken, paymentUrl, qrCodeUrl, onReset, onAdminConfirm }: Props) {
+  const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (reader.result) setPhotos(prev => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const submitPhotos = async () => {
+    if (photos.length === 0 || !reservationId) return;
+    setUploading(true);
+    try {
+      // Upload document photos
+      for (const photo of photos) {
+        const blob = await fetch(photo).then(r => r.blob());
+        const formData = new FormData();
+        formData.append('file', blob, `doc_${Date.now()}.jpg`);
+        formData.append('reservation_id', reservationId);
+        formData.append('type', 'guest_document');
+        await fetch('/api/uploads', { method: 'POST', body: formData });
+      }
+      setRegStep('done');
+    } catch (err) {
+      console.error('[Registration]', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ─── Failed ────────────────────────────────────────
   if (status === 'failed') {
     return (
       <div className="kc-fade-in kc-success">
@@ -29,6 +70,7 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
     );
   }
 
+  // ─── Processing ────────────────────────────────────
   if (status === 'pending') {
     return (
       <div className="kc-fade-in kc-success">
@@ -36,10 +78,50 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
         <h2>Processing payment...</h2>
         <p>Please wait while we confirm your payment.</p>
         <div className="kc-spinner" style={{ margin: '16px auto', borderColor: 'rgba(46,107,79,0.2)', borderTopColor: 'var(--kc-green)' }} />
+
+        {/* QR code if available */}
+        {qrCodeUrl && (
+          <div style={{ margin: '20px auto', textAlign: 'center' }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Scan to pay</div>
+            <img src={qrCodeUrl} alt="Payment QR" style={{ width: 200, height: 200, borderRadius: 12, border: '2px solid var(--kc-border)' }} />
+          </div>
+        )}
+
+        {/* Direct payment link */}
+        {paymentUrl && (
+          <a href={paymentUrl} target="_blank" rel="noopener noreferrer" className="kc-btn kc-btn-primary" style={{ textDecoration: 'none', display: 'flex', marginTop: 12 }}>
+            💳 Open payment page →
+          </a>
+        )}
       </div>
     );
   }
 
+  // ─── Admin pending ─────────────────────────────────
+  if (status === 'admin_pending') {
+    return (
+      <div className="kc-fade-in kc-success">
+        <div className="kc-success-icon" style={{ background: '#fff8e1', color: '#8b6914' }}>🏢</div>
+        <h2>Waiting for administrator</h2>
+        <p>Please pay at the reception. The administrator will confirm your payment.</p>
+
+        <div className="kc-summary" style={{ textAlign: 'left', marginTop: 20 }}>
+          {reservationId && <div className="kc-summary-row"><span>Booking ID</span><strong>{reservationId}</strong></div>}
+          <div className="kc-summary-row"><span>Total to pay</span><strong style={{ color: 'var(--kc-green)' }}>{formatPrice(total)} Kč</strong></div>
+        </div>
+
+        {onAdminConfirm && (
+          <button className="kc-btn kc-btn-primary" onClick={onAdminConfirm} type="button" style={{ marginTop: 16 }}>
+            ✅ Administrator: Confirm payment received
+          </button>
+        )}
+
+        <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact administrator</a>
+      </div>
+    );
+  }
+
+  // ─── Success ───────────────────────────────────────
   return (
     <div className="kc-fade-in kc-success">
       <div className="kc-success-icon">✓</div>
@@ -59,10 +141,68 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
         <div className="kc-summary-row"><span>Check-out</span><strong>{checkOut}</strong></div>
         <div className="kc-summary-row"><span>Nights</span><strong>{nights}</strong></div>
         <div className="kc-summary-divider" />
-        <div className="kc-summary-row"><span>Total</span><strong>{formatPrice(total)} Kč</strong></div>
-        <div className="kc-summary-row" style={{ color: 'var(--kc-green)' }}><span>Deposit paid</span><strong>{formatPrice(deposit)} Kč</strong></div>
-        <div className="kc-summary-row" style={{ color: 'var(--kc-text-muted)' }}><span>Remaining</span><strong>{formatPrice(total - deposit)} Kč</strong></div>
+        <div className="kc-summary-row" style={{ color: 'var(--kc-green)' }}><span>Paid</span><strong>{formatPrice(total)} Kč</strong></div>
       </div>
+
+      {/* ─── Guest Registration ─────────────────────── */}
+      {regStep === 'none' && (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, textAlign: 'left' }}>Guest registration</div>
+          <p style={{ fontSize: 14, color: 'var(--kc-text-secondary)', textAlign: 'left', marginBottom: 12 }}>
+            Upload a photo of your ID or passport for check-in registration.
+          </p>
+          <button className="kc-btn kc-btn-primary" onClick={() => setRegStep('photo')} type="button">
+            📷 Register via photo
+          </button>
+        </div>
+      )}
+
+      {regStep === 'photo' && (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, textAlign: 'left' }}>📷 Document photo</div>
+
+          <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple
+            onChange={handleFileSelect} style={{ display: 'none' }} />
+
+          {/* Photo previews */}
+          {photos.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {photos.map((src, i) => (
+                <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 10, overflow: 'hidden', border: '2px solid var(--kc-green)' }}>
+                  <img src={src} alt={`Doc ${i+1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))} type="button"
+                    style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <button className="kc-btn kc-btn-secondary" style={{ flex: 1 }}
+              onClick={() => { if (fileRef.current) { fileRef.current.removeAttribute('capture'); fileRef.current.click(); } }} type="button">
+              🖼️ Gallery
+            </button>
+            <button className="kc-btn kc-btn-secondary" style={{ flex: 1 }}
+              onClick={() => { if (fileRef.current) { fileRef.current.setAttribute('capture', 'environment'); fileRef.current.click(); } }} type="button">
+              📸 Camera
+            </button>
+          </div>
+
+          {photos.length > 0 && (
+            <button className="kc-btn kc-btn-primary" onClick={submitPhotos} disabled={uploading} type="button">
+              {uploading ? <><div className="kc-spinner" /> Uploading...</> : `Upload ${photos.length} photo${photos.length > 1 ? 's' : ''}`}
+            </button>
+          )}
+          <button className="kc-btn kc-btn-ghost" onClick={() => setRegStep('none')} type="button">Skip registration</button>
+        </div>
+      )}
+
+      {regStep === 'done' && (
+        <div className="kc-alert info" style={{ marginTop: 20 }}>
+          <span className="kc-alert-icon">✅</span>
+          Documents uploaded successfully! Registration is complete.
+        </div>
+      )}
 
       {guestPageToken && (
         <a href={`/guest/${guestPageToken}`} className="kc-btn kc-btn-primary" style={{ textDecoration: 'none', marginTop: 16, display: 'flex' }}>

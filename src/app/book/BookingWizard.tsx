@@ -8,6 +8,7 @@ import StepCamping from './steps/StepCamping';
 import StepExtras from './steps/StepExtras';
 import StepSummary from './steps/StepSummary';
 import StepSuccess from './steps/StepSuccess';
+import PriceListPopup from './components/PriceListPopup';
 import { getNightDates, loadPriceList, type PriceItem } from './lib/pricing';
 
 type Step = 'landing' | 'accommodation' | 'extras' | 'summary' | 'success';
@@ -18,7 +19,6 @@ interface BookingState {
   extras: { id: string; name: string; quantity: number; price: number }[];
   contact: { name: string; email: string; phone: string } | null;
   total: number;
-  deposit: number;
   checkIn: string;
   checkOut: string;
 }
@@ -55,25 +55,24 @@ function getGuestsLabel(state: BookingState): string {
 export default function BookingWizard() {
   const [step, setStep] = useState<Step>('landing');
   const [state, setState] = useState<BookingState>({
-    accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, deposit: 0, checkIn: '', checkOut: '',
+    accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '',
   });
   const [submitting, setSubmitting] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | 'pending'>('pending');
+  const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | 'pending' | 'admin_pending'>('pending');
   const [reservationId, setReservationId] = useState<string | undefined>();
   const [guestPageToken, setGuestPageToken] = useState<string | undefined>();
+  const [paymentUrl, setPaymentUrl] = useState<string | undefined>();
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | undefined>();
   const [showResume, setShowResume] = useState(false);
+  const [showPriceList, setShowPriceList] = useState(false);
   const [prices, setPrices] = useState<PriceItem[]>([]);
 
   // Load price list from API
-  useEffect(() => {
-    loadPriceList().then(setPrices).catch(() => {});
-  }, []);
+  useEffect(() => { loadPriceList().then(setPrices).catch(() => {}); }, []);
 
   // SW registration
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-book.js').catch(() => {});
-    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw-book.js').catch(() => {});
   }, []);
 
   // Restore draft
@@ -82,15 +81,12 @@ export default function BookingWizard() {
       const saved = sessionStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.accommodationType && parsed.checkIn) {
-          setShowResume(true);
-          setState(parsed);
-        }
+        if (parsed.accommodationType && parsed.checkIn) { setShowResume(true); setState(parsed); }
       }
     } catch { /* ignore */ }
   }, []);
 
-  // Save draft on state change
+  // Save draft
   useEffect(() => {
     if (step !== 'landing' && step !== 'success' && state.accommodationType) {
       try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* */ }
@@ -104,104 +100,109 @@ export default function BookingWizard() {
     const rid = params.get('reservation_id');
     const token = params.get('token');
     if (status === 'success') {
-      setPaymentStatus('success');
-      if (rid) setReservationId(rid);
-      if (token) setGuestPageToken(token);
-      setStep('success');
-      sessionStorage.removeItem(STORAGE_KEY);
+      setPaymentStatus('success'); if (rid) setReservationId(rid); if (token) setGuestPageToken(token);
+      setStep('success'); sessionStorage.removeItem(STORAGE_KEY);
       window.history.replaceState({}, '', '/book');
     } else if (status === 'failed' || status === 'cancel') {
-      setPaymentStatus('failed');
-      setStep('success');
+      setPaymentStatus('failed'); setStep('success');
       window.history.replaceState({}, '', '/book');
     }
   }, []);
 
   const resetAll = useCallback(() => {
-    setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, deposit: 0, checkIn: '', checkOut: '' });
-    setStep('landing');
-    setSubmitting(false);
-    setPaymentStatus('pending');
-    setReservationId(undefined);
-    setGuestPageToken(undefined);
+    setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '' });
+    setStep('landing'); setSubmitting(false); setPaymentStatus('pending');
+    setReservationId(undefined); setGuestPageToken(undefined); setPaymentUrl(undefined); setQrCodeUrl(undefined);
     sessionStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const goBack = () => {
-    const idx = STEP_ORDER.indexOf(step);
-    if (idx > 0) setStep(STEP_ORDER[idx - 1]);
-  };
-
+  const goBack = () => { const idx = STEP_ORDER.indexOf(step); if (idx > 0) setStep(STEP_ORDER[idx - 1]); };
   const progressPct = ((STEP_ORDER.indexOf(step)) / (STEP_ORDER.length - 1)) * 100;
 
-  // ─── Submit to API ───────────────────────────────────
-  const handleSubmit = async (contact: { name: string; email: string; phone: string }) => {
-    setSubmitting(true);
-    setState(s => ({ ...s, contact }));
+  // ─── Create draft helper ──────────────────────────
+  const createDraft = async (contact: { name: string; email: string; phone: string }) => {
+    const extrasTotal = state.extras.reduce((s, e) => s + e.price, 0);
+    const grandTotal = state.total + extrasTotal;
+    const res = await fetch('/api/booking/drafts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accommodation_type: state.accommodationType,
+        accommodation_data: state.accommodationData,
+        check_in: state.checkIn, check_out: state.checkOut,
+        extras: state.extras, guest_name: contact.name,
+        guest_email: contact.email, guest_phone: contact.phone,
+        total_price: grandTotal, deposit_amount: grandTotal,
+      }),
+    });
+    const draft = await res.json();
+    if (!res.ok) throw new Error(draft.error || 'Failed to create draft');
+    return { draft, grandTotal };
+  };
 
+  // ─── Pay Online (Teya) ────────────────────────────
+  const handlePayOnline = async (contact: { name: string; email: string; phone: string }) => {
+    setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
-      // 1. Create booking draft
-      const draftRes = await fetch('/api/booking/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accommodation_type: state.accommodationType,
-          accommodation_data: state.accommodationData,
-          check_in: state.checkIn,
-          check_out: state.checkOut,
-          extras: state.extras,
-          guest_name: contact.name,
-          guest_email: contact.email,
-          guest_phone: contact.phone,
-          total_price: state.total,
-          deposit_amount: state.deposit,
-        }),
-      });
-      const draft = await draftRes.json();
-      if (!draftRes.ok) throw new Error(draft.error || 'Failed to create draft');
-
-      // 2. Create checkout session
-      const extrasTotal = state.extras.reduce((s, e) => s + e.price, 0);
-      const depositAmount = state.deposit + Math.round(extrasTotal * 0.3);
+      const { draft, grandTotal } = await createDraft(contact);
       const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
-
       const checkoutRes = await fetch('/api/booking/checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: depositAmount,
-          currency: 'CZK',
-          description: desc,
-          reservation_id: draft.id,
-          return_path: `/book?payment=success&reservation_id=${draft.id}`,
+          amount: grandTotal, currency: 'CZK', description: desc,
+          reservation_id: draft.id, return_path: `/book?payment=success&reservation_id=${draft.id}`,
         }),
       });
       const checkout = await checkoutRes.json();
       if (!checkoutRes.ok) throw new Error(checkout.error || 'Payment system error');
 
-      // 3. Redirect to Teya
+      setReservationId(draft.id);
+      if (checkout.qr_code_url) setQrCodeUrl(checkout.qr_code_url);
       if (checkout.session_url) {
-        window.location.href = checkout.session_url;
+        setPaymentUrl(checkout.session_url);
+        setPaymentStatus('pending'); setStep('success');
+        // Open payment in new tab (user stays on QR/pending page)
+        window.open(checkout.session_url, '_blank');
       } else {
-        // Fallback — mark as tentative
-        setReservationId(draft.id);
-        setPaymentStatus('success');
-        setStep('success');
-        sessionStorage.removeItem(STORAGE_KEY);
+        setPaymentStatus('success'); setStep('success');
       }
+      sessionStorage.removeItem(STORAGE_KEY);
     } catch (err: unknown) {
-      console.error('[Booking]', err);
-      setPaymentStatus('failed');
-      setStep('success');
-    } finally {
-      setSubmitting(false);
-    }
+      console.error('[Booking]', err); setPaymentStatus('failed'); setStep('success');
+    } finally { setSubmitting(false); }
+  };
+
+  // ─── Pay via Administrator ────────────────────────
+  const handlePayAdmin = async (contact: { name: string; email: string; phone: string }) => {
+    setSubmitting(true); setState(s => ({ ...s, contact }));
+    try {
+      const { draft } = await createDraft(contact);
+      setReservationId(draft.id);
+      setPaymentStatus('admin_pending'); setStep('success');
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch (err: unknown) {
+      console.error('[Booking]', err); setPaymentStatus('failed'); setStep('success');
+    } finally { setSubmitting(false); }
+  };
+
+  // ─── Admin Confirm ────────────────────────────────
+  const handleAdminConfirm = async () => {
+    if (!reservationId) return;
+    try {
+      await fetch('/api/booking/drafts', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: reservationId, status: 'paid' }),
+      });
+      setPaymentStatus('success');
+    } catch { /* */ }
   };
 
   const nights = state.checkIn && state.checkOut ? getNightDates(state.checkIn, state.checkOut).length : 0;
 
   return (
     <div className="kc-root">
+      {/* Price List Popup */}
+      <PriceListPopup open={showPriceList} onClose={() => setShowPriceList(false)} prices={prices} />
+
       {/* Resume modal */}
       {showResume && (
         <div className="kc-resume-overlay" onClick={() => { setShowResume(false); resetAll(); }}>
@@ -220,7 +221,10 @@ export default function BookingWizard() {
           <div className="kc-header-brand">Kemp Carlsbad</div>
           <div className="kc-header-sub">Book your stay</div>
         </div>
-        <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-header-help">💬 Help</a>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="kc-header-icon" onClick={() => setShowPriceList(true)} type="button" title="Price list">📋</button>
+          <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-header-help">💬 Help</a>
+        </div>
       </header>
 
       <div className="kc-container">
@@ -239,27 +243,24 @@ export default function BookingWizard() {
 
         {/* Steps */}
         {step === 'landing' && (
-          <StepLanding onSelect={(type) => {
-            setState(s => ({ ...s, accommodationType: type }));
-            setStep('accommodation');
-          }} />
+          <StepLanding onSelect={(type) => { setState(s => ({ ...s, accommodationType: type })); setStep('accommodation'); }} />
         )}
 
         {step === 'accommodation' && state.accommodationType === 'glamping' && (
           <StepGlamping prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, deposit: data.deposit, checkIn: data.checkIn, checkOut: data.checkOut }));
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
             setStep('extras');
           }} />
         )}
         {step === 'accommodation' && state.accommodationType === 'buildings' && (
           <StepBuildings prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, deposit: data.deposit, checkIn: data.checkIn, checkOut: data.checkOut }));
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
             setStep('extras');
           }} />
         )}
         {step === 'accommodation' && state.accommodationType === 'camping' && (
           <StepCamping prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, deposit: data.deposit, checkIn: data.checkIn, checkOut: data.checkOut }));
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
             setStep('extras');
           }} />
         )}
@@ -276,30 +277,23 @@ export default function BookingWizard() {
           <StepSummary
             accommodationType={state.accommodationType || ''}
             accommodationLabel={getAccommodationLabel(state)}
-            checkIn={state.checkIn}
-            checkOut={state.checkOut}
-            nights={nights}
-            guests={getGuestsLabel(state)}
-            total={state.total}
-            deposit={state.deposit}
-            extras={state.extras}
-            onSubmit={handleSubmit}
+            checkIn={state.checkIn} checkOut={state.checkOut}
+            nights={nights} guests={getGuestsLabel(state)}
+            total={state.total} extras={state.extras}
+            onPayOnline={handlePayOnline} onPayAdmin={handlePayAdmin}
             submitting={submitting}
           />
         )}
 
         {step === 'success' && (
           <StepSuccess
-            status={paymentStatus}
-            reservationId={reservationId}
+            status={paymentStatus} reservationId={reservationId}
             accommodationLabel={getAccommodationLabel(state)}
-            checkIn={state.checkIn}
-            checkOut={state.checkOut}
-            nights={nights}
-            total={state.total}
-            deposit={state.deposit}
+            checkIn={state.checkIn} checkOut={state.checkOut}
+            nights={nights} total={state.total}
             guestPageToken={guestPageToken}
-            onReset={resetAll}
+            paymentUrl={paymentUrl} qrCodeUrl={qrCodeUrl}
+            onReset={resetAll} onAdminConfirm={handleAdminConfirm}
           />
         )}
       </div>
