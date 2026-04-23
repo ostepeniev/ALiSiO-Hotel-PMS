@@ -980,3 +980,64 @@
   opacity: 0.45; cursor: not-allowed;
   background: transparent;
 }
+
+/* ─── My Orders Section ─── */
+.gp-orders-section {
+  margin: 0 0 20px;
+  padding: 16px;
+  background: var(--gp-card);
+  border-radius: 16px;
+  border: 1px solid var(--gp-sep);
+}
+
+.gp-orders-title {
+  font-size: 13px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--gp-sub);
+  margin-bottom: 12px;
+}
+
+.gp-order-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gp-sep);
+}
+.gp-order-card:last-child { border-bottom: none; padding-bottom: 0; }
+
+.gp-order-icon {
+  font-size: 26px; flex-shrink: 0;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gp-bg); border-radius: 10px;
+}
+
+.gp-order-info { flex: 1; min-width: 0; }
+
+.gp-order-name {
+  font-size: 14px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.gp-order-meta {
+  font-size: 12px; color: var(--gp-sub); margin-top: 2px;
+}
+
+.gp-order-status {
+  font-size: 11px; font-weight: 700; padding: 4px 8px;
+  border-radius: 20px; white-space: nowrap; flex-shrink: 0;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.gp-order-status.paid {
+  background: rgba(46,180,100,0.15); color: #2eb464;
+}
+.gp-order-status.pending {
+  background: rgba(255,190,40,0.15); color: #c88a00;
+}
+.gp-order-status.refunded {
+  background: rgba(150,150,160,0.15); color: var(--gp-sub);
+}
+
+/* ─── Cart item dates (breakfast) ─── */
+.gp-cart-item-dates {
+  font-size: 11px; color: var(--gp-sub);
+  margin-top: 2px; line-height: 1.4;
+}

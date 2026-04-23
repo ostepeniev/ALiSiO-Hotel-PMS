@@ -165,6 +165,11 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
             setCartItems([]);
             localStorage.removeItem(`cart_${token}`);
             window.history.replaceState({}, '', window.location.pathname);
+            // #4 FIX: Refetch portal data so orderedServices updates to 'paid'
+            fetch(`/api/guest/${token}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(d => { if (d && !d.error) setData(d); })
+              .catch(() => {});
           } else if (paymentStatus === 'cancel' || paymentStatus === 'cancelled') {
             setTimeout(() => showToast(getTranslations(detectedLang).orderError, 'error'), 500);
             window.history.replaceState({}, '', window.location.pathname);
@@ -353,6 +358,11 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   };
 
   const addToCart = (svc: any, datesOverride?: string[]) => {
+    // #6 FIX: Block mixing different currencies in one cart
+    if (cartItems.length > 0 && svc.currency && svc.currency !== cartItems[0].currency) {
+      showToast(`Cannot mix ${svc.currency} and ${cartItems[0].currency} in one cart`, 'error');
+      return;
+    }
     const dateMode = getServiceDateMode(svc);
     let serviceDates: string[];
     if (datesOverride) {
@@ -409,6 +419,7 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
   const handleCartPay = async () => {
     if (cartItems.length === 0 || cartLoading) return;
     setCartLoading(true);
+    setSheet(null); // #12 FIX: Close sheet immediately for better UX
     logCartEvent('checkout', undefined, undefined, cartTotal);
     try {
       const res = await fetch(`/api/guest/${token}/pay`, {
@@ -425,7 +436,6 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       const result = await res.json();
       if (result.session_url) { window.location.href = result.session_url; return; }
       showToast(t.serviceOrdered);
-      setSheet(null);
     } catch (err: any) {
       showToast(err.message || t.orderError, 'error');
     }
@@ -818,6 +828,65 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
         <div className="gp-tab-pad">
           <div className="gp-tab-title">{t.servicesTitle}</div>
           <div className="gp-tab-subtitle">{t.servicesSubtitle}</div>
+
+          {/* ── MY ORDERS SECTION ── */}
+          {(() => {
+            const now = Date.now();
+            const PENDING_TTL_MS = 60 * 60 * 1000; // 60 min
+            const visibleOrders = (data.orderedServices || []).filter((o: any) => {
+              if (o.payment_status === 'paid') return true;
+              if (o.payment_status === 'refunded') return true;
+              if (o.payment_status === 'pending') {
+                const age = now - new Date(o.created_at + 'Z').getTime();
+                return age < PENDING_TTL_MS;
+              }
+              return false; // failed → hidden
+            });
+            if (!visibleOrders.length) return null;
+
+            // Group by service_id + payment_status to merge multi-date breakfast rows
+            const grouped: Map<string, any> = new Map();
+            for (const o of visibleOrders) {
+              const key = `${o.service_id}_${o.payment_status}`;
+              if (grouped.has(key)) {
+                const existing = grouped.get(key);
+                existing.quantity += o.quantity;
+                existing.total_price += o.total_price || 0;
+                if (o.service_date) existing._dates = [...(existing._dates || []), o.service_date];
+              } else {
+                grouped.set(key, {
+                  ...o,
+                  _dates: o.service_date ? [o.service_date] : [],
+                });
+              }
+            }
+
+            return (
+              <div className="gp-orders-section">
+                <div className="gp-orders-title">{t.ordersTitle}</div>
+                {[...grouped.values()].map((o: any) => {
+                  const name = o.name_en && lang !== 'uk' ? o.name_en : (o.service_name || '?');
+                  const dateLabel = o._dates?.length > 0
+                    ? o._dates.map((d: string) => formatDateLocalized(d, lang)).join(', ')
+                    : formatDateLocalized(r.check_in, lang);
+                  const priceLabel = `${(o.total_price || 0).toFixed(0)} ${o.currency || 'Kč'}`;
+                  const statusClass = o.payment_status === 'paid' ? 'paid' : o.payment_status === 'refunded' ? 'refunded' : 'pending';
+                  const statusLabel = o.payment_status === 'paid' ? '✅ ' + t.done :
+                    o.payment_status === 'refunded' ? t.orderRefunded : t.awaitingPayment;
+                  return (
+                    <div key={`${o.id}_${o.payment_status}`} className="gp-order-card">
+                      <div className="gp-order-icon">{o.service_icon || '✨'}</div>
+                      <div className="gp-order-info">
+                        <div className="gp-order-name">{name}{o.quantity > 1 ? ` ×${o.quantity}` : ''}</div>
+                        <div className="gp-order-meta">{dateLabel} · {priceLabel}</div>
+                      </div>
+                      <div className={`gp-order-status ${statusClass}`}>{statusLabel}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
           {data.services?.length > 0 ? data.services.map((svc: any) => {
             const isOrdered = data.orderedServices?.some((o: any) => o.service_id === svc.id);
@@ -1322,7 +1391,8 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
       </div>
 
       {/* ════ CART FAB ════ */}
-      {cartCount > 0 && (
+      {/* #9 FIX: Hide FAB when cart sheet is open */}
+      {cartCount > 0 && sheet !== 'cart' && (
         <button className="gp-cart-fab" onClick={() => setSheet('cart')}>
           🛒
           <span className="gp-cart-badge">{cartCount}</span>
@@ -1347,6 +1417,12 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                 <div className="gp-cart-item-info">
                   <div className="gp-cart-item-name">{item.serviceName}</div>
                   <div className="gp-cart-item-price">{(item.price * item.quantity).toFixed(0)} {item.currency}</div>
+                  {/* #8 FIX: Show selected dates for breakfast-type items */}
+                  {item.serviceDates && item.serviceDates.length > 0 && (
+                    <div className="gp-cart-item-dates">
+                      {item.serviceDates.map(d => formatDateLocalized(d, lang)).join(', ')}
+                    </div>
+                  )}
                 </div>
                 <div className="gp-cart-stepper">
                   <button
@@ -1355,7 +1431,11 @@ export default function GuestPage({ params }: { params: Promise<{ token: string 
                     {item.quantity === 1 ? '×' : '−'}
                   </button>
                   <span className="gp-cart-stepper-qty">{item.quantity}</span>
-                  <button className="gp-cart-stepper-btn" onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
+                  {/* #7 FIX: Disable + when qty is already at max serviceDates count */}
+                  <button
+                    className="gp-cart-stepper-btn"
+                    disabled={!!(item.serviceDates?.length && item.quantity >= item.serviceDates.length)}
+                    onClick={() => updateCartQty(item.serviceId, 1)}>+</button>
                 </div>
               </div>
             ))}
