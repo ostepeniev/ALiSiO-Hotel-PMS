@@ -44,7 +44,9 @@ export async function POST(request: NextRequest) {
     let propId = property_id;
     if (!propId) {
       const prop = db.prepare('SELECT id FROM properties LIMIT 1').get() as any;
-      if (!prop) return NextResponse.json({ error: 'No property found' }, { status: 400 });
+      if (!prop) {
+        return NextResponse.json({ error: 'Спочатку створіть об’єкт (Property) у налаштуваннях' }, { status: 400 });
+      }
       propId = prop.id;
     }
 
@@ -62,7 +64,13 @@ export async function POST(request: NextRequest) {
       enable_prefill: false,
     });
 
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `site-${Date.now()}`;
+    let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `site-${Date.now()}`;
+    
+    // Ensure slug uniqueness
+    const existing = db.prepare('SELECT id FROM booking_sites WHERE slug = ?').get(slug);
+    if (existing) {
+      slug = `${slug}-${Math.random().toString(36).substring(2, 5)}`;
+    }
 
     const result = db.prepare(`
       INSERT INTO booking_sites (property_id, name, slug, type, currency, design_config, widget_config, created_by)
@@ -73,7 +81,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ site }, { status: 201 });
   } catch (error: any) {
-    console.error('POST /api/booking-sites error:', error?.message);
-    return NextResponse.json({ error: 'Failed to create site' }, { status: 500 });
+    console.error('POST /api/booking-sites error:', error);
+    return NextResponse.json({ error: error?.message || 'Failed to create site' }, { status: 500 });
   }
 }
