@@ -18,6 +18,12 @@
   const siteSlug = container.getAttribute('data-site') || (scriptTag ? scriptTag.getAttribute('data-site') : '');
   const unitId = container.getAttribute('data-unit') || (scriptTag ? scriptTag.getAttribute('data-unit') : '');
   
+  // Language inheritance
+  let lang = container.getAttribute('data-lang');
+  if (!lang && window.__BOOKING_LANG__) lang = window.__BOOKING_LANG__;
+  if (!lang) lang = document.documentElement.lang;
+  if (lang) lang = lang.substring(0, 2).toLowerCase();
+
   if (!siteSlug) {
     console.error('ALiSiO Widget: data-site attribute (slug) is missing.');
     return;
@@ -28,10 +34,9 @@
   
   // Create Iframe
   const iframe = document.createElement('iframe');
-  let iframeUrl = `${API_BASE}/w/${siteSlug}`;
-  if (unitId) {
-    iframeUrl += `?unitId=${encodeURIComponent(unitId)}`;
-  }
+  let iframeUrl = `${API_BASE}/w/${siteSlug}?v=2`;
+  if (unitId) iframeUrl += `&unitId=${encodeURIComponent(unitId)}`;
+  if (lang) iframeUrl += `&lang=${encodeURIComponent(lang)}`;
   
   iframe.src = iframeUrl;
   iframe.style.width = '100%';

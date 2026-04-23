@@ -16,6 +16,8 @@ import {
 interface Site {
   id: string;
   name: string;
+  slug: string;
+  site_url?: string;
   type: string;
   currency: string;
   status: string;
@@ -731,11 +733,13 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   const lang = cfg.default_lang || 'uk';
 
+  const widgetUrl = site.site_url || origin || 'https://YOUR_DOMAIN';
+  
   const scriptTag = `<div id="alisio-booking-widget" data-site="${site.slug}"></div>
-<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
+<script src="${origin || 'https://YOUR_PMS_DOMAIN'}/widget/embed.v2.js"></script>`;
 
   const iframeEmbed = `<iframe
-  src="${origin || 'https://YOUR_DOMAIN'}/booking?site=${site.id}&lang=${lang}"
+  src="${origin || 'https://YOUR_PMS_DOMAIN'}/booking?site=${site.slug}&lang=${lang}"
   width="100%" height="600"
   frameborder="0" allowfullscreen>
 </iframe>`;
@@ -746,7 +750,7 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
   window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
 </script>
 <div id="alisio-booking-widget" data-site="${site.slug}" data-lang-from="window.__BOOKING_LANG__"></div>
-<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
+<script src="${origin || 'https://YOUR_PMS_DOMAIN'}/widget/embed.v2.js"></script>`;
 
   const save = async () => {
     setSaving(true);
@@ -835,8 +839,24 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
         </div>
       </Step>
 
+      <Step n={6} title="Системні налаштування">
+        <div className="form-group" style={{ marginBottom: 16 }}>
+          <label className="form-label">Slug (ідентифікатор для вбудовування)</label>
+          <input className="form-input" value={site.slug || ''} readOnly style={{ background: 'var(--surface-secondary)', color: 'var(--text-tertiary)' }} />
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Використовується в data-site attribute</div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">URL вашого сайту (де вбудовано віджет)</label>
+          <input className="form-input" placeholder="https://book.kemp-carlsbad.cz"
+            value={site.site_url || ''}
+            onChange={e => onUpdate({ ...site, site_url: e.target.value } as any)} />
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Допомагає правильно генерувати посилання на бронювання</div>
+        </div>
+      </Step>
+
       <button className="btn btn-primary" onClick={save} disabled={saving}>
-        {saving ? <Loader2 size={16} className="spin"/> : saved ? <Check size={16}/> : <Save size={16}/>}
+        {saving ? <Loader2 size={16} className="spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
         {saved ? 'Збережено!' : 'Зберегти налаштування'}
       </button>
     </div>

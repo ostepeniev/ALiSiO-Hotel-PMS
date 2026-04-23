@@ -62,10 +62,12 @@ export async function POST(request: NextRequest) {
       enable_prefill: false,
     });
 
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `site-${Date.now()}`;
+
     const result = db.prepare(`
-      INSERT INTO booking_sites (property_id, name, type, currency, design_config, widget_config, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(propId, name.trim(), type, currency, defaultDesignConfig, defaultWidgetConfig, session.id);
+      INSERT INTO booking_sites (property_id, name, slug, type, currency, design_config, widget_config, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(propId, name.trim(), slug, type, currency, defaultDesignConfig, defaultWidgetConfig, session.id);
 
     const site = db.prepare('SELECT * FROM booking_sites WHERE rowid = ?').get(result.lastInsertRowid) as any;
 

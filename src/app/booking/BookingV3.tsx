@@ -115,6 +115,11 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl }: { siteId?: 
       const params = new URLSearchParams(window.location.search);
       const uId = params.get('unitId');
       if (uId) setSelectedUnitId(uId);
+
+      const l = params.get('lang');
+      if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
+        setLang(l as BookingLang);
+      }
     }
   }, []);
 

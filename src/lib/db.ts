@@ -2225,6 +2225,8 @@ function runMigrations(database: any) {
       id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       property_id   TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
       name          TEXT NOT NULL,
+      slug          TEXT,
+      site_url      TEXT,
       type          TEXT NOT NULL DEFAULT 'widget'
                       CHECK (type IN ('widget', 'self-hosted')),
       currency      TEXT NOT NULL DEFAULT 'CZK',
@@ -2239,6 +2241,30 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_booking_sites_property ON booking_sites(property_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_booking_sites_status ON booking_sites(status)');
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_sites_slug ON booking_sites(slug)');
+
+  // --- Migration: add slug and site_url to booking_sites if missing ---
+  try {
+    const bsCols = database.prepare("PRAGMA table_info(booking_sites)").all().map((c: any) => c.name);
+    if (!bsCols.includes('slug')) {
+      database.exec("ALTER TABLE booking_sites ADD COLUMN slug TEXT");
+      // Generate slugs for existing sites
+      const sites = database.prepare("SELECT id, name FROM booking_sites").all() as any[];
+      const upd = database.prepare("UPDATE booking_sites SET slug = ? WHERE id = ?");
+      for (const s of sites) {
+        const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        upd.run(slug || s.id, s.id);
+      }
+      database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_sites_slug ON booking_sites(slug)");
+      console.log('[DB] Added slug to booking_sites');
+    }
+    if (!bsCols.includes('site_url')) {
+      database.exec("ALTER TABLE booking_sites ADD COLUMN site_url TEXT");
+      console.log('[DB] Added site_url to booking_sites');
+    }
+  } catch (e: any) {
+    console.log('[DB] booking_sites extension note:', e.message);
+  }
 
   // --- Migration: create site_listings table ---
   database.exec(`
