@@ -105,9 +105,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   const [calOpen, setCalOpen] = useState(false);
   const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
   const [socialProof, setSocialProof] = useState<{ viewers: number, lastBooking?: string } | null>(null);
-  const [waitlistStatus, setWaitlistStatus] = useState<'none'|'submitting'|'success'>('none');
+  const [waitlistStatus, setWaitlistStatus] = useState<'none' | 'submitting' | 'success'>('none');
   const [nextAvailable, setNextAvailable] = useState<string | null>(null);
-  
+
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
@@ -126,7 +126,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     setIsMounted(true);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      
+
       const payStatus = params.get('payment_status');
       const resId = params.get('res_id');
       if (payStatus === 'success' && resId) {
@@ -205,7 +205,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
   const today = useMemo(() => {
     const d = new Date();
-    d.setHours(0,0,0,0);
+    d.setHours(0, 0, 0, 0);
     return d;
   }, []);
 
@@ -313,7 +313,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       } else {
         setCheckOut(dateStr);
         setSelectingCheckOut(false);
-        setCalOpen(false);
+        // setCalOpen(false); // Removed to keep calendar open for refinement
         fetchAvailability(checkIn!, dateStr);
       }
     }
@@ -332,7 +332,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) return;
-    
+
     if (isPreview) {
       setSubmitting(true);
       await new Promise(r => setTimeout(r, 1000));
@@ -411,9 +411,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       } else {
         setError(data.error || 'Payment failed to start');
       }
-    } catch (e) { 
+    } catch (e) {
       console.error(e);
-      setError('Payment gateway error'); 
+      setError('Payment gateway error');
     }
     setSubmitting(false);
   };
@@ -537,18 +537,18 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                   const isPast = parseDate(ds) < today;
                   const isBusy = busyDates.has(ds);
-                  
+
                   let cls = 'v3-cal-day';
                   if (isPast || isBusy) cls += ' muted';
                   if (isBusy) cls += ' busy';
                   if (ds === checkIn) cls += ' start';
                   if (ds === checkOut) cls += ' end';
                   if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
-                  
+
                   cells.push(
-                    <div key={d} className={cls} onClick={(e) => { 
-                      e.stopPropagation(); 
-                      if (!isPast && !isBusy) handleDayClick(ds); 
+                    <div key={d} className={cls} onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isPast && !isBusy) handleDayClick(ds);
                     }}>
                       <span>{d}</span>
                     </div>
@@ -589,11 +589,11 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
             </button>
             {showPromo && (
               <div className="v3-promo-field">
-                <input 
-                  className="v3-field-input" 
-                  placeholder={t.promoCode} 
-                  value={promoCode} 
-                  onChange={e => setPromoCode(e.target.value)} 
+                <input
+                  className="v3-field-input"
+                  placeholder={t.promoCode}
+                  value={promoCode}
+                  onChange={e => setPromoCode(e.target.value)}
                 />
                 <button className="v3-promo-apply">{t.apply}</button>
               </div>
@@ -626,7 +626,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   <div className="v3-no-avail-icon">📭</div>
                   <h3>{t.noUnitsFound}</h3>
                   <p>{t.noAvailabilityDesc}</p>
-                  
+
                   {nextAvailable && (
                     <div className="v3-flex-dates">
                       <div className="v3-flex-dates-label">💡 Спробуйте ці дати:</div>
@@ -661,9 +661,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 availability?.units.map(u => {
                   const isSelected = selectedUnitId === u.id;
                   return (
-                    <div 
-                      key={u.id} 
-                      className={`v3-house-lock select ${isSelected ? 'selected' : ''}`} 
+                    <div
+                      key={u.id}
+                      className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
                       onClick={() => setSelectedUnitId(u.id)}
                     >
                       <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
@@ -678,7 +678,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                         </div>
                         <div className="v3-house-lock-name">{u.name}</div>
                         <div className="v3-house-lock-feat">
-                          {u.baseOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
+                          до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
                         </div>
                       </div>
                       {isSelected && (
@@ -735,7 +735,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-gallery-count">1 / 1</div>
               </div>
               <h1 className="v3-house-detail-name">{selectedUnit.name}</h1>
-              <div className="v3-house-detail-meta">{selectedUnit.typeName} · {selectedUnit.baseOccupancy} {t.guestsShort}</div>
+              <div className="v3-house-detail-meta">{selectedUnit.typeName} · до {selectedUnit.maxOccupancy} {t.guestsShort}</div>
               <div className="v3-amenities">
                 {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a, i) => (
                   <div key={i} className="v3-amenity">
@@ -891,9 +891,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 }}
               >
                 <span>
-                  {step === 5 ? t.payNow : 
-                   (step === 1 ? t.selectDates : 
-                   (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
+                  {step === 5 ? t.payNow :
+                    (step === 1 ? t.selectDates :
+                      (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
                 </span>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

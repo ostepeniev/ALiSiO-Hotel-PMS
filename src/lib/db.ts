@@ -439,12 +439,12 @@ function runMigrations(database: any) {
     const propRow = database.prepare("SELECT id FROM properties LIMIT 1").get() as any;
     if (propRow) {
       const ins = database.prepare('INSERT INTO booking_sources (id, property_id, name, code, icon_letter, color, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
-      ins.run('bs_direct',      propRow.id, 'Direct',       'direct',      'D', '#22c55e', 1);
-      ins.run('bs_phone',       propRow.id, 'Phone',        'phone',       '📞', '#3b82f6', 2);
-      ins.run('bs_whatsapp',    propRow.id, 'WhatsApp',     'whatsapp',    'W', '#25D366', 3);
-      ins.run('bs_booking_com', propRow.id, 'Booking.com',  'booking_com', 'B', '#003580', 4);
-      ins.run('bs_airbnb',      propRow.id, 'Airbnb',       'airbnb',      'A', '#FF5A5F', 5);
-      ins.run('bs_other_ota',   propRow.id, 'Other OTA',    'other_ota',   'O', '#f59e0b', 6);
+      ins.run('bs_direct', propRow.id, 'Direct', 'direct', 'D', '#22c55e', 1);
+      ins.run('bs_phone', propRow.id, 'Phone', 'phone', '📞', '#3b82f6', 2);
+      ins.run('bs_whatsapp', propRow.id, 'WhatsApp', 'whatsapp', 'W', '#25D366', 3);
+      ins.run('bs_booking_com', propRow.id, 'Booking.com', 'booking_com', 'B', '#003580', 4);
+      ins.run('bs_airbnb', propRow.id, 'Airbnb', 'airbnb', 'A', '#FF5A5F', 5);
+      ins.run('bs_other_ota', propRow.id, 'Other OTA', 'other_ota', 'O', '#f59e0b', 6);
       console.log('[DB] Seeded 6 default booking sources');
     }
   }
@@ -789,8 +789,8 @@ function runMigrations(database: any) {
       const instructions = catType === 'glamping'
         ? 'Зустріч на рецепції. Ми покажемо ваш будиночок та розкажемо про територію.'
         : catType === 'camping'
-        ? 'Зареєструйтесь на рецепції, вам покажуть ваше місце та видадуть картку доступу до санітарного блоку.'
-        : 'Зустріч на рецепції будови. Ключі та інструктаж на місці.';
+          ? 'Зареєструйтесь на рецепції, вам покажуть ваше місце та видадуть картку доступу до санітарного блоку.'
+          : 'Зустріч на рецепції будови. Ключі та інструктаж на місці.';
       insGPC.run(ut.id, amenities, instructions, defaultFaq, defaultRules, defaultRestaurantHours, defaultUsefulInfo);
     }
     console.log('[DB] Created guest_page_config table with defaults for', utRows.length, 'unit types');
@@ -1230,9 +1230,9 @@ function runMigrations(database: any) {
 
   // --- Migration: add per-language columns to additional_services ---
   const svcLangCols = [
-    'name_pl','name_nl','name_fr',
-    'description_en','description_de','description_cs','description_pl','description_nl','description_fr',
-    'unit_label_en','unit_label_de','unit_label_cs','unit_label_pl','unit_label_nl','unit_label_fr',
+    'name_pl', 'name_nl', 'name_fr',
+    'description_en', 'description_de', 'description_cs', 'description_pl', 'description_nl', 'description_fr',
+    'unit_label_en', 'unit_label_de', 'unit_label_cs', 'unit_label_pl', 'unit_label_nl', 'unit_label_fr',
   ];
   for (const col of svcLangCols) {
     try { database.exec(`ALTER TABLE additional_services ADD COLUMN ${col} TEXT`); }
@@ -1264,14 +1264,14 @@ function runMigrations(database: any) {
     const orgRow = database.prepare("SELECT id FROM organizations LIMIT 1").get() as any;
     if (orgRow) {
       const insBU = database.prepare('INSERT INTO business_units (id, organization_id, name, unit_type, is_shared, sort_order) VALUES (?, ?, ?, ?, ?, ?)');
-      insBU.run('bu_glamping',   orgRow.id, 'Глемпинг',    'Глемпинг',                0, 1);
-      insBU.run('bu_budova_fd',  orgRow.id, 'Будова F/D',  'Міні-готель / 16 номерів', 0, 2);
-      insBU.run('bu_camping',    orgRow.id, 'Кемпинг',     'Кемпинг',                 0, 3);
-      insBU.run('bu_restaurant', orgRow.id, 'Ресторан',    'Ресторан',                0, 4);
-      insBU.run('bu_sauna',      orgRow.id, 'Сауна',       'Сауна',                   0, 5);
-      insBU.run('bu_pool',       orgRow.id, 'Купель',      'Купель',                  0, 6);
-      insBU.run('bu_shared',     orgRow.id, 'Загальне',    'Shared / HQ',             1, 7);
-      insBU.run('bu_review',     orgRow.id, 'На перегляд', 'Списання / review',       0, 8);
+      insBU.run('bu_glamping', orgRow.id, 'Глемпинг', 'Глемпинг', 0, 1);
+      insBU.run('bu_budova_fd', orgRow.id, 'Будова F/D', 'Міні-готель / 16 номерів', 0, 2);
+      insBU.run('bu_camping', orgRow.id, 'Кемпинг', 'Кемпинг', 0, 3);
+      insBU.run('bu_restaurant', orgRow.id, 'Ресторан', 'Ресторан', 0, 4);
+      insBU.run('bu_sauna', orgRow.id, 'Сауна', 'Сауна', 0, 5);
+      insBU.run('bu_pool', orgRow.id, 'Купель', 'Купель', 0, 6);
+      insBU.run('bu_shared', orgRow.id, 'Загальне', 'Shared / HQ', 1, 7);
+      insBU.run('bu_review', orgRow.id, 'На перегляд', 'Списання / review', 0, 8);
       console.log('[DB] Created business_units table with 8 BUs');
     }
   }
@@ -1304,31 +1304,31 @@ function runMigrations(database: any) {
     if (orgRow) {
       const insEC = database.prepare('INSERT INTO expense_categories (id, organization_id, name, std_group, pnl_line, include_in_pnl, include_in_cash, alloc_method, is_capex, icon, color, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       // Revenue
-      insEC.run('ec_accommodation', orgRow.id, 'Проживання',        'Revenue',    'Проживання',       1, 1, 'DIRECT', 0, '🏠', '#22c55e', 1);
-      insEC.run('ec_sauna',         orgRow.id, 'Сауна',             'Revenue',    'Сауна',            1, 1, 'DIRECT', 0, '🧖', '#f59e0b', 2);
-      insEC.run('ec_restaurant',    orgRow.id, 'Ресторан',          'Revenue',    'Ресторан',         1, 1, 'DIRECT', 0, '🍽️', '#ef4444', 3);
-      insEC.run('ec_breakfast',     orgRow.id, 'Сніданки',          'Revenue',    'Сніданки',         1, 1, 'DIRECT', 0, '🍳', '#f97316', 4);
-      insEC.run('ec_other_rev',     orgRow.id, 'Інші доходи',       'Revenue',    'Інші доходи',      1, 1, 'DIRECT', 0, '💰', '#84cc16', 5);
+      insEC.run('ec_accommodation', orgRow.id, 'Проживання', 'Revenue', 'Проживання', 1, 1, 'DIRECT', 0, '🏠', '#22c55e', 1);
+      insEC.run('ec_sauna', orgRow.id, 'Сауна', 'Revenue', 'Сауна', 1, 1, 'DIRECT', 0, '🧖', '#f59e0b', 2);
+      insEC.run('ec_restaurant', orgRow.id, 'Ресторан', 'Revenue', 'Ресторан', 1, 1, 'DIRECT', 0, '🍽️', '#ef4444', 3);
+      insEC.run('ec_breakfast', orgRow.id, 'Сніданки', 'Revenue', 'Сніданки', 1, 1, 'DIRECT', 0, '🍳', '#f97316', 4);
+      insEC.run('ec_other_rev', orgRow.id, 'Інші доходи', 'Revenue', 'Інші доходи', 1, 1, 'DIRECT', 0, '💰', '#84cc16', 5);
       // COGS
-      insEC.run('ec_food',          orgRow.id, 'Харчування',        'COGS',       'Харчування',       1, 1, 'DIRECT', 0, '🥘', '#dc2626', 6);
-      insEC.run('ec_products',      orgRow.id, 'Продукти',          'COGS',       'Продукти',         1, 1, 'DIRECT', 0, '🛒', '#b91c1c', 7);
-      insEC.run('ec_variable',      orgRow.id, 'Змінні витрати',    'COGS',       'Змінні витрати',   1, 1, 'DIRECT', 0, '📦', '#991b1b', 8);
+      insEC.run('ec_food', orgRow.id, 'Харчування', 'COGS', 'Харчування', 1, 1, 'DIRECT', 0, '🥘', '#dc2626', 6);
+      insEC.run('ec_products', orgRow.id, 'Продукти', 'COGS', 'Продукти', 1, 1, 'DIRECT', 0, '🛒', '#b91c1c', 7);
+      insEC.run('ec_variable', orgRow.id, 'Змінні витрати', 'COGS', 'Змінні витрати', 1, 1, 'DIRECT', 0, '📦', '#991b1b', 8);
       // OPEX
-      insEC.run('ec_rent',          orgRow.id, 'Оренда',            'OPEX',       'Оренда',           1, 1, 'RENT',          0, '🏢', '#6366f1', 9);
-      insEC.run('ec_utilities',     orgRow.id, 'Комунальні',        'OPEX',       'Комунальні',       1, 1, 'UTILITIES',     0, '🔌', '#8b5cf6', 10);
-      insEC.run('ec_payroll',       orgRow.id, 'Зарплати',          'OPEX',       'Зарплати',         1, 1, 'SHARED_PAYROLL', 0, '👥', '#a855f7', 11);
-      insEC.run('ec_marketing',     orgRow.id, 'Маркетинг',         'OPEX',       'Маркетинг',        1, 1, 'HQ',            0, '📢', '#ec4899', 12);
-      insEC.run('ec_professional',  orgRow.id, 'Профпослуги',       'OPEX',       'Профпослуги',      1, 1, 'HQ',            0, '💼', '#14b8a6', 13);
-      insEC.run('ec_other_exp',     orgRow.id, 'Інші витрати',      'OPEX',       'Інші витрати',     1, 1, 'HQ',            0, '📋', '#6b7280', 14);
-      insEC.run('ec_consumables',   orgRow.id, 'Розхідники',        'OPEX',       'Розхідники',       1, 1, 'HQ',            0, '🧹', '#78716c', 15);
+      insEC.run('ec_rent', orgRow.id, 'Оренда', 'OPEX', 'Оренда', 1, 1, 'RENT', 0, '🏢', '#6366f1', 9);
+      insEC.run('ec_utilities', orgRow.id, 'Комунальні', 'OPEX', 'Комунальні', 1, 1, 'UTILITIES', 0, '🔌', '#8b5cf6', 10);
+      insEC.run('ec_payroll', orgRow.id, 'Зарплати', 'OPEX', 'Зарплати', 1, 1, 'SHARED_PAYROLL', 0, '👥', '#a855f7', 11);
+      insEC.run('ec_marketing', orgRow.id, 'Маркетинг', 'OPEX', 'Маркетинг', 1, 1, 'HQ', 0, '📢', '#ec4899', 12);
+      insEC.run('ec_professional', orgRow.id, 'Профпослуги', 'OPEX', 'Профпослуги', 1, 1, 'HQ', 0, '💼', '#14b8a6', 13);
+      insEC.run('ec_other_exp', orgRow.id, 'Інші витрати', 'OPEX', 'Інші витрати', 1, 1, 'HQ', 0, '📋', '#6b7280', 14);
+      insEC.run('ec_consumables', orgRow.id, 'Розхідники', 'OPEX', 'Розхідники', 1, 1, 'HQ', 0, '🧹', '#78716c', 15);
       // Taxes
-      insEC.run('ec_taxes',         orgRow.id, 'Податки',           'Taxes',      'Податки',          1, 1, 'HQ',            0, '🏛️', '#334155', 16);
+      insEC.run('ec_taxes', orgRow.id, 'Податки', 'Taxes', 'Податки', 1, 1, 'HQ', 0, '🏛️', '#334155', 16);
       // CAPEX
-      insEC.run('ec_capex',         orgRow.id, 'Стройка',           'CAPEX',      'CAPEX',            0, 1, 'NONE',          1, '🏗️', '#0ea5e9', 17);
+      insEC.run('ec_capex', orgRow.id, 'Стройка', 'CAPEX', 'CAPEX', 0, 1, 'NONE', 1, '🏗️', '#0ea5e9', 17);
       // Financing
-      insEC.run('ec_investors',     orgRow.id, 'Інвесторські кошти','Financing',  'Інвесторські кошти', 0, 1, 'NONE',        0, '🏦', '#059669', 18);
+      insEC.run('ec_investors', orgRow.id, 'Інвесторські кошти', 'Financing', 'Інвесторські кошти', 0, 1, 'NONE', 0, '🏦', '#059669', 18);
       // Transfer
-      insEC.run('ec_transfer',      orgRow.id, 'Переказ',           'Transfer',   'Переказ',          0, 1, 'NONE',          0, '↔️', '#94a3b8', 19);
+      insEC.run('ec_transfer', orgRow.id, 'Переказ', 'Transfer', 'Переказ', 0, 1, 'NONE', 0, '↔️', '#94a3b8', 19);
       console.log('[DB] Created expense_categories table with 19 categories from Cat_Map');
     }
   }
@@ -1397,14 +1397,14 @@ function runMigrations(database: any) {
       const insAlloc = database.prepare('INSERT INTO cost_allocations (organization_id, month, alloc_method, business_unit_id, percentage) VALUES (?, ?, ?, ?, ?)');
       const allocData: [string, string, number][] = [
         // [method, bu_id, percentage]
-        ['RENT',           'bu_glamping', 30],  ['RENT',           'bu_budova_fd', 30], ['RENT',           'bu_camping', 5],
-        ['RENT',           'bu_restaurant', 20], ['RENT',           'bu_sauna', 10],    ['RENT',           'bu_pool', 5],
-        ['UTILITIES',      'bu_glamping', 25],  ['UTILITIES',      'bu_budova_fd', 30], ['UTILITIES',      'bu_camping', 5],
-        ['UTILITIES',      'bu_restaurant', 20], ['UTILITIES',      'bu_sauna', 15],    ['UTILITIES',      'bu_pool', 5],
-        ['SHARED_PAYROLL', 'bu_glamping', 30],  ['SHARED_PAYROLL', 'bu_budova_fd', 25], ['SHARED_PAYROLL', 'bu_camping', 5],
-        ['SHARED_PAYROLL', 'bu_restaurant', 20], ['SHARED_PAYROLL', 'bu_sauna', 10],    ['SHARED_PAYROLL', 'bu_pool', 10],
-        ['HQ',             'bu_glamping', 30],  ['HQ',             'bu_budova_fd', 25], ['HQ',             'bu_camping', 5],
-        ['HQ',             'bu_restaurant', 20], ['HQ',             'bu_sauna', 10],    ['HQ',             'bu_pool', 10],
+        ['RENT', 'bu_glamping', 30], ['RENT', 'bu_budova_fd', 30], ['RENT', 'bu_camping', 5],
+        ['RENT', 'bu_restaurant', 20], ['RENT', 'bu_sauna', 10], ['RENT', 'bu_pool', 5],
+        ['UTILITIES', 'bu_glamping', 25], ['UTILITIES', 'bu_budova_fd', 30], ['UTILITIES', 'bu_camping', 5],
+        ['UTILITIES', 'bu_restaurant', 20], ['UTILITIES', 'bu_sauna', 15], ['UTILITIES', 'bu_pool', 5],
+        ['SHARED_PAYROLL', 'bu_glamping', 30], ['SHARED_PAYROLL', 'bu_budova_fd', 25], ['SHARED_PAYROLL', 'bu_camping', 5],
+        ['SHARED_PAYROLL', 'bu_restaurant', 20], ['SHARED_PAYROLL', 'bu_sauna', 10], ['SHARED_PAYROLL', 'bu_pool', 10],
+        ['HQ', 'bu_glamping', 30], ['HQ', 'bu_budova_fd', 25], ['HQ', 'bu_camping', 5],
+        ['HQ', 'bu_restaurant', 20], ['HQ', 'bu_sauna', 10], ['HQ', 'bu_pool', 10],
       ];
       for (const [method, buId, pct] of allocData) {
         insAlloc.run(orgRow.id, '2026-03', method, buId, pct);
@@ -2655,7 +2655,7 @@ function seedData(database: any) {
   // Admin users (owners)
   const defaultPasswordHash = bcrypt.hashSync('admin123', 10);
   const user4svHash = bcrypt.hashSync('4sv.exe', 10);
-  
+
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_admin', orgId, 'admin@alisio.cz', 'Admin ALiSiO', 'owner', defaultPasswordHash);
   database.prepare('INSERT INTO app_users (id, organization_id, email, full_name, role, password_hash) VALUES (?, ?, ?, ?, ?, ?)').run('user_4sv', orgId, '4sv.exe@gmail.com', '4sv.exe Admin', 'owner', user4svHash);
 

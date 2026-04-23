@@ -22,16 +22,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         u.code  AS unit_code,
         ut.name AS unit_type_name,
         ut.code AS unit_type_code,
+        ut.photos AS unit_type_photos,
+        ut.id AS actual_unit_type_id,
         (
           SELECT MIN(pc.base_price)
           FROM price_calendar pc
-          WHERE pc.unit_type_id = COALESCE(sl.unit_type_id, u.unit_type_id)
+          WHERE pc.unit_type_id = ut.id
             AND pc.date >= date('now')
             AND pc.closed = 0
         ) AS base_price
       FROM site_listings sl
       LEFT JOIN units u      ON sl.unit_id      = u.id
-      LEFT JOIN unit_types ut ON sl.unit_type_id = ut.id
+      LEFT JOIN unit_types ut ON COALESCE(sl.unit_type_id, u.unit_type_id) = ut.id
       WHERE sl.site_id = ?
       ORDER BY sl.sort_order, sl.created_at
     `).all(id) as any[];

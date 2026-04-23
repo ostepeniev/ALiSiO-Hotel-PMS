@@ -4,7 +4,7 @@ export function listUnitTypes(filters: { category?: string } = {}) {
   let query = `
     SELECT
       ut.id, ut.name, ut.code, ut.max_adults, ut.max_children, ut.max_occupancy, ut.base_occupancy,
-      ut.beds_single, ut.beds_double, ut.sort_order,
+      ut.beds_single, ut.beds_double, ut.photos, ut.sort_order,
       c.id as category_id, c.name as category_name, c.type as category_type,
       b.id as building_id, b.name as building_name, b.code as building_code,
       COUNT(u.id) as unit_count
@@ -42,6 +42,7 @@ export interface CreateUnitTypeInput {
   beds_double?: number;
   beds_sofa?: number;
   extra_bed_available?: boolean;
+  photos?: string;
   sort_order?: number;
 }
 
@@ -50,12 +51,13 @@ export function createUnitType(input: CreateUnitTypeInput) {
   const result = db.prepare(`
     INSERT INTO unit_types (property_id, category_id, building_id, name, code, description,
       max_adults, max_children, max_occupancy, base_occupancy,
-      beds_single, beds_double, beds_sofa, extra_bed_available, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      beds_single, beds_double, beds_sofa, extra_bed_available, photos, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.property_id, input.category_id, input.building_id ?? null, input.name, input.code, input.description ?? null,
     input.max_adults ?? 2, input.max_children ?? 2, input.max_occupancy ?? 4, input.base_occupancy ?? 2,
-    input.beds_single ?? 0, input.beds_double ?? 1, input.beds_sofa ?? 0, input.extra_bed_available ? 1 : 0, input.sort_order ?? 0
+    input.beds_single ?? 0, input.beds_double ?? 1, input.beds_sofa ?? 0, input.extra_bed_available ? 1 : 0, 
+    input.photos ?? null, input.sort_order ?? 0
   );
   return db.prepare('SELECT * FROM unit_types WHERE rowid = ?').get(result.lastInsertRowid);
 }
@@ -68,7 +70,7 @@ export function updateUnitType(id: string, fields: Record<string, unknown>) {
     if (fields[f] === '') fields[f] = null;
   }
 
-  const allowed = ['name', 'code', 'description', 'category_id', 'building_id', 'max_adults', 'max_children', 'max_occupancy', 'base_occupancy', 'beds_single', 'beds_double', 'beds_sofa', 'extra_bed_available', 'sort_order', 'is_active'];
+  const allowed = ['name', 'code', 'description', 'category_id', 'building_id', 'max_adults', 'max_children', 'max_occupancy', 'base_occupancy', 'beds_single', 'beds_double', 'beds_sofa', 'extra_bed_available', 'photos', 'sort_order', 'is_active'];
   const updates: string[] = [];
   const values: unknown[] = [];
 

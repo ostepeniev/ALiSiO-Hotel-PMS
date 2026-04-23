@@ -7,7 +7,7 @@ import { useMobileMenu } from '@/lib/MobileMenuContext';
 import {
   Globe, ArrowLeft, Loader2, Plus, Trash2, X, Copy, Check,
   LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent,
-  ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil, Eye,
+  ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil, Eye, Image as ImageIcon, Upload,
 } from 'lucide-react';
 import BookingV3 from '@/app/booking/BookingV3';
 
@@ -48,7 +48,7 @@ interface WidgetConfig {
   enable_prefill?: boolean;
   default_lang?: string;
 }
-interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
+interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; unit_type_photos?: string; actual_unit_type_id?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
 interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; }
 interface RatePlan { id: string; name: string; is_default: number; cancellation_policy: string; payment_schedule: {percent:number;trigger:string}[]; meals_included: string[]; min_stay: number; max_stay: number; min_days_before_checkin: number; pricing_mode: string; applied_listings: string[]; }
 
@@ -126,27 +126,73 @@ const Chk = ({ val }: { val?: string | null }) =>
   val ? <span style={{color:'#22c55e',fontSize:16}}>✓</span> : <span style={{color:'var(--text-tertiary)',fontSize:14}}>—</span>;
 
 /* ── ListingRow: click → edit modal ── */
-function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh }: {
+function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, onEmbed }: {
   listing: Listing;
   siteId: string;
   siteSlug: string;
   onDelete: (id: string) => void;
   onRefresh: () => void;
+  onEdit: (l: Listing) => void;
+  onEmbed: (l: Listing) => void;
 }) {
-  const [editOpen, setEditOpen] = useState(false);
-  const [embedOpen, setEmbedOpen] = useState(false);
-  const [embedLang, setEmbedLang] = useState('uk');
-  const [origin, setOrigin] = useState('');
+  const unitName = listing.unit_name || listing.unit_type_name || listing.id;
+
+  return (
+    <tr style={{cursor:'pointer'}} onClick={() => onEdit(listing)}>
+      <td style={{fontWeight:600}}>{unitName}</td>
+      <td style={{fontSize:12,color:'var(--text-secondary)'}}>{listing.unit_id ? 'Юніт' : 'Тип юніту'}</td>
+      <td style={{fontSize:13}}>{listing.price_override ? `${listing.price_override} CZK` : 'За прайсом'}</td>
+      <td style={{textAlign:'center'}}><Chk val={listing.external_url}/></td>
+      <td style={{textAlign:'center'}}><Chk val={listing.thank_you_url}/></td>
+      <td style={{textAlign:'right'}} onClick={e => e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
+          <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Embed-код"
+            onClick={() => onEmbed(listing)}>
+            <Code2 size={14}/> Код
+          </button>
+          <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}}
+            onClick={() => onDelete(listing.id)}>
+            <Trash2 size={14}/>
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/* ── Edit Modal Component ── */
+function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
+  listing: Listing | null;
+  siteId: string;
+  open: boolean;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    external_url:  listing.external_url  || '',
-    thank_you_url: listing.thank_you_url || '',
-    default_lang:  listing.default_lang  || '',
+    external_url: '',
+    thank_you_url: '',
+    default_lang: '',
   });
-  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (listing) {
+      setForm({
+        external_url:  listing.external_url  || '',
+        thank_you_url: listing.thank_you_url || '',
+        default_lang:  listing.default_lang  || '',
+      });
+      setPhotoUrls(listing.unit_type_photos ? listing.unit_type_photos.split(',').map(s=>s.trim()).filter(Boolean) : []);
+    }
+  }, [listing]);
+
+  if (!listing) return null;
 
   const save = async () => {
     setSaving(true);
+    // Update listing settings
     await fetch(`/api/booking-sites/${siteId}/listings/${listing.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -156,123 +202,161 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh }: {
         default_lang:  form.default_lang || null,
       }),
     });
+
+    // Update unit type photos
+    if (listing.actual_unit_type_id) {
+      await fetch(`/api/unit-types/${listing.actual_unit_type_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photos: photoUrls.join(',') }),
+      });
+    }
+
     setSaving(false);
-    setEditOpen(false);
+    onClose();
     onRefresh();
   };
 
-  const unitName = listing.unit_name || listing.unit_type_name || listing.id;
-  const unitAttr = listing.unit_id
-    ? `data-unit="${listing.unit_id}"`
-    : `data-unit-type="${listing.unit_type_id}"`;
-  
-  const embedCode = `<div id="alisio-booking-widget"\n  data-site="${siteSlug}"\n  ${unitAttr}>\n</div>\n<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const res = await fetch('/api/uploads/proxy', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (res.ok) {
+        const url = await res.text();
+        if (url.startsWith('http')) {
+          setPhotoUrls(prev => [...prev, url.trim()]);
+        } else {
+          throw new Error(url);
+        }
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Помилка завантаження. Спробуйте інше фото або перевірте мережу.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removePhoto = (idx: number) => {
+    setPhotoUrls(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const LANGS = ['uk','cs','en','de'];
+  const unitName = listing.unit_name || listing.unit_type_name || listing.id;
+
+  return (
+    <Modal open={open} onClose={onClose} title={unitName} size="lg"
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>Скасувати</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? <Loader2 size={14} className="spin"/> : <Check size={14}/>} Зберегти
+          </button>
+        </>
+      }>
+      <div className="form-group">
+        <label className="form-label">URL сторінки об&apos;єкта</label>
+        <input className="form-input" placeholder="https://yoursite.com/cabin-b3"
+          value={form.external_url} onChange={e => setForm(f => ({...f, external_url: e.target.value}))} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">URL сторінки подяки</label>
+        <input className="form-input" placeholder="https://yoursite.com/thank-you"
+          value={form.thank_you_url} onChange={e => setForm(f => ({...f, thank_you_url: e.target.value}))} />
+      </div>
+      <div className="form-group">
+        <label className="form-label">Мова за замовчуванням</label>
+        <div style={{display:'flex',gap:6}}>
+          {LANGS.map(l => (
+            <button key={l} type="button" onClick={() => setForm(f => ({...f, default_lang: f.default_lang === l ? '' : l}))}
+              style={{
+                padding:'6px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                border:`2px solid ${form.default_lang===l?'var(--accent-primary)':'var(--border-primary)'}`,
+                background:form.default_lang===l?'var(--accent-primary)':'var(--surface-secondary)',
+                color:form.default_lang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
+              }}>
+              {l.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="form-group" style={{marginTop:24}}>
+        <label className="form-label" style={{display:'flex', alignItems:'center', gap:8}}>
+          <ImageIcon size={16} /> Фотографії об&apos;єкта
+        </label>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(100px, 1fr))', gap:12, marginTop:12}}>
+          {photoUrls.map((url, idx) => (
+            <div key={idx} style={{position:'relative', aspectRatio:'4/3', borderRadius:8, overflow:'hidden', border:'1px solid var(--border-primary)'}}>
+              <img src={url} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}} />
+              <button onClick={() => removePhoto(idx)} style={{position:'absolute', top:4, right:4, background:'rgba(0,0,0,0.5)', color:'#fff', border:'none', cursor:'pointer', borderRadius:'50%', width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center'}}>
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          <label style={{aspectRatio:'4/3', border:'2px dashed var(--border-primary)', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', cursor:'pointer', gap:4, color:'var(--text-secondary)'}}>
+            {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+            <span style={{fontSize:11}}>{uploading ? '...' : 'Завантажити'}</span>
+            <input type="file" accept="image/*" hidden onChange={handleUpload} disabled={uploading} />
+          </label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Embed Modal Component ── */
+function ListingEmbedModal({ listing, siteSlug, open, onClose }: {
+  listing: Listing | null;
+  siteSlug: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [embedLang, setEmbedLang] = useState('uk');
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+
+  if (!listing) return null;
+
+  const unitName = listing.unit_name || listing.unit_type_name || listing.id;
+  const unitAttr = listing.unit_id ? `data-unit="${listing.unit_id}"` : `data-unit-type="${listing.unit_type_id}"`;
+  const embedCode = `<div id="alisio-booking-widget"\n  data-site="${siteSlug}"\n  ${unitAttr}>\n</div>\n<script src="${origin || 'https://YOUR_DOMAIN'}/widget/embed.v2.js"></script>`;
   const LANGS = ['uk','cs','en','de'];
 
   return (
-    <>
-      <tr style={{cursor:'pointer'}} onClick={() => setEditOpen(true)}>
-        <td style={{fontWeight:600}}>{listing.unit_name || listing.unit_type_name || '—'}</td>
-        <td style={{fontSize:12,color:'var(--text-secondary)'}}>{listing.unit_id ? 'Юніт' : 'Тип юніту'}</td>
-        <td style={{fontSize:13}}>{listing.price_override ? `${listing.price_override} CZK` : 'За прайсом'}</td>
-        <td style={{textAlign:'center'}}><Chk val={listing.external_url}/></td>
-        <td style={{textAlign:'center'}}><Chk val={listing.thank_you_url}/></td>
-        <td style={{textAlign:'right'}} onClick={e => e.stopPropagation()}>
-          <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
-            <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Embed-код"
-              onClick={() => setEmbedOpen(true)}>
-              <Code2 size={14}/> Код
+    <Modal open={open} onClose={onClose} title={`Embed-код: ${unitName}`} size="lg">
+      <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>Вставте цей код на сторінку об&apos;єкта.</div>
+      <div style={{marginBottom:12}}>
+        <div style={{display:'flex',gap:6}}>
+          {LANGS.map(l => (
+            <button key={l} type="button" onClick={() => setEmbedLang(l)}
+              style={{
+                padding:'5px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                border:`2px solid ${embedLang===l?'var(--accent-primary)':'var(--border-primary)'}`,
+                background:embedLang===l?'var(--accent-primary)':'var(--surface-secondary)',
+                color:embedLang===l?'#fff':'var(--text-secondary)',
+              }}>
+              {l.toUpperCase()}
             </button>
-            <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}}
-              onClick={() => onDelete(listing.id)}>
-              <Trash2 size={14}/>
-            </button>
-          </div>
-        </td>
-      </tr>
-
-      {/* ── Edit modal ── */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={unitName} size="lg"
-        footer={
-          <>
-            <button className="btn btn-ghost" onClick={() => setEditOpen(false)}>Скасувати</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving}>
-              {saving ? <Loader2 size={14} className="spin"/> : <Check size={14}/>} Зберегти
-            </button>
-          </>
-        }>
-
-        <div className="form-group">
-          <label className="form-label">URL сторінки об&apos;єкта</label>
-          <input className="form-input" placeholder="https://yoursite.com/cabin-b3"
-            value={form.external_url} onChange={e => setForm(f => ({...f, external_url: e.target.value}))} />
-          <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Посилання на сторінку оголошення на вашому сайті</div>
+          ))}
         </div>
-
-        <div className="form-group">
-          <label className="form-label">URL сторінки подяки</label>
-          <input className="form-input" placeholder="https://yoursite.com/thank-you"
-            value={form.thank_you_url} onChange={e => setForm(f => ({...f, thank_you_url: e.target.value}))} />
-          <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Гість буде перенаправлений сюди після підтвердження бронювання</div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Мова за замовчуванням</label>
-          <div style={{display:'flex',gap:6}}>
-            {LANGS.map(l => (
-              <button key={l} type="button" onClick={() => setForm(f => ({...f, default_lang: f.default_lang === l ? '' : l}))}
-                style={{
-                  padding:'6px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
-                  border:`2px solid ${form.default_lang===l?'var(--accent-primary)':'var(--border-primary)'}`,
-                  background:form.default_lang===l?'var(--accent-primary)':'var(--surface-secondary)',
-                  color:form.default_lang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
-                }}>
-                {l.toUpperCase()}
-              </button>
-            ))}
-            {form.default_lang && (
-              <button type="button" onClick={() => setForm(f => ({...f, default_lang: ''}))}
-                style={{fontSize:11,color:'var(--text-tertiary)',background:'none',border:'none',cursor:'pointer'}}>
-                скинути
-              </button>
-            )}
-          </div>
-          {!form.default_lang && <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Не вибрано — використається мова сайту</div>}
-        </div>
-      </Modal>
-
-      {/* ── Embed code modal ── */}
-      <Modal open={embedOpen} onClose={() => setEmbedOpen(false)} title={`Embed-код: ${unitName}`} size="lg">
-        <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>
-          Вставте цей код на сторінку конкретного об&apos;єкта.
-        </div>
-        <div style={{marginBottom:12}}>
-          <div style={{fontSize:12,fontWeight:600,color:'var(--text-tertiary)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Мова віджета</div>
-          <div style={{display:'flex',gap:6}}>
-            {LANGS.map(l => (
-              <button key={l} type="button" onClick={() => setEmbedLang(l)}
-                style={{
-                  padding:'5px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
-                  border:`2px solid ${embedLang===l?'var(--accent-primary)':'var(--border-primary)'}`,
-                  background:embedLang===l?'var(--accent-primary)':'var(--surface-secondary)',
-                  color:embedLang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
-                }}>
-                {l.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{position:'relative',marginBottom:16}}>
-          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>{embedCode}</pre>
-          <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={embedCode}/></div>
-        </div>
-        <div style={{padding:'10px 14px',background:'var(--surface-secondary)',borderRadius:8,fontSize:12,color:'var(--text-secondary)',lineHeight:1.6,border:'1px solid var(--border-primary)'}}>
-          💡 Щоб успадкувати мову сайту: додайте перед скриптом{' '}
-          <code>{`<script>window.__BOOKING_LANG__=document.documentElement.lang</script>`}</code>
-        </div>
-      </Modal>
-    </>
+      </div>
+      <div style={{position:'relative'}}>
+        <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto'}}>{embedCode}</pre>
+        <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={embedCode}/></div>
+      </div>
+    </Modal>
   );
 }
 
@@ -286,6 +370,9 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  const [embedListing, setEmbedListing] = useState<Listing | null>(null);
+
   /* unit picker data */
   const [unitTypes, setUnitTypes] = useState<any[]>([]);
   const [units, setUnits] = useState<any[]>([]);
@@ -365,11 +452,17 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
           </tr></thead>
           <tbody>
             {listings.map(l => (
-              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} onDelete={handleDelete} onRefresh={fetchListings} />
+              <ListingRow key={l.id} listing={l} siteId={siteId} siteSlug={siteSlug} onDelete={handleDelete} onRefresh={fetchListings} onEdit={setEditingListing} onEmbed={setEmbedListing} />
             ))}
           </tbody>
         </table>
       )}
+
+      {/* Edit Modal */}
+      <ListingEditModal open={!!editingListing} listing={editingListing} siteId={siteId} onClose={() => setEditingListing(null)} onRefresh={fetchListings} />
+      
+      {/* Embed Modal */}
+      <ListingEmbedModal open={!!embedListing} listing={embedListing} siteSlug={siteSlug} onClose={() => setEmbedListing(null)} />
 
       {/* Add Modal */}
       <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Додати оголошення" size="lg"
