@@ -181,6 +181,15 @@ export default function BookingPage() {
   const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | null>(null);
   const [purchasedServices, setPurchasedServices] = useState<any[]>([]);
 
+  // Widget mode: siteId injected by BookingWidget wrapper
+  const siteId = typeof window !== 'undefined' ? (window as any).__BOOKING_SITE_ID__ || '' : '';
+  const widgetSlug = typeof window !== 'undefined' ? (window as any).__BOOKING_SITE_SLUG__ || '' : '';
+  const thankYouUrl = typeof window !== 'undefined' ? (window as any).__BOOKING_THANK_YOU_URL__ || '' : '';
+
+  // Whether step 4 has any services to show
+  const [hasServices, setHasServices] = useState(true); // default true until checked
+
+
   // Handle return from Teya payment (room or services checkout)
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -230,23 +239,28 @@ export default function BookingPage() {
 
       if (pStatus === 'success') {
         setPaymentStatus('success');
-        if (kind === 'services') {
-          setStep(5);
-        } else {
-          setStep(4);
-          if (ci && co) fetchServices(ci, co);
+        // Fire purchase pixel event
+        window.dispatchEvent(new CustomEvent('bk:purchase', { detail: {
+          reservationId: successId,
+          value: ctxSrv?.reservation?.total_price || ctxCache?.totalPrice || 0,
+          currency: 'CZK',
+          kind,
+        }}));
+        // Step 6 = success screen (after payment confirmed)
+        setStep(6);
+        // If thank_you_url is set — redirect parent after short delay
+        const tyUrl = (window as any).__BOOKING_THANK_YOU_URL__;
+        if (tyUrl) {
+          setTimeout(() => {
+            try { window.parent.location.href = tyUrl; } catch { window.location.href = tyUrl; }
+          }, 3000);
         }
       } else {
-        if (kind === 'services') {
-          setPaymentStatus('failed');
-          setStep(4);
-          if (ci && co) fetchServices(ci, co);
-        } else {
-          setPaymentStatus('failed');
-          setStep(5);
-        }
+        setPaymentStatus('failed');
+        setStep(5); // back to payment step
       }
       cleanUrl();
+
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -401,14 +415,35 @@ export default function BookingPage() {
     if (!ci || !co) return;
     setServicesLoading(true);
     try {
+      // If widget mode with siteId — load site_services list first to check if any exist
+      const currentSiteId = (window as any).__BOOKING_SITE_ID__ || '';
+      if (currentSiteId) {
+        const listRes = await fetch(`${API_BASE}/api/booking/services?siteId=${encodeURIComponent(currentSiteId)}`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const has = listData.hasServices === true && listData.services?.length > 0;
+          setHasServices(has);
+          (window as any).__BOOKING_HAS_SERVICES__ = has;
+          if (!has) {
+            setServicesLoading(false);
+            return; // skip loading individual services — step 4 will be skipped
+          }
+        }
+      } else {
+        // Desktop mode: always has services
+        (window as any).__BOOKING_HAS_SERVICES__ = true;
+      }
+
+
+      const siteParam = (window as any).__BOOKING_SITE_ID__ ? `&siteId=${encodeURIComponent((window as any).__BOOKING_SITE_ID__)}` : '';
       // Fetch breakfast menu items
-      const bRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_breakfast&checkIn=${ci}&checkOut=${co}`);
+      const bRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_breakfast&checkIn=${ci}&checkOut=${co}${siteParam}`);
       if (bRes.ok) {
         const bData = await bRes.json();
         setMenuItems(bData.menuItems || []);
       }
       // Fetch sauna details + booked slots
-      const sRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_sauna&checkIn=${ci}&checkOut=${co}`);
+      const sRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_sauna&checkIn=${ci}&checkOut=${co}${siteParam}`);
       if (sRes.ok) {
         const sData = await sRes.json();
         setSaunaPrice(sData.price || 600);
@@ -418,20 +453,19 @@ export default function BookingPage() {
         }
       }
       // Fetch tub details + booked slots
-      const tRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_tub&checkIn=${ci}&checkOut=${co}`);
+      const tRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_tub&checkIn=${ci}&checkOut=${co}${siteParam}`);
       if (tRes.ok) {
         const tData = await tRes.json();
         setTubPrice(tData.price || 600);
         setTubBookedSlots(tData.bookedSlots || []);
       }
       // Fetch late checkout price
-      const lcRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_late_checkout&checkIn=${ci}&checkOut=${co}`);
+      const lcRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_late_checkout&checkIn=${ci}&checkOut=${co}${siteParam}`);
       if (lcRes.ok) {
         const lcData = await lcRes.json();
         setLateCheckoutPrice(lcData.price || 500);
       }
-      // Fetch early checkin price
-      const ecRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_early_checkin&checkIn=${ci}&checkOut=${co}`);
+      const ecRes = await fetch(`${API_BASE}/api/booking/services?serviceId=svc_early_checkin&checkIn=${ci}&checkOut=${co}${siteParam}`);
       if (ecRes.ok) {
         const ecData = await ecRes.json();
         setEarlyCheckinPrice(ecData.price || 500);
@@ -440,14 +474,15 @@ export default function BookingPage() {
     setServicesLoading(false);
     if (ci && !saunaDate) setSaunaDate(ci);
     if (ci && !tubDate) setTubDate(ci);
-  }, [checkIn, checkOut, saunaDate, tubDate]);
+  }, [checkIn, checkOut, saunaDate, tubDate, siteId]);
 
-  // ─── Submit Booking (Step 3: create reservation + first Teya checkout for the room) ──────
+  // ─── Submit Booking (Step 3: create reservation, then go to services or payment step) ──────
   const submitBooking = useCallback(async () => {
     if (!checkIn || !checkOut || !selectedUnit || !firstName || !lastName || !phone) return;
     setSubmitting(true);
     setError(null);
     try {
+      const currentSiteId = siteId || '';
       const res = await fetch(`${API_BASE}/api/booking/reserve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -464,6 +499,7 @@ export default function BookingPage() {
           phone: phone.trim(),
           promoCode: promoApplied || undefined,
           certificateCode: certInput || undefined,
+          siteId: currentSiteId || undefined,
         }),
       });
       if (!res.ok) {
@@ -471,10 +507,8 @@ export default function BookingPage() {
         throw new Error(err.error || 'Failed');
       }
       const data = await res.json() as ReserveResponse;
-
       setReservation(data);
 
-      // Persist return context (sessionStorage) so Step 4 hydrates after Teya
       try {
         sessionStorage.setItem('booking-return-ctx', JSON.stringify({
           reservationId: data.reservationId,
@@ -486,46 +520,62 @@ export default function BookingPage() {
         }));
       } catch { /* private mode — ok */ }
 
-      // Create Teya checkout for the ROOM only (no services yet)
-      setRedirectingToPayment(true);
-      try {
-        const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            amount: data.totalPrice,
-            currency: 'CZK',
-            description: `Booking ${data.reservationId} — ${data.unitName}`,
-            reservation_id: data.reservationId,
-            return_path: `/booking?success=${data.reservationId}&payment_kind=room`,
-          }),
-        });
-        if (payRes.ok) {
-          const payData = await payRes.json();
-          if (payData.session_url) {
-            window.location.href = payData.session_url;
-            return;
-          }
-        }
-        console.error('Checkout session creation failed — tentative booking');
-        setRedirectingToPayment(false);
-        setPaymentStatus('failed');
-        setStep(4);
-        fetchServices(data.checkIn, data.checkOut);
-      } catch (payErr) {
-        console.error('Payment redirect error:', payErr);
-        setRedirectingToPayment(false);
-        setPaymentStatus('failed');
-        setStep(4);
-        fetchServices(data.checkIn, data.checkOut);
-      }
+      // Load services and decide: go to step 4 if site has services, else skip to 5
+      await fetchServices(data.checkIn, data.checkOut);
+      // hasServices state is updated inside fetchServices
+      // Use a short delay so state flush completes
+      setStep(prev => {
+        // hasServices may still be stale — read from window global set by fetchServices
+        const skip = (window as any).__BOOKING_SITE_ID__ && !(window as any).__BOOKING_HAS_SERVICES__;
+        return skip ? 5 : 4;
+      });
     } catch (e: any) {
       setError(e?.message || t.errorOccurred);
     }
     setSubmitting(false);
   }, [checkIn, checkOut, selectedUnit, cardAdults, cardChildren, cardHasPet, firstName, lastName, email, phone, promoApplied, certInput, t, fetchServices]);
 
+  // ─── Submit Payment (Step 5: create Teya checkout) ──────
+  const submitPayment = useCallback(async () => {
+    const resId = reservation?.reservationId;
+    if (!resId) return;
+    setRedirectingToPayment(true);
+    setError(null);
+    try {
+      const currentSlug = (window as any).__BOOKING_SITE_SLUG__ || '';
+      const currentSiteId = (window as any).__BOOKING_SITE_ID__ || '';
+      const returnBase = currentSlug ? `/w/${currentSlug}` : '/booking';
+      const returnPath = `${returnBase}?success=${resId}&payment_kind=room`;
+
+      const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: reservation?.totalPrice ?? 0,
+          currency: 'CZK',
+          description: `Booking ${resId} — ${reservation?.unitName}`,
+          reservation_id: resId,
+          site_id: currentSiteId || undefined,
+          return_path: returnPath,
+        }),
+      });
+      if (payRes.ok) {
+        const payData = await payRes.json();
+        if (payData.session_url) {
+          window.dispatchEvent(new CustomEvent('bk:navigate', { detail: { to: 'payment' } }));
+          window.location.href = payData.session_url;
+          return;
+        }
+      }
+      throw new Error('Payment session creation failed');
+    } catch (e: any) {
+      setError(e?.message || t.errorOccurred);
+      setRedirectingToPayment(false);
+    }
+  }, [reservation, t]);
+
   // ─── Submit Services (Step 4: write services + second Teya checkout) ──────
+
   const submitServices = useCallback(async () => {
     const resId = reservation?.reservationId;
     if (!resId) return;
@@ -573,34 +623,14 @@ export default function BookingPage() {
         try { await post({ action: 'book-toggle', serviceId: 'svc_early_checkin', reservationId: resId }); } catch { /* */ }
       }
 
-      if (servicesTotal > 0) {
-        setRedirectingToPayment(true);
-        const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            amount: servicesTotal,
-            currency: 'CZK',
-            description: `Services for reservation ${resId}`,
-            reservation_id: resId,
-            return_path: `/booking?success=${resId}&payment_kind=services`,
-          }),
-        });
-        if (payRes.ok) {
-          const payData = await payRes.json();
-          if (payData.session_url) {
-            window.location.href = payData.session_url;
-            return;
-          }
-        }
-        setRedirectingToPayment(false);
-      }
-      setStep(5);
+      // All services written — go to payment step (step 5 shows breakdown + Pay button)
+      goToStep(5);
     } catch (e: any) {
       setError(e?.message || t.errorOccurred);
-      setRedirectingToPayment(false);
     }
     setSubmitting(false);
-  }, [reservation, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, cardAdults, checkIn, servicesTotal, t]);
+  }, [reservation, saunaAdded, saunaDate, saunaStartHour, saunaHours, saunaBroom, tubAdded, tubDate, tubStartHour, tubHours, breakfastAdded, breakfastItems, lateCheckout, earlyCheckin, cardAdults, checkIn, t, goToStep]);
+
 
   // ─── Reset ──────
   const resetForm = useCallback(() => {
@@ -878,7 +908,7 @@ export default function BookingPage() {
       </header>
 
       {/* ═══ Stepper ═══ */}
-      {step < 5 && (
+      {step < 6 && (
         <div className="booking-stepper">
           {STEPS.map((s, i) => (
             <div
@@ -903,7 +933,7 @@ export default function BookingPage() {
       {/* ═══ Main Layout ═══ */}
       <div className="booking-layout">
         {/* ─── Left Sidebar (visible on desktop only) ─── */}
-        {step < 5 && (
+        {step < 6 && (
           <aside className="booking-sidebar">
             {renderSidebarContent()}
           </aside>
@@ -912,7 +942,7 @@ export default function BookingPage() {
         {/* ─── Center Content ─── */}
         <main className="booking-main">
           {/* Mobile Cart Toggle */}
-          {step < 5 && step > 1 && (
+          {step < 6 && step > 1 && (
             <button
               className="booking-mobile-summary-toggle"
               onClick={() => setMobileCartOpen(true)}
@@ -1794,7 +1824,7 @@ export default function BookingPage() {
               <div className="booking-nav-bar sticky-mobile">
                 <button
                   className="booking-btn-back"
-                  onClick={() => setStep(5)}
+                  onClick={() => goToStep(5)}
                   type="button"
                 >
                   {t.skipToThankYou}
@@ -1812,8 +1842,95 @@ export default function BookingPage() {
           )}
 
 
-          {/* ═══════ STEP 5: Success ═══════ */}
+          {/* ═══════ STEP 5: Payment Breakdown ═══════ */}
           {step === 5 && (
+            <div className="booking-fade-in">
+              <div className="booking-content-card">
+                <h2 style={{ fontFamily: 'var(--bk-font-heading, Fraunces, serif)', marginBottom: 4 }}>
+                  {t.paymentTitle || 'Оплата'}
+                </h2>
+                <p style={{ color: 'var(--bk-ink-2, #5A5A5A)', fontSize: 13, marginBottom: 20 }}>
+                  {t.paymentSubtitle || 'Перевірте суму і перейдіть до оплати'}
+                </p>
+
+                {/* Breakdown */}
+                <div className="booking-success-details">
+                  {reservation?.unitName && (
+                    <div className="booking-success-detail-row">
+                      <span>{t.houseName}</span>
+                      <span>{reservation.unitName}</span>
+                    </div>
+                  )}
+                  {checkIn && (
+                    <div className="booking-success-detail-row">
+                      <span>{t.checkIn}</span>
+                      <span>{formatShortDate(checkIn, lang)}</span>
+                    </div>
+                  )}
+                  {checkOut && (
+                    <div className="booking-success-detail-row">
+                      <span>{t.checkOut}</span>
+                      <span>{formatShortDate(checkOut, lang)}</span>
+                    </div>
+                  )}
+                  {(reservation?.nights ?? 0) > 0 && (
+                    <div className="booking-success-detail-row">
+                      <span>{t.nights}</span>
+                      <span>{reservation?.nights}</span>
+                    </div>
+                  )}
+                  {(reservation?.promoDiscount ?? 0) > 0 && (
+                    <div className="booking-success-detail-row">
+                      <span>{t.discount}</span>
+                      <span style={{ color: 'var(--bk-accent)' }}>-{formatPrice(reservation!.promoDiscount)} Kč</span>
+                    </div>
+                  )}
+                  {servicesTotal > 0 && (
+                    <div className="booking-success-detail-row">
+                      <span>{t.serviceTotal}</span>
+                      <span>{formatPrice(servicesTotal)} Kč</span>
+                    </div>
+                  )}
+                  <div className="booking-success-detail-row" style={{ borderTop: '1px solid var(--bk-line, #EAEAE4)', paddingTop: 8, marginTop: 4 }}>
+                    <span><strong>{t.total}</strong></span>
+                    <span><strong>{formatPrice((reservation?.totalPrice ?? 0) + servicesTotal)} Kč</strong></span>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="booking-alert error" style={{ marginTop: 16 }}>
+                    <span className="booking-alert-icon">✗</span>
+                    {error}
+                  </div>
+                )}
+              </div>
+
+              <div className="booking-nav-bar sticky-mobile">
+                <button
+                  className="booking-btn-back"
+                  onClick={() => goToStep(4)}
+                  type="button"
+                >
+                  ‹ {t.back}
+                </button>
+                <button
+                  className="booking-btn-next"
+                  onClick={submitPayment}
+                  disabled={redirectingToPayment || !reservation}
+                  type="button"
+                  id="widget-pay-button"
+                >
+                  {redirectingToPayment
+                    ? t.redirectingToPayment
+                    : `💳 ${t.payNow || 'Оплатити'}`}
+                </button>
+              </div>
+            </div>
+          )}
+
+
+          {/* ═══════ STEP 6: Success ═══════ */}
+          {step === 6 && (
             <div className="booking-fade-in booking-success">
               {/* Payment cancelled/failed */}
               {paymentStatus === 'failed' && (

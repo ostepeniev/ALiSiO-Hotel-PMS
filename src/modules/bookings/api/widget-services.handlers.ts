@@ -22,6 +22,7 @@ export async function getWidgetServices(request: NextRequest) {
     const checkIn = searchParams.get('checkIn');
     const checkOut = searchParams.get('checkOut');
     const serviceId = searchParams.get('serviceId');
+    const siteId = searchParams.get('siteId') || '';
 
     const existingTables = new Set(
       (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
@@ -95,13 +96,41 @@ export async function getWidgetServices(request: NextRequest) {
       return NextResponse.json(result, { headers: CORS_HEADERS });
     }
 
-    const services = db.prepare(`
-      SELECT * FROM additional_services
-      WHERE is_active = 1 AND (available_for = 'all' OR available_for = 'glamping')
-      ORDER BY sort_order
-    `).all() as any[];
+    // ── List services ─────────────────────────────────────────────────────
+    // If siteId is provided → filter by site_services (respect price_override)
+    // Otherwise → return all active services (for /booking desktop page)
+    const hasSiteServices = existingTables.has('site_services');
 
-    return NextResponse.json({ services: services.map(s => formatService(s)) }, { headers: CORS_HEADERS });
+    let services: any[];
+
+    if (siteId && hasSiteServices) {
+      // Only services enabled for this booking site
+      services = db.prepare(`
+        SELECT s.*, ss.price_override, ss.sort_order as site_sort_order, ss.is_enabled
+        FROM additional_services s
+        JOIN site_services ss ON ss.service_id = s.id
+        WHERE ss.site_id = ? AND ss.is_enabled = 1 AND s.is_active = 1
+        ORDER BY ss.sort_order, s.sort_order
+      `).all(siteId) as any[];
+
+      // Apply price_override where set
+      services = services.map(s => ({
+        ...s,
+        price: s.price_override != null ? s.price_override : s.price,
+      }));
+    } else {
+      // Fallback: all active glamping services (desktop /booking page)
+      services = db.prepare(`
+        SELECT * FROM additional_services
+        WHERE is_active = 1 AND (available_for = 'all' OR available_for = 'glamping')
+        ORDER BY sort_order
+      `).all() as any[];
+    }
+
+    return NextResponse.json({
+      services: services.map(s => formatService(s)),
+      hasServices: services.length > 0,
+    }, { headers: CORS_HEADERS });
   } catch (error: any) {
     console.error('GET /api/booking/services error:', error?.message || error);
     return NextResponse.json({ error: 'Failed to load services' }, { status: 500, headers: CORS_HEADERS });
@@ -109,6 +138,7 @@ export async function getWidgetServices(request: NextRequest) {
 }
 
 export async function bookWidgetService(request: NextRequest) {
+
   try {
     const db = getDb();
     const body = await request.json();
