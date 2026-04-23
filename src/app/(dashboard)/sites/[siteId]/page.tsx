@@ -1426,6 +1426,7 @@ export default function SiteDetailPage() {
   const [site, setSite] = useState<Site | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('listings');
+  const [isMounted, setIsMounted] = useState(false);
 
   const fetchSite = useCallback(async () => {
     const res = await fetch(`/api/booking-sites/${siteId}`);
@@ -1434,9 +1435,12 @@ export default function SiteDetailPage() {
     setLoading(false);
   }, [siteId]);
 
-  useEffect(() => { fetchSite(); }, [fetchSite]);
+  useEffect(() => {
+    setIsMounted(true);
+    fetchSite();
+  }, [fetchSite]);
 
-  if (loading) return (
+  if (!isMounted || loading) return (
     <div className="page-layout">
       <Header title="Завантаження..." onMenuClick={onMenuClick} />
       <div style={{ display:'flex',justifyContent:'center',padding:80 }}>
