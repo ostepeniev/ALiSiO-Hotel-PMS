@@ -2241,7 +2241,6 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_booking_sites_property ON booking_sites(property_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_booking_sites_status ON booking_sites(status)');
-  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_sites_slug ON booking_sites(slug)');
 
   // --- Migration: add slug and site_url to booking_sites if missing ---
   try {
@@ -2257,6 +2256,9 @@ function runMigrations(database: any) {
       }
       database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_sites_slug ON booking_sites(slug)");
       console.log('[DB] Added slug to booking_sites');
+    } else {
+      // For fresh DBs or already migrated ones, just ensure index exists
+      database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_booking_sites_slug ON booking_sites(slug)");
     }
     if (!bsCols.includes('site_url')) {
       database.exec("ALTER TABLE booking_sites ADD COLUMN site_url TEXT");
