@@ -144,23 +144,24 @@ export default function BookingWizard() {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
       const { draft, grandTotal } = await createDraft(contact);
+      const pmsReservationId = draft.reservation_id || draft.id;
       const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
       const checkoutRes = await fetch('/api/booking/checkout-session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: grandTotal, currency: 'CZK', description: desc,
-          reservation_id: draft.id, return_path: `/book?payment=success&reservation_id=${draft.id}`,
+          reservation_id: draft.id, return_path: `/book?payment=success&reservation_id=${draft.id}&token=${draft.guest_page_token || ''}`,
         }),
       });
       const checkout = await checkoutRes.json();
       if (!checkoutRes.ok) throw new Error(checkout.error || 'Payment system error');
 
-      setReservationId(draft.id);
+      setReservationId(pmsReservationId);
+      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
       if (checkout.qr_code_url) setQrCodeUrl(checkout.qr_code_url);
       if (checkout.session_url) {
         setPaymentUrl(checkout.session_url);
         setPaymentStatus('pending'); setStep('success');
-        // Open payment in new tab (user stays on QR/pending page)
         window.open(checkout.session_url, '_blank');
       } else {
         setPaymentStatus('success'); setStep('success');
@@ -176,7 +177,9 @@ export default function BookingWizard() {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
       const { draft } = await createDraft(contact);
-      setReservationId(draft.id);
+      const pmsReservationId = draft.reservation_id || draft.id;
+      setReservationId(pmsReservationId);
+      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
       setPaymentStatus('admin_pending'); setStep('success');
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err: unknown) {

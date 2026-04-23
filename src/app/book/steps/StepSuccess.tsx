@@ -36,19 +36,37 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
     });
   };
 
+  const [ocrNames, setOcrNames] = useState<string[]>([]);
+
   const submitPhotos = async () => {
     if (photos.length === 0 || !reservationId) return;
     setUploading(true);
     try {
-      // Upload document photos
+      // 1. Upload each photo to /api/file-upload (existing working endpoint)
+      const uploadedUrls: string[] = [];
       for (const photo of photos) {
         const blob = await fetch(photo).then(r => r.blob());
         const formData = new FormData();
         formData.append('file', blob, `doc_${Date.now()}.jpg`);
-        formData.append('reservation_id', reservationId);
-        formData.append('type', 'guest_document');
-        await fetch('/api/uploads', { method: 'POST', body: formData });
+        formData.append('folder', `guest_docs/${reservationId}`);
+        const uploadRes = await fetch('/api/file-upload', { method: 'POST', body: formData });
+        const uploadData = await uploadRes.json();
+        if (uploadData.url) uploadedUrls.push(uploadData.url);
       }
+
+      // 2. Send to OCR + guest registration
+      if (uploadedUrls.length > 0) {
+        const regRes = await fetch('/api/booking/register-guest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reservation_id: reservationId, document_urls: uploadedUrls }),
+        });
+        const regData = await regRes.json();
+        if (regData.ocr_results) {
+          setOcrNames(regData.ocr_results.map((r: any) => `${r.firstName} ${r.lastName}`.trim()).filter(Boolean));
+        }
+      }
+
       setRegStep('done');
     } catch (err) {
       console.error('[Registration]', err);
@@ -200,7 +218,14 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
       {regStep === 'done' && (
         <div className="kc-alert info" style={{ marginTop: 20 }}>
           <span className="kc-alert-icon">✅</span>
-          Documents uploaded successfully! Registration is complete.
+          <div>
+            Documents uploaded &amp; processed! Registration is complete.
+            {ocrNames.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 13 }}>
+                Registered: <strong>{ocrNames.join(', ')}</strong>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
