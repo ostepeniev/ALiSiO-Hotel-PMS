@@ -274,7 +274,7 @@ export default function BookingWidgetSettingsPage() {
               👁️ Попередній перегляд
             </h3>
             <iframe
-              key={`${widgetType}-${selectedProperty}-${lang}-${color}`}
+              key={`${widgetType}-${selectedSite}-${lang}-${color}`}
               srcDoc={previewSrc}
               style={{
                 width: '100%', minHeight: 500, border: 'none', borderRadius: 12,
