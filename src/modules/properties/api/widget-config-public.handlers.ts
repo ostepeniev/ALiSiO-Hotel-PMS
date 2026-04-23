@@ -134,6 +134,20 @@ export async function getWidgetConfig(request: NextRequest) {
       if (defaultCheckIn) break;
     }
 
+    // Fetch services available in widget
+    let widgetServices: any[] = [];
+    try {
+      const asColCheck = db.prepare("PRAGMA table_info(additional_services)").all().map((c: any) => c.name);
+      if (asColCheck.includes('available_in_widget')) {
+        widgetServices = db.prepare(`
+          SELECT id, name, name_en, description, price, currency, unit_label, icon, category, available_for
+          FROM additional_services
+          WHERE property_id = ? AND is_active = 1 AND available_in_widget = 1
+          ORDER BY sort_order
+        `).all(property.id);
+      }
+    } catch { /* table may not exist yet */ }
+
     return NextResponse.json({
       property: {
         id: property.id,
@@ -160,6 +174,7 @@ export async function getWidgetConfig(request: NextRequest) {
         unitTypeId: defaultUnitTypeId,
         nights: 2,
       },
+      services: widgetServices,
     }, { headers: CORS_HEADERS });
   } catch (error: any) {
     console.error('GET /api/widget/config error:', error?.message || error);

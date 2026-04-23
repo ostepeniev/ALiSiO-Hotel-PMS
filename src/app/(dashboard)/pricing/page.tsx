@@ -647,6 +647,9 @@ export default function PricingPage() {
         {/* Test Quote */}
         <TestQuoteSection unitTypes={unitTypes} />
 
+        {/* ═══ Widget Price List ═══ */}
+        <WidgetPriceListSection />
+
         {/* Edit Day Modal */}
         {editDay && <EditDayModal day={editDay} onSave={handleSaveDay} onClose={() => setEditDay(null)} />}
 
@@ -654,5 +657,146 @@ export default function PricingPage() {
         {showBulkEdit && <BulkEditModal onSave={handleBulkSave} onClose={() => setShowBulkEdit(false)} />}
       </div>
     </>
+  );
+}
+
+/* ================================================================
+   Widget Price List Section
+   ================================================================ */
+interface PriceListItem {
+  id: string; category: string; item_code: string; item_name: string;
+  rate_standard: number; rate_holiday: number | null; rate_side_season: number | null;
+  unit_label: string; notes: string | null; sort_order: number; is_active: number;
+}
+
+function WidgetPriceListSection() {
+  const [items, setItems] = useState<PriceListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Partial<PriceListItem>>({});
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    fetch('/api/widget/prices').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setItems(data);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const startEdit = (item: PriceListItem) => {
+    setEditing(item.id);
+    setEditValues({ rate_standard: item.rate_standard, rate_holiday: item.rate_holiday, rate_side_season: item.rate_side_season });
+  };
+
+  const saveEdit = async (id: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/widget/prices', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...editValues }),
+      });
+      if (res.ok) {
+        setItems(prev => prev.map(i => i.id === id ? { ...i, ...editValues } as PriceListItem : i));
+        setEditing(null);
+        setToast('Ціну збережено'); setTimeout(() => setToast(''), 2000);
+      }
+    } catch { /* */ }
+    setSaving(false);
+  };
+
+  const categories = ['glamping', 'buildings', 'camping'];
+  const catLabels: Record<string, string> = { glamping: '🏕️ Glamping', buildings: '🏠 Buildings', camping: '⛺ Camping' };
+
+  if (loading) return null;
+
+  return (
+    <div className="card" style={{ marginTop: 24 }}>
+      {toast && (
+        <div style={{ position: 'fixed', top: 80, right: 24, zIndex: 1000, background: 'var(--accent-success)', color: '#fff', padding: '12px 20px', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
+          <Check size={16} /> {toast}
+        </div>
+      )}
+      <div className="card-header">
+        <h3 className="card-title">
+          <List size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'text-bottom' }} />
+          Прайс-лист (Booking Widget)
+        </h3>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '0 16px 12px' }}>
+        Ці ціни використовуються у віджеті бронювання (book.kempcarlsbad.cz). Змініть тут — віджет підтягне автоматично.
+      </div>
+
+      {categories.map(cat => {
+        const catItems = items.filter(i => i.category === cat);
+        if (catItems.length === 0) return null;
+        return (
+          <div key={cat} style={{ marginBottom: 16 }}>
+            <div style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border-primary)' }}>
+              {catLabels[cat] || cat}
+            </div>
+            <div className="table-wrapper">
+              <table className="table" style={{ fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th>Назва</th>
+                    <th>Standard (Kč)</th>
+                    <th>Holiday (Kč)</th>
+                    <th>Side Season (Kč)</th>
+                    <th>Одиниця</th>
+                    <th>Примітка</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catItems.map(item => (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: 600 }}>{item.item_name}</td>
+                      <td>
+                        {editing === item.id ? (
+                          <input className="form-input" type="number" style={{ width: 90, padding: '4px 8px', fontSize: 13 }}
+                            value={editValues.rate_standard ?? ''} onChange={e => setEditValues(v => ({ ...v, rate_standard: Number(e.target.value) }))} />
+                        ) : (
+                          <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>{item.rate_standard?.toLocaleString()}</span>
+                        )}
+                      </td>
+                      <td>
+                        {editing === item.id ? (
+                          <input className="form-input" type="number" style={{ width: 90, padding: '4px 8px', fontSize: 13 }}
+                            value={editValues.rate_holiday ?? ''} onChange={e => setEditValues(v => ({ ...v, rate_holiday: e.target.value === '' ? null : Number(e.target.value) }))} placeholder="—" />
+                        ) : (
+                          <span style={{ color: item.rate_holiday != null ? '#f59e0b' : 'var(--text-tertiary)' }}>{item.rate_holiday != null ? item.rate_holiday.toLocaleString() : '—'}</span>
+                        )}
+                      </td>
+                      <td>
+                        {editing === item.id ? (
+                          <input className="form-input" type="number" style={{ width: 90, padding: '4px 8px', fontSize: 13 }}
+                            value={editValues.rate_side_season ?? ''} onChange={e => setEditValues(v => ({ ...v, rate_side_season: e.target.value === '' ? null : Number(e.target.value) }))} placeholder="—" />
+                        ) : (
+                          <span style={{ color: item.rate_side_season != null ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>{item.rate_side_season != null ? item.rate_side_season.toLocaleString() : '—'}</span>
+                        )}
+                      </td>
+                      <td style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{item.unit_label}</td>
+                      <td style={{ color: 'var(--text-tertiary)', fontSize: 12, maxWidth: 140 }}>{item.notes || '—'}</td>
+                      <td>
+                        {editing === item.id ? (
+                          <div className="flex gap-1">
+                            <button className="btn btn-sm btn-primary" onClick={() => saveEdit(item.id)} disabled={saving}>
+                              {saving ? <Loader2 size={12} className="animate-pulse" /> : <Save size={12} />}
+                            </button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => setEditing(null)}><X size={12} /></button>
+                          </div>
+                        ) : (
+                          <button className="btn btn-sm btn-ghost btn-icon" onClick={() => startEdit(item)}><Edit3 size={14} /></button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

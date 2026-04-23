@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as portalRepo from '../data/guest-portal.repo';
 // TODO: replace with @shared/translate when shared module exists
 import { extractTexts, extractServiceTexts, getStoredTranslations } from '@/lib/translate';
+import { translateContent, CONTENT_LANGS } from '@/lib/content-translations';
+import { sendAbandonNotifications } from './cart.handlers';
 
 export async function getGuestPortal(
   _request: NextRequest,
@@ -49,6 +51,12 @@ export async function getGuestPortal(
     const orderedServices = portalRepo.getOrderedServices(reservation.id);
     const guestPageConfig = portalRepo.getGuestPageConfig(reservation.unit_type_id, reservation.property_id);
 
+    const propertyName = reservation.property_name || 'Kemp Carlsbad';
+
+    // ── Variant B: send abandon notifications if >30min pending ──────────
+    // Fire-and-forget — does not block the page response
+    sendAbandonNotifications(token, propertyName).catch(() => {});
+
     return NextResponse.json({
       expired: false,
       phase,
@@ -68,7 +76,19 @@ export async function getGuestPortal(
           const cfgTexts = extractTexts(guestPageConfig || {});
           const svcTexts = extractServiceTexts(services as any[]);
           const allTexts = [...new Set([...cfgTexts, ...svcTexts])];
-          return getStoredTranslations(allTexts);
+          const result = getStoredTranslations(allTexts);
+          // Fill any gaps with the static dictionary so the client never falls back to Ukrainian
+          // for known standard content, even when OpenAI translations aren't in the DB yet.
+          for (const text of allTexts) {
+            if (!result[text]) result[text] = {};
+            for (const lang of CONTENT_LANGS) {
+              if (!result[text][lang]) {
+                const staticT = translateContent(text, lang);
+                if (staticT !== text) result[text][lang] = staticT;
+              }
+            }
+          }
+          return result;
         } catch { return {}; }
       })(),
     });

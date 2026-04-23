@@ -1,5 +1,6 @@
 'use client';
 import type { Translations, Lang } from '@/app/guest/[token]/translations';
+import { translateContent } from '@/lib/content-translations';
 
 interface Props {
   data: any;
@@ -8,9 +9,11 @@ interface Props {
   dLeft: number;
   onRegisterClick: () => void;
   isRegistered: boolean;
+  checkInTime?: string;
+  checkOutTime?: string;
 }
 
-export function FarBeforeScreen({ data, t, lang, dLeft, onRegisterClick, isRegistered }: Props) {
+export function FarBeforeScreen({ data, t, lang, dLeft, onRegisterClick, isRegistered, checkInTime, checkOutTime }: Props) {
   const r = data.reservation;
   const cfg = data.guestPageConfig;
 
@@ -32,9 +35,21 @@ export function FarBeforeScreen({ data, t, lang, dLeft, onRegisterClick, isRegis
   const L = labels[lang] || labels.en;
 
   const amenities = (() => {
-    try { return JSON.parse(cfg?.amenities || '[]') as Array<{icon: string; name: string}>; }
+    try { return JSON.parse(cfg?.amenities || '[]') as Array<{ icon: string; name: string; [key: string]: string }>; }
     catch { return []; }
   })();
+
+  const amenityName = (a: { icon: string; name: string; [key: string]: string }): string => {
+    if (lang !== 'uk') {
+      // 1. Per-language column stored in JSON (e.g. name_de)
+      const colKey = `name_${lang}`;
+      if (a[colKey]) return a[colKey];
+      // 2. Static dictionary lookup
+      const translated = translateContent(a.name || '', lang);
+      if (translated !== a.name) return translated;
+    }
+    return a.name || '';
+  };
 
   return (
     <div className="gp-far-before">
@@ -83,14 +98,14 @@ export function FarBeforeScreen({ data, t, lang, dLeft, onRegisterClick, isRegis
       <div className="gp-section">
         <div className="gp-section-title">{L.goodToKnow}</div>
         <div className="gp-list-card" style={{ padding: '8px 16px' }}>
-          {cfg?.check_in_time && (
+          {checkInTime && (
             <div className="gp-info-row">
-              <span>🕓</span><span>{L.checkInAt} <b>{cfg.check_in_time}</b></span>
+              <span>🕓</span><span>{L.checkInAt} <b>{checkInTime}</b></span>
             </div>
           )}
-          {cfg?.check_out_time && (
+          {checkOutTime && (
             <div className="gp-info-row">
-              <span>🕙</span><span>{L.checkOutBy} <b>{cfg.check_out_time}</b></span>
+              <span>🕙</span><span>{L.checkOutBy} <b>{checkOutTime}</b></span>
             </div>
           )}
           <div className="gp-info-row">
@@ -106,7 +121,7 @@ export function FarBeforeScreen({ data, t, lang, dLeft, onRegisterClick, isRegis
           <div className="gp-section-title">{t.yourCabin}</div>
           <div className="gp-amenity-chips">
             {amenities.map((a, i) => (
-              <span key={i} className="gp-amenity-chip">{a.icon} {a.name}</span>
+              <span key={i} className="gp-amenity-chip">{a.icon} {amenityName(a)}</span>
             ))}
           </div>
         </div>
