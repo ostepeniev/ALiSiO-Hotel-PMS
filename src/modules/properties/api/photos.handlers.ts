@@ -55,6 +55,13 @@ export async function uploadPhoto(request: NextRequest) {
     db.prepare(`INSERT INTO ${table} (${fkCol}, url, caption, sort_order) VALUES (?, ?, ?, ?)`)
       .run(entityId, url, caption, sortOrder);
 
+    // Sync with unit_types table if it's a unit_type photo
+    if (entityType === 'unit_type') {
+      const allPhotos = db.prepare(`SELECT url FROM unit_type_photos WHERE unit_type_id = ? ORDER BY sort_order ASC, created_at ASC`).all(entityId) as any[];
+      const photosCsv = allPhotos.map(p => p.url).join(',');
+      db.prepare(`UPDATE unit_types SET photos = ? WHERE id = ?`).run(photosCsv, entityId);
+    }
+
     return NextResponse.json({ success: true, url });
   } catch (error: any) {
     console.error('Photo upload error:', error?.message || error);

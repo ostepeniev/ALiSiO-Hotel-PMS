@@ -225,26 +225,22 @@ function ListingEditModal({ listing, siteId, open, onClose, onRefresh }: {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('unit_type_id', listing.actual_unit_type_id!);
       
-      const res = await fetch('/api/uploads/proxy', {
+      const res = await fetch('/api/photos/upload', {
         method: 'POST',
         body: formData,
       });
       
-      if (res.ok) {
-        const url = await res.text();
-        if (url.startsWith('http')) {
-          setPhotoUrls(prev => [...prev, url.trim()]);
-        } else {
-          throw new Error(url);
-        }
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setPhotoUrls(prev => [...prev, data.url]);
       } else {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Помилка сервера (${res.status})`);
+        throw new Error(data.error || `Помилка завантаження (${res.status})`);
       }
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Помилка завантаження. Спробуйте інше фото або перевірте мережу.');
+      alert(err.message || 'Помилка завантаження. Спробуйте інше фото.');
     } finally {
       setUploading(false);
     }
