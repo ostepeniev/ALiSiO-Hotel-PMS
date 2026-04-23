@@ -2345,6 +2345,60 @@ function runMigrations(database: any) {
       database.exec("ALTER TABLE service_orders ADD COLUMN payment_status TEXT DEFAULT 'none'");
   } catch { /* */ }
 
+  // --- Migration: create widget_price_list table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS widget_price_list (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      category TEXT NOT NULL CHECK (category IN ('glamping', 'buildings', 'camping')),
+      item_code TEXT NOT NULL UNIQUE,
+      item_name TEXT NOT NULL,
+      rate_standard REAL NOT NULL DEFAULT 0,
+      rate_holiday REAL,
+      rate_side_season REAL,
+      unit_label TEXT NOT NULL DEFAULT 'night',
+      notes TEXT,
+      sort_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  // Seed default prices if table is empty
+  try {
+    const plCount = (database.prepare('SELECT COUNT(*) as c FROM widget_price_list').get() as any).c;
+    if (plCount === 0) {
+      const ins = database.prepare(`INSERT INTO widget_price_list (id, category, item_code, item_name, rate_standard, rate_holiday, rate_side_season, unit_label, notes, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const seed = database.transaction(() => {
+        // Glamping
+        ins.run('wpl_tiny_std', 'glamping', 'tiny_house', 'Tiny House', 3900, 5500, null, 'night', 'Max 2 guests, price per house', 1);
+        ins.run('wpl_barn_std', 'glamping', 'barn_house', 'Barn House', 5000, 7000, null, 'night', 'Max 6 guests, price per house', 2);
+        // Buildings — Budova D
+        ins.run('wpl_bd_bed1', 'buildings', 'budova_d_bed_1night', 'Budova D — 1 night bed', 420, 520, null, 'bed/night', '48 beds total', 10);
+        ins.run('wpl_bd_bed2', 'buildings', 'budova_d_bed_2plus', 'Budova D — 2+ nights bed', 390, 470, null, 'bed/night', '48 beds total', 11);
+        ins.run('wpl_bd_room', 'buildings', 'budova_d_room', 'Budova D — Room', 690, null, null, 'room/night', 'Holiday = individual quote', 12);
+        // Buildings — Budova F
+        ins.run('wpl_bf_bed1', 'buildings', 'budova_f_bed_1night', 'Budova F — 1 night bed', 550, 730, null, 'bed/night', '51 beds total', 20);
+        ins.run('wpl_bf_bed2', 'buildings', 'budova_f_bed_2plus', 'Budova F — 2+ nights bed', 490, 680, null, 'bed/night', '51 beds total', 21);
+        ins.run('wpl_bf_room', 'buildings', 'budova_f_room', 'Budova F — Room', 860, null, null, 'room/night', 'Holiday = individual quote', 22);
+        // Camping
+        ins.run('wpl_c_stent', 'camping', 'small_tent', 'Small tent (up to 3×3m)', 100, null, 80, 'night', null, 30);
+        ins.run('wpl_c_ltent', 'camping', 'large_tent', 'Large tent (over 3×3m)', 150, null, 120, 'night', null, 31);
+        ins.run('wpl_c_car', 'camping', 'car', 'Car', 100, null, null, 'night', null, 32);
+        ins.run('wpl_c_minibus', 'camping', 'minibus', 'Minibus / Van', 175, null, null, 'night', null, 33);
+        ins.run('wpl_c_caravan', 'camping', 'caravan', 'Caravan', 200, null, null, 'night', null, 34);
+        ins.run('wpl_c_motorhome', 'camping', 'motorhome', 'Motorhome', 300, null, null, 'night', null, 35);
+        ins.run('wpl_c_moto', 'camping', 'motorcycle', 'Motorcycle', 50, null, null, 'night', null, 36);
+        ins.run('wpl_c_adult', 'camping', 'adult_person', 'Adult', 150, null, 170, 'person/night', 'Tourist tax +25 Kč', 40);
+        ins.run('wpl_c_child', 'camping', 'child_person', 'Child (3-15)', 100, null, 100, 'person/night', 'Under 3 free', 41);
+        ins.run('wpl_c_elec', 'camping', 'electricity', 'Electricity hookup', 120, null, null, 'night', null, 50);
+        ins.run('wpl_c_pet', 'camping', 'pet', 'Pet', 50, null, null, 'animal/night', null, 51);
+        ins.run('wpl_c_mhsvc', 'camping', 'motorhome_service', 'Motorhome cassette service', 100, null, null, 'once', null, 52);
+        ins.run('wpl_c_tax', 'camping', 'tourist_tax', 'Tourist tax', 25, null, null, 'adult/night', 'Mandatory', 60);
+      });
+      seed();
+      console.log('[DB] Seeded widget_price_list with default rates');
+    }
+  } catch (e: any) { console.error('[DB] widget_price_list seed error:', e.message); }
+
 }
 
 // Generate a random 12-char token for guest pages
