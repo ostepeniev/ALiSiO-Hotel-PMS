@@ -721,48 +721,46 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                     )}
                   </div>
                 </div>
-              ) : (
-                (loadingAvail && selectedUnitId) ? null :
+              ) : loadingAvail && selectedUnitId ? null : (
                 availability?.units
                   .filter(u => !selectedUnitId || selectedUnitId === u.id)
                   .map(u => {
-                  const isSelected = selectedUnitId === u.id;
-                  return (
-                    <div
-                      key={u.id}
-                      className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setSelectedUnitId(u.id)}
-                    >
-                      <div className="v3-house-lock-thumb" style={u.photos?.length ? {} : { background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                        {u.photos?.length > 0 ? (
-                          <img src={u.photos[0]} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-                        ) : (
-                          <svg viewBox="0 0 54 54">
-                            <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
-                            <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
-                          </svg>
+                    const isSelected = selectedUnitId === u.id;
+                    return (
+                      <div
+                        key={u.id}
+                        className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setSelectedUnitId(u.id)}
+                      >
+                        <div className="v3-house-lock-thumb" style={u.photos?.length ? {} : { background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                          {u.photos?.length > 0 ? (
+                            <img src={u.photos[0]} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+                          ) : (
+                            <svg viewBox="0 0 54 54">
+                              <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                              <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="v3-house-lock-info">
+                          <div className="v3-house-lock-label">
+                            {isSelected ? `${t.youSelected || 'Ви обрали'} · ${nights} ${t.nightsShort}` : u.typeName}
+                          </div>
+                          <div className="v3-house-lock-name">{u.name}</div>
+                          <div className="v3-house-lock-feat">
+                            до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <div className="v3-house-lock-check">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                              <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
                         )}
                       </div>
-                      <div className="v3-house-lock-info">
-                        <div className="v3-house-lock-label">
-                          {isSelected ? `${t.youSelected || 'Ви обрали'} · ${nights} ${t.nightsShort}` : u.typeName}
-                        </div>
-                        <div className="v3-house-lock-name">{u.name}</div>
-                        <div className="v3-house-lock-feat">
-                          до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
-                        </div>
-                      </div>
-                      {isSelected && (
-                        <div className="v3-house-lock-check">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-                )
+                    );
+                  })
               )}
               {selectedUnitId && availability && availability.units.length > 1 && (
                 <button className="v3-change-unit-btn" onClick={() => setSelectedUnitId(null)}>
