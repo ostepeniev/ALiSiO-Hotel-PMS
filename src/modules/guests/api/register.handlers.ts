@@ -42,13 +42,14 @@ async function syncToGoogleSheets(guests: any[], reservation: any): Promise<void
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(12000),
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15000),
       });
       const text = await resp.text();
-      if (!resp.ok || text.toLowerCase().includes('error')) {
-        console.error('[GuestReg Sheets] Error:', resp.status, text.slice(0, 200));
-      } else {
+      if (resp.ok && !text.toLowerCase().includes('error')) {
         console.log('[GuestReg Sheets] Synced:', payload.full_name);
+      } else {
+        console.error('[GuestReg Sheets] Error:', resp.status, text.slice(0, 200));
       }
     } catch (e: any) {
       console.error('[GuestReg Sheets] Failed:', e.message);
