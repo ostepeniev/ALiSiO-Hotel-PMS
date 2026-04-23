@@ -7,10 +7,17 @@ export default async function WidgetPage({ params }: { params: Promise<{ siteSlu
   const { siteSlug } = await params;
   const db = getDb();
 
-  const site = db.prepare("SELECT id, widget_config FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
+  const site = db.prepare("SELECT id, design_config, widget_config FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
 
   if (!site) {
     return notFound();
+  }
+
+  let design = {};
+  if (site.design_config) {
+    try {
+      design = JSON.parse(site.design_config);
+    } catch { /* ignore */ }
   }
 
   let thankYouUrl = '';
@@ -23,7 +30,7 @@ export default async function WidgetPage({ params }: { params: Promise<{ siteSlu
 
   return (
     <>
-      <BookingV3 siteId={site.id} siteSlug={siteSlug} thankYouUrl={thankYouUrl} />
+      <BookingV3 siteId={site.id} siteSlug={siteSlug} thankYouUrl={thankYouUrl} design={design} />
     </>
   );
 }

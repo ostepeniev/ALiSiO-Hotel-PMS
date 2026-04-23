@@ -302,6 +302,10 @@
   font-family: 'Inter', sans-serif;
   font-size: 16px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .v3-house-lock-feat {
@@ -338,6 +342,8 @@
   margin-bottom: 12px;
   cursor: pointer;
   box-shadow: var(--shadow, none);
+  overflow: hidden; /* Prevent border growth */
+  box-sizing: border-box;
 }
 
 .v3-date-cell {
@@ -353,6 +359,7 @@
 .v3-date-cell.active {
   background: rgba(47, 79, 43, .05);
   box-shadow: inset 0 0 0 1px var(--moss);
+  position: relative; /* Ensure it doesn't shift others */
 }
 
 .v3-date-cell-label {
