@@ -1,4 +1,5 @@
 import { createCheckoutSession as createTeyaSession } from './teya-client';
+import { eventBus } from '@core/event-bus';
 import type { PaymentIntent, PaymentSession } from './types';
 
 export async function createPaymentSession(intent: PaymentIntent): Promise<PaymentSession> {
@@ -25,6 +26,16 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
     expiresAt: intent.expiresAt,
     credentials: intent.credentials,
   });
+
+  eventBus
+    .emit('payment.session_created', {
+      sessionId: session.id,
+      provider: 'teya',
+      intentKind: intent.kind,
+      amount: intent.amount,
+      currency: intent.currency,
+    })
+    .catch((e) => console.error('[payments] session_created emit error:', e));
 
   return {
     sessionId: session.id,

@@ -2,9 +2,20 @@
 import { NextResponse } from 'next/server';
 import { verifyWebhookSignature } from '../domain/teya-client';
 import { getDb } from '@core/db';
+import { eventBus } from '@core/event-bus';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 // TODO: replace with eventBus.emit('crm.payment_received') when crm module is migrated
 import { onPaymentReceived } from '@/lib/crm/stage-transitions';
+
+function resolveIntentKind(metadata: Record<string, string> | undefined): string {
+  const source = metadata?.source || '';
+  if (source === 'guest_booking_payment') return 'booking_balance';
+  if (source === 'guest_cart') return 'service_cart';
+  if (source === 'guest_page') return 'service_standalone';
+  if (source === 'crm_deposit') return 'booking_deposit';
+  if (metadata?.reservation_id) return 'booking_full';
+  return 'unknown';
+}
 
 export async function teyaWebhook(req: Request): Promise<NextResponse> {
   try {
@@ -25,10 +36,37 @@ export async function teyaWebhook(req: Request): Promise<NextResponse> {
     console.log('[Teya Webhook] Parsed event:', eventType);
 
     const db = getDb();
-    if (isPaymentSuccess(eventType, event)) handlePaymentSuccess(db, event, eventType);
-    else if (isPaymentFailed(eventType, event)) handlePaymentFailed(db, event);
-    else if (isRefund(eventType)) handleRefund(db, event);
-    else console.log('[Teya Webhook] Unhandled event:', eventType);
+    const metadata = event.data?.metadata || event.metadata;
+    const intentKind = resolveIntentKind(metadata);
+
+    if (isPaymentSuccess(eventType, event)) {
+      handlePaymentSuccess(db, event, eventType);
+      const { sessionId, amount, currency } = extractPaymentRef(event);
+      if (sessionId) {
+        eventBus
+          .emit('payment.completed', {
+            sessionId,
+            provider: 'teya',
+            intentKind,
+            paymentId: sessionId,
+            amount: amount > 1000 ? amount / 100 : amount,
+            currency,
+          })
+          .catch((e) => console.error('[Teya Webhook] emit completed error:', e));
+      }
+    } else if (isPaymentFailed(eventType, event)) {
+      handlePaymentFailed(db, event);
+      const { sessionId } = extractPaymentRef(event);
+      if (sessionId) {
+        eventBus
+          .emit('payment.failed', { sessionId, provider: 'teya', intentKind })
+          .catch((e) => console.error('[Teya Webhook] emit failed error:', e));
+      }
+    } else if (isRefund(eventType)) {
+      handleRefund(db, event);
+    } else {
+      console.log('[Teya Webhook] Unhandled event:', eventType);
+    }
 
     return NextResponse.json({ received: true });
   } catch (err: unknown) {

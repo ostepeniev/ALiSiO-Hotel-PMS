@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDb } from '@core/db';
+import { eventBus } from '@core/event-bus';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 const WEBHOOK_KEYS: Record<string, string> = {
@@ -105,6 +106,8 @@ export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
     const company = metadata.company || 'unknown';
     const companyLabel = company === 'camping' ? '⛺ Кемпінг' : '🏕 Глемпінг';
 
+    const intentKind = metadata.source === 'crm_deposit' ? 'booking_deposit' : 'unknown';
+
     switch (eventType) {
       case 'payment.succeeded.v1': {
         const transactionId = event.data?.id || '';
@@ -120,6 +123,19 @@ export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
             `✅ <b>Оплата отримана!</b>\n\n💳 ${companyLabel}\n💰 Сума: <b>${amountCzk} ${currency}</b>\n🆔 Session: <code>${sessionId}</code>\n🔗 Transaction: <code>${transactionId}</code>`
           ).catch(() => {});
         }
+
+        if (sessionId) {
+          eventBus
+            .emit('payment.completed', {
+              sessionId,
+              provider: 'teya',
+              intentKind,
+              paymentId: sessionId,
+              amount: amountCzk,
+              currency,
+            })
+            .catch((e) => console.error('[Teya-Bot Webhook] emit completed error:', e));
+        }
         break;
       }
       case 'payment.failed.v1': {
@@ -129,6 +145,12 @@ export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
         await sendTelegramMessage(
           `❌ <b>Оплата не пройшла</b>\n\n${isDeposit ? `👤 ${guestName}\n💳 Депозит CRM` : `💳 ${companyLabel}`}\n🆔 Session: <code>${sessionId}</code>`
         ).catch(() => {});
+
+        if (sessionId) {
+          eventBus
+            .emit('payment.failed', { sessionId, provider: 'teya', intentKind })
+            .catch((e) => console.error('[Teya-Bot Webhook] emit failed error:', e));
+        }
         break;
       }
       case 'refund.succeeded.v1': {
