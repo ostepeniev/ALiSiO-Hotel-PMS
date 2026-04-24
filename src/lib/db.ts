@@ -1670,6 +1670,36 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_org ON finance_counterparties(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_parent ON finance_counterparties(parent_id)');
 
+  // --- Finance PR #7: auto-rules + match log ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_auto_rules (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      op_type TEXT NOT NULL CHECK (op_type IN ('income','expense','any')),
+      conditions_json TEXT NOT NULL DEFAULT '[]',
+      actions_json TEXT NOT NULL DEFAULT '{}',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      stop_on_match INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_ar_org ON fin_auto_rules(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_ar_active ON fin_auto_rules(is_active, sort_order)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_auto_rule_matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      rule_id TEXT NOT NULL REFERENCES fin_auto_rules(id) ON DELETE CASCADE,
+      operation_id TEXT NOT NULL REFERENCES fin_operations(id) ON DELETE CASCADE,
+      matched_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_arm_rule ON fin_auto_rule_matches(rule_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_arm_op ON fin_auto_rule_matches(operation_id)');
+
   // --- Finance PR #5: flat tags table (cross-cutting labels on operations) ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS finance_tags (

@@ -40,3 +40,9 @@ export {
 export {
   createPaymentOperation, hasPaymentOperation, deletePaymentOperationsForReservation,
 } from './payment-bridge';
+
+// PR #7: auto-rules
+export {
+  listAutoRules, createAutoRule, updateAutoRule, deleteAutoRule,
+  toggleAutoRule, moveAutoRule, applyAutoRulesToOperations, autoMatchCounterpartiesAllOps,
+} from './auto-rules.handlers';

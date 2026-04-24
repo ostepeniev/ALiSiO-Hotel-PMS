@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createOperationInTx, recalcReservationPaymentStatus } from './operations.handlers';
+import { loadActiveRules, applyRulesToOperation } from '../data/auto-rules-engine';
 
 export async function listBankStatements(): Promise<NextResponse> {
   try {
@@ -83,6 +84,13 @@ export async function updateBankTransaction(request: Request): Promise<NextRespo
           SELECT COUNT(*) FROM bank_transactions WHERE statement_id = ? AND match_status IN ('confirmed', 'manual', 'auto_matched')
         ) WHERE id = ?
       `).run(tx.statement_id, tx.statement_id);
+
+      // Apply auto-rules to the newly-created operation (auto-categorize, auto-match counterparty)
+      const activeRules = loadActiveRules(db, orgRow.id);
+      if (activeRules.length > 0) {
+        const newOp = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(operationId) as any;
+        if (newOp) applyRulesToOperation(db, newOp, activeRules, orgRow.id);
+      }
     }
 
     const updated = db.prepare(`

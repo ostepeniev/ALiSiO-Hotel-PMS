@@ -24,6 +24,10 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
   const [accountFromId, setAccountFromId] = useState<string>(initial?.account_from_id || (opType !== 'income' ? accounts[0]?.id || '' : ''));
   const [accountToId, setAccountToId] = useState<string>(initial?.account_to_id || (opType !== 'expense' ? accounts[0]?.id || '' : ''));
   const [paidAt, setPaidAt] = useState((initial?.paid_at || new Date().toISOString()).substring(0, 10));
+  const [accruedAt, setAccruedAt] = useState((initial?.accrued_at || initial?.paid_at || new Date().toISOString()).substring(0, 10));
+  const [accrualDiffers, setAccrualDiffers] = useState(
+    !!initial && !!initial.accrued_at && !!initial.paid_at && initial.accrued_at.substring(0, 10) !== initial.paid_at.substring(0, 10)
+  );
   const [categoryId, setCategoryId] = useState<string>(initial?.category_id || '');
   const [projectId, setProjectId] = useState<string>(initial?.project_id || '');
   const [counterpartyId, setCounterpartyId] = useState<string>(initial?.counterparty_id || '');
@@ -58,6 +62,7 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
       amount: amt,
       currency,
       paid_at: paidAt,
+      accrued_at: accrualDiffers ? accruedAt : paidAt,
       comment: comment || null,
       source: 'manual',
       status: 'completed',
@@ -157,9 +162,24 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
           </select>
         </Field>
 
-        <Field label="Дата">
+        <Field label="Дата платежу">
           <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} style={input} />
         </Field>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={accrualDiffers} onChange={(e) => setAccrualDiffers(e.target.checked)} />
+            Дата угоди (нарахування) відрізняється
+          </label>
+          {accrualDiffers && (
+            <div style={{ marginTop: 6 }}>
+              <input type="date" value={accruedAt} onChange={(e) => setAccruedAt(e.target.value)} style={input} />
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                Використовується у P&L-звіті: коли гроші «зароблені» чи «витрачені» економічно (не коли фактично пройшли).
+              </div>
+            </div>
+          )}
+        </div>
 
         <Field label="Коментар (опц.)">
           <textarea value={comment} onChange={(e) => setComment(e.target.value)} style={{ ...input, minHeight: 50, resize: 'vertical' }} />
