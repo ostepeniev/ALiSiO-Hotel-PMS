@@ -22,8 +22,15 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 | `getExpense(req, ctx)` | Отримати витрату |
 | `updateExpense(req, ctx)` | Оновити витрату |
 | `deleteExpense(req, ctx)` | Видалити витрату |
-| `listExpenseCategories()` | Категорії витрат |
-| `createExpenseCategory(req)` | Додати категорію |
+| `listExpenseCategories()` | Категорії витрат (legacy — зберігається для сумісності) |
+| `createExpenseCategory(req)` | Додати категорію (legacy) |
+| `listCategories(req)` | Плоский список категорій (?op_type=, ?archived=1) |
+| `getCategoryTree(req)` | Дерево категорій + `byOpType` групування |
+| `createCategory(req)` | Нова категорія/підкатегорія — підкатегорія успадковує `op_type`/`classifier` |
+| `updateCategory(req, ctx)` | Оновлення. `op_type`/`classifier` доступні лише для кореня |
+| `archiveCategory(req, ctx)` | Архівація (каскадом на дітей) |
+| `deleteCategory(req, ctx)` | Видалення (тільки якщо немає дітей і немає зв'язаних операцій) |
+| `moveCategory(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop) |
 | `listBusinessUnits()` | Бізнес-одиниці |
 | `listCapex()` | Список CapEx |
 | `createCapex(req)` | Додати CapEx |

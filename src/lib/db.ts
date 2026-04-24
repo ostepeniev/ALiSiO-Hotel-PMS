@@ -1356,6 +1356,33 @@ function runMigrations(database: any) {
     }
   }
 
+  // --- Migration: add hierarchy + op_type + classifier to expense_categories (Finmap PR #2) ---
+  try {
+    const ecCols = database.prepare("PRAGMA table_info(expense_categories)").all() as { name: string }[];
+    const hasOpType = ecCols.some((c) => c.name === 'op_type');
+    if (!hasOpType) {
+      database.exec("ALTER TABLE expense_categories ADD COLUMN parent_id TEXT REFERENCES expense_categories(id)");
+      database.exec("ALTER TABLE expense_categories ADD COLUMN op_type TEXT");
+      database.exec("ALTER TABLE expense_categories ADD COLUMN classifier TEXT");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_ec_parent ON expense_categories(parent_id)");
+
+      // Backfill: map existing std_group → op_type + classifier
+      database.exec("UPDATE expense_categories SET op_type = 'income',    classifier = 'other'       WHERE std_group = 'Revenue'");
+      database.exec("UPDATE expense_categories SET op_type = 'expense',   classifier = 'cogs'        WHERE std_group = 'COGS'");
+      database.exec("UPDATE expense_categories SET op_type = 'expense',   classifier = 'operational' WHERE std_group = 'OPEX'");
+      database.exec("UPDATE expense_categories SET classifier = 'variable' WHERE id = 'ec_variable'");
+      database.exec("UPDATE expense_categories SET op_type = 'expense',   classifier = 'tax'         WHERE std_group = 'Taxes'");
+      database.exec("UPDATE expense_categories SET op_type = 'expense',   classifier = 'capex'       WHERE std_group = 'CAPEX'");
+      database.exec("UPDATE expense_categories SET op_type = 'income',    classifier = 'financing'   WHERE id = 'ec_investors'");
+      database.exec("UPDATE expense_categories SET op_type = 'transfer',  classifier = 'other'       WHERE id = 'ec_transfer'");
+      database.exec("UPDATE expense_categories SET op_type = 'other',     classifier = 'other'       WHERE op_type IS NULL");
+
+      console.log('[DB] Extended expense_categories with parent_id/op_type/classifier + backfilled seed rows');
+    }
+  } catch (e: any) {
+    console.log('[DB] expense_categories hierarchy migration note:', e.message);
+  }
+
   // --- Migration: create expenses table ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS expenses (

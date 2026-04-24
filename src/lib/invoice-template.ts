@@ -45,9 +45,8 @@ const SUPPLIER = {
   country: 'Česká republika',
   ico: '234 30 567',
   dic: null as string | null, // neplátce DPH
-  court: 'Krajský soud v Plzni, oddíl C, vložka 46931',
-  email: 'info@alisio.cz',
-  web: 'alisio.swipescape.eu',
+  email: 'kemp-carlsbad@email.cz',
+  web: 'kemp-carlsbad.cz',
 };
 
 const PAYMENT_METHODS: Record<string, string> = {
@@ -485,7 +484,6 @@ export function renderInvoiceHtml(data: InvoiceData): string {
         <div class="company-meta">
           ${SUPPLIER.street}, ${SUPPLIER.zip} ${SUPPLIER.city}<br>
           IČO: ${SUPPLIER.ico} &nbsp;|&nbsp; Neplátce DPH<br>
-          ${SUPPLIER.court}<br>
           ${SUPPLIER.email} &nbsp;|&nbsp; ${SUPPLIER.web}
         </div>
       </div>
@@ -613,8 +611,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       <div class="legal-notice">
         Tato faktura slouží jako doklad o provedené platbě za ubytovací služby.
         Fakturující subjekt <strong>${SUPPLIER.name}</strong>, IČO ${SUPPLIER.ico}, není plátcem daně z přidané hodnoty
-        dle § 6 zákona č. 235/2004 Sb.<br>
-        Zapsáno: ${SUPPLIER.court}.
+        dle § 6 zákona č. 235/2004 Sb.
       </div>
       <div class="signature-block">
         <div class="signature-date">V Karlových Varech dne ${formatDate(data.issued_at)}</div>

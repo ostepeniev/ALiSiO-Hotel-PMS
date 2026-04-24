@@ -217,7 +217,7 @@ function BookingsDesktop() {
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('resort');
   const [paymentFilter, setPaymentFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
+  const [dateFrom, setDateFrom] = useState(() => new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [sortCol, setSortCol] = useState<string>('check_in');
@@ -621,6 +621,7 @@ function BookingsDesktop() {
       if (res.ok) {
         showToast(`Статус змінено на: ${STATUS_MAP[newStatus]?.label || newStatus}`);
         await fetchBookings();
+        fetchAlerts();
         if (viewBooking && viewBooking.id === id) {
           setViewBooking({ ...viewBooking, status: newStatus });
         }
@@ -836,25 +837,55 @@ function BookingsDesktop() {
         {/* ── Alert Banner ── */}
         {alerts.length > 0 && (
           <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {alerts.slice(0, 5).map((a: any, i: number) => (
+            {alerts.slice(0, 8).map((a: any, i: number) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
-                borderRadius: 'var(--radius-md)', fontSize: 13, cursor: 'pointer',
+                borderRadius: 'var(--radius-md)', fontSize: 13,
                 background: a.severity === 'danger' ? 'rgba(239,68,68,0.1)' : a.severity === 'warning' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)',
                 border: `1px solid ${a.severity === 'danger' ? 'rgba(239,68,68,0.3)' : a.severity === 'warning' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
                 color: a.severity === 'danger' ? '#ef4444' : a.severity === 'warning' ? '#f59e0b' : '#3b82f6',
-              }} onClick={() => {
-                const booking = bookings.find(b => b.id === a.bookingId);
-                if (booking) openViewBooking(booking);
               }}>
-                {a.severity === 'danger' ? <AlertTriangle size={16} /> : a.severity === 'warning' ? <Bell size={16} /> : <FileText size={16} />}
-                <span style={{ fontWeight: 600 }}>{a.guestName}</span>
-                <span style={{ color: 'var(--text-secondary)' }}>{a.message}</span>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={async () => {
+                  let booking = bookings.find(b => b.id === a.bookingId);
+                  if (!booking) {
+                    try {
+                      const res = await fetch(`/api/bookings/${a.bookingId}`);
+                      if (res.ok) booking = await res.json();
+                    } catch {}
+                  }
+                  if (booking) openViewBooking(booking);
+                }}>
+                  {a.severity === 'danger' ? <AlertTriangle size={16} /> : a.severity === 'warning' ? <Bell size={16} /> : <FileText size={16} />}
+                  <span style={{ fontWeight: 600 }}>{a.guestName}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{a.message}</span>
+                </div>
+                <button
+                  title={a.type === 'overdue_arrival' ? 'Позначити no-show та прибрати' : 'Приховати'}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (a.type === 'overdue_arrival') {
+                      await fetch(`/api/bookings/${a.bookingId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'no_show' }),
+                      });
+                      fetchBookings();
+                    }
+                    setAlerts(prev => prev.filter((_: any, idx: number) => idx !== i));
+                  }}
+                  style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    color: 'inherit', opacity: 0.5, padding: '2px 4px',
+                    borderRadius: 4, display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  <X size={14} />
+                </button>
               </div>
             ))}
-            {alerts.length > 5 && (
+            {alerts.length > 8 && (
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
-                + ще {alerts.length - 5} сповіщень
+                + ще {alerts.length - 8} сповіщень
               </div>
             )}
           </div>

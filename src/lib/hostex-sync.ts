@@ -246,7 +246,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
 
   // Check if already in DB
   const existing = db.prepare(
-    'SELECT id, payment_status, guest_page_token FROM reservations WHERE hostex_reservation_code = ?'
+    'SELECT id, status, payment_status, guest_page_token FROM reservations WHERE hostex_reservation_code = ?'
   ).get(res.reservation_code) as any;
 
   const checkIn = normalizeHostexDate(res.check_in_date);
@@ -260,10 +260,20 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       ? generateGuestToken() : null;
     const tokenClause = newToken ? ', guest_page_token = ?' : '';
 
+    // Status priority: don't let sync downgrade a status that was set locally in PMS
+    // e.g. if PMS has checked_in but Hostex still says confirmed → keep checked_in
+    const STATUS_PRIORITY: Record<string, number> = {
+      tentative: 1, confirmed: 2, checked_in: 3, checked_out: 4, cancelled: 5, no_show: 5,
+    };
+    const existingStatus = existing.status as string;
+    const existingPriority = STATUS_PRIORITY[existingStatus] || 0;
+    const incomingPriority = STATUS_PRIORITY[status] || 0;
+    const finalStatus = incomingPriority >= existingPriority ? status : existingStatus;
+
     const params: any[] = [
       checkIn, checkOut, nights,
       res.number_of_adults, res.number_of_children, res.number_of_infants,
-      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
+      finalStatus, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
       totalCzk, mapChannelToSource(res.channel_type),
       res.channel_type, res.channel_id, res.listing_id,
       totalEur, commissionEur, netEur,

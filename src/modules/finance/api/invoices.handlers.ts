@@ -133,13 +133,27 @@ export async function getInvoiceHtml(
         r.check_in, r.check_out, r.nights, r.adults, r.children,
         u.name as unit_name, u.code as unit_code,
         g.first_name as guest_first_name, g.last_name as guest_last_name,
-        g.email as guest_email, g.address as guest_address,
-        g.city as guest_city, g.country as guest_country,
+        g.email as guest_email,
+        -- address: prefer primary guest, fall back to first registered guest
+        COALESCE(NULLIF(g.address,''), rg.address) as guest_address,
+        COALESCE(NULLIF(g.city,''),    rg.city)    as guest_city,
+        COALESCE(NULLIF(g.country,''),rg.country)  as guest_country,
         p.method as payment_method, p.notes as payment_notes
       FROM invoices i
       JOIN reservations r ON i.reservation_id = r.id
       JOIN units u ON r.unit_id = u.id
       JOIN guests g ON r.guest_id = g.id
+      -- first registered guest for this reservation (by registration date)
+      LEFT JOIN (
+        SELECT gr.reservation_id,
+               rg2.address, rg2.city, rg2.country
+        FROM guest_registrations gr
+        JOIN guests rg2 ON gr.guest_id = rg2.id
+        WHERE (rg2.address IS NOT NULL AND rg2.address != '')
+           OR (rg2.city IS NOT NULL AND rg2.city != '')
+        ORDER BY gr.registered_at ASC
+        LIMIT 1
+      ) rg ON rg.reservation_id = r.id
       LEFT JOIN payments p
         ON p.reservation_id = r.id AND p.status = 'completed'
       WHERE i.id = ?
