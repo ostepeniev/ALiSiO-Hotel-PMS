@@ -723,8 +723,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               ) : (
                 (loadingAvail && selectedUnitId) ? null : (
-                <>
-                {availability?.units
+                availability?.units
                   .filter(u => !selectedUnitId || selectedUnitId === u.id)
                   .map(u => {
                   const isSelected = selectedUnitId === u.id;
@@ -762,8 +761,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                       )}
                     </div>
                   );
-                })}
-                </>
+                })
                 )
               )}
               {selectedUnitId && availability && availability.units.length > 1 && (
