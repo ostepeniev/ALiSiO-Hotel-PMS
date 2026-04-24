@@ -23,10 +23,10 @@ export default function ReportsLandingPage() {
     { id: 'pnl', title: 'P&L', desc: 'Прибутки та збитки з класифікатором', icon: <TrendingUp size={24} />, href: '/finance/reports/pnl' },
     { id: 'indicators', title: 'Фінансові показники', desc: 'EBITDA, Gross Profit, Margin % за місяць', icon: <BarChart3 size={24} />, onClick: () => setShowIndicators(true) },
     { id: 'log', title: 'Історія дій', desc: 'Усі операції в хронологічному порядку', icon: <History size={24} />, href: '/finance/log' },
-    { id: 'statement', title: 'Виписка за рахунком', desc: 'Звіт з банківських рахунків', icon: <FileText size={24} />, disabled: true },
-    { id: 'projects', title: 'Проєкти', desc: 'Дохід/витрати по проєктах', icon: <FolderKanban size={24} />, disabled: true },
-    { id: 'balance', title: 'Баланс', desc: 'Активи та пасиви', icon: <Scale size={24} />, disabled: true },
-    { id: 'plan-fact', title: 'План/Факт', desc: 'Порівняння планових і фактичних результатів', icon: <Target size={24} />, disabled: true },
+    { id: 'statement', title: 'Виписка за рахунком', desc: 'Звіт з банківських рахунків з running balance', icon: <FileText size={24} />, href: '/finance/reports/statement' },
+    { id: 'projects', title: 'Проєкти', desc: 'Прибутковість по проєктах (дохід/витрата/маржа)', icon: <FolderKanban size={24} />, href: '/finance/reports/projects' },
+    { id: 'balance', title: 'Баланс', desc: 'Активи та пасиви на обрану дату', icon: <Scale size={24} />, href: '/finance/reports/balance' },
+    { id: 'plan-fact', title: 'План/Факт', desc: 'Порівняння планових і фактичних результатів', icon: <Target size={24} />, href: '/finance/reports/plan-fact' },
   ];
 
   return (

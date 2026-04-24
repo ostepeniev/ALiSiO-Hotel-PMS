@@ -1679,6 +1679,23 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_org ON finance_counterparties(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_parent ON finance_counterparties(parent_id)');
 
+  // --- Finance PR #10: budgets (plan/fact) ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_budgets (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      category_id TEXT REFERENCES expense_categories(id),
+      project_id TEXT REFERENCES business_units(id),
+      planned_amount REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(organization_id, year, month, category_id, project_id)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_budgets_period ON fin_budgets(organization_id, year, month)');
+
   // --- Finance PR #8: recurring templates + system state ---
   database.exec(`
     CREATE TABLE IF NOT EXISTS fin_recurring_templates (
