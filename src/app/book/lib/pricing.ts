@@ -89,21 +89,28 @@ export type GlampingUnit = 'tiny' | 'barn';
 
 export interface NightBreakdown { date: string; type: 'standard' | 'holiday'; price: number; }
 
-export function calcGlampingPrice(unit: GlampingUnit, checkIn: string, checkOut: string, prices: PriceItem[]) {
+export function calcGlampingPrice(unit: GlampingUnit, checkIn: string, checkOut: string, prices: PriceItem[], adults = 2) {
   const code = unit === 'tiny' ? 'tiny_house' : 'barn_house';
   const item = getRate(prices, code);
   const std = item?.rate_standard ?? (unit === 'tiny' ? 3900 : 5000);
   const hol = item?.rate_holiday ?? (unit === 'tiny' ? 5500 : 7000);
   const maxGuests = unit === 'tiny' ? 2 : 6;
+  const taxItem = getRate(prices, 'tourist_tax');
+  const taxRate = taxItem?.rate_standard ?? 25;
 
   const nights = getNightDates(checkIn, checkOut);
   const breakdown: NightBreakdown[] = nights.map(date => {
     const isHol = isHolidayOrWeekend(date);
     return { date, type: isHol ? 'holiday' : 'standard', price: isHol ? hol : std };
   });
-  const total = breakdown.reduce((s, n) => s + n.price, 0);
+  const accommodationTotal = breakdown.reduce((s, n) => s + n.price, 0);
+  const touristTax = adults * taxRate * nights.length;
+  const total = accommodationTotal + touristTax;
   const deposit = Math.round(total * 0.3);
-  return { breakdown, total, deposit, remaining: total - deposit, nights: nights.length, maxGuests };
+  return {
+    breakdown, total, accommodationTotal, touristTax, taxRate, adults,
+    deposit, remaining: total - deposit, nights: nights.length, maxGuests,
+  };
 }
 
 // ─── Buildings Pricing ───────────────────────────────
@@ -154,6 +161,7 @@ export function calcBuildingPrice(
     return { total, deposit, remaining: total - deposit, nights: numNights, isGroup, hasHolidayNonShared: false, breakdown: [] as NightBreakdown[], K, kauce, subtotal };
   }
 
+  // Shared mode
   const bedRate = is1Night ? bed1 : bed2;
   const stdNights = nightDates.filter(d => !isHoliday(d)).length;
   const holNights = nightDates.filter(d => isHoliday(d)).length;
@@ -166,12 +174,21 @@ export function calcBuildingPrice(
   const sleepingBagDiscount = ownSleepingBag ? persons * 100 * numNights : 0;
   const kauce = isGroup ? 5000 : 0;
 
-  const subtotal = Math.round(adultStd + adultHol + childStd + childHol - sleepingBagDiscount);
+  const accommodationSubtotal = Math.round(adultStd + adultHol + childStd + childHol - sleepingBagDiscount);
+  const taxItem = getRate(prices, 'tourist_tax');
+  const taxRate = taxItem?.rate_standard ?? 25;
+  const touristTax = adults * taxRate * numNights;
+  const subtotal = accommodationSubtotal + touristTax;
   const total = subtotal + kauce;
   const depositPct = isGroup ? 0.5 : 0.3;
   const deposit = Math.round(subtotal * depositPct);
 
-  return { total, deposit, remaining: total - deposit, nights: numNights, isGroup, hasHolidayNonShared: false, breakdown: [] as NightBreakdown[], K, kauce, subtotal, sleepingBagDiscount };
+  return {
+    total, deposit, remaining: total - deposit, nights: numNights, isGroup,
+    hasHolidayNonShared: false, breakdown: [] as NightBreakdown[], K, kauce, subtotal,
+    accommodationSubtotal, sleepingBagDiscount, touristTax, taxRate,
+    adults, persons,
+  };
 }
 
 // ─── Camping Pricing (multi-select) ──────────────────

@@ -117,7 +117,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
       if (!res) return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
       
-      amount = res.total_price;
+      amount = res.total_price || 0;
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
 
@@ -126,8 +126,17 @@ export async function createWidgetCheckoutSession(req: Request) {
         "SELECT SUM(total_price) as svc_total FROM booking_service_orders WHERE reservation_id = ? AND payment_status IN ('none','pending',NULL)"
       ).get(reservation_id) as any;
       if (svcOrders?.svc_total) amount += svcOrders.svc_total;
+
+      // If DB amount is still 0 (brand new reservation), use client-sent amount
+      if (amount <= 0 && clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
+        amount = clientAmount;
+        if (clientCurrency) currency = clientCurrency;
+        if (clientDescription) description = clientDescription;
+        // Backfill reservation with the correct total
+        try { db.prepare('UPDATE reservations SET total_price = ?, currency = ? WHERE id = ?').run(amount, currency, reservation_id); } catch { /* */ }
+      }
+      // Legacy fallback: booking/page.tsx sends amount directly (no reservation_id)
     } else if (clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
-      // Legacy fallback: booking/page.tsx sends amount directly
       amount = clientAmount;
       currency = clientCurrency || 'CZK';
       description = clientDescription || 'ALiSiO Booking';

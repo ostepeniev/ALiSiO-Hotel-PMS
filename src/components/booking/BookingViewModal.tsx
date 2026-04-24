@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Edit3, X, Save, Plus, Check, ArrowRight, Copy, ExternalLink,
-  Loader2, Trash2, Phone,
+  Loader2, Trash2, Phone, Receipt, RefreshCw,
 } from 'lucide-react';
 
 function Modal({ open, onClose, title, children, footer, size }: {
@@ -73,6 +73,34 @@ export default function BookingViewModal({
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
   const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
   const [savingReg, setSavingReg] = useState(false);
+  const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
+  const [reissuing, setReissuing] = useState(false);
+
+  // Load current invoice whenever modal opens or booking changes
+  useEffect(() => {
+    if (!b?.id) return;
+    fetch(`/api/bookings/${b.id}/invoice`)
+      .then(r => r.json())
+      .then(data => setInvoice(data))
+      .catch(() => setInvoice(null));
+  }, [b?.id, b?.payment_status]);
+
+  const handleReissue = async () => {
+    if (!invoice) return;
+    if (!confirm(`Перевиставити фактуру ${invoice.invoice_number}? Стара буде скасована.`)) return;
+    setReissuing(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/invoice/reissue`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setInvoice(data.invoice);
+        showToast(`✅ Фактуру ${data.invoice.invoice_number} перевиставлено`);
+      } else {
+        showToast('❌ Помилка перевиставлення');
+      }
+    } catch { showToast('❌ Помилка'); }
+    finally { setReissuing(false); }
+  };
 
   const total = b.total_price || 0;
   const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
@@ -292,6 +320,31 @@ export default function BookingViewModal({
                 onClick={async () => { const ns = b.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested'; await fetch(`/api/bookings/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_status: ns }) }); setBooking({ ...b, payment_status: ns }); onFetchBookings(); showToast(ns === 'payment_requested' ? 'Запит надіслано' : 'Скасовано'); }}>
                 ✉ Запит оплати
               </button>
+
+              {/* ── Invoice block ── */}
+              {invoice ? (
+                <div style={{ marginTop: 8, padding: '12px 14px', background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Receipt size={16} style={{ color: '#22c55e', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>Фактура {invoice.invoice_number}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{invoice.issued_at} · {invoice.amount.toLocaleString()} {invoice.currency}</div>
+                  </div>
+                  <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }}
+                    onClick={() => window.open(`/api/invoices/${invoice.id}`, '_blank')}>
+                    👁 Переглянути
+                  </button>
+                  <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '4px 8px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={handleReissue} disabled={reissuing}>
+                    {reissuing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    Перевиставити
+                  </button>
+                </div>
+              ) : isPaid ? (
+                <div style={{ marginTop: 8, padding: '10px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Receipt size={14} />
+                  Інвойс ще не згенеровано
+                </div>
+              ) : null}
             </div>
           )}
 

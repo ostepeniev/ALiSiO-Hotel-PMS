@@ -84,6 +84,25 @@ export function generateInvoiceForReservation(reservationId: string): string | n
   }
 }
 
+/**
+ * Cancel an existing invoice and generate a fresh one for the same reservation.
+ * The old invoice is soft-deleted (status → 'cancelled'), not removed from DB.
+ */
+export function reissueInvoiceForReservation(reservationId: string): string | null {
+  try {
+    const db = getDb();
+    // Cancel all existing non-cancelled invoices for this reservation
+    db.prepare(
+      "UPDATE invoices SET status = 'cancelled' WHERE reservation_id = ? AND status != 'cancelled'"
+    ).run(reservationId);
+    // Force-create a new invoice (existing check now passes since all are cancelled)
+    return generateInvoiceForReservation(reservationId);
+  } catch (e: any) {
+    console.error('[Invoices] reissue error:', e.message);
+    return null;
+  }
+}
+
 // ─── API Handlers ─────────────────────────────────────────────────────────────
 
 /**
@@ -187,5 +206,55 @@ export async function getInvoiceHtml(
   } catch (e: any) {
     console.error('[Invoices] getInvoiceHtml error:', e.message);
     return NextResponse.json({ error: 'Failed to render invoice' }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/bookings/[id]/invoice
+ * Returns the current (issued) invoice for a reservation, or null.
+ */
+export async function getInvoiceByReservation(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await params;
+    const row = db.prepare(`
+      SELECT id, invoice_number, issued_at, amount, currency, status
+      FROM invoices
+      WHERE reservation_id = ? AND status = 'issued'
+      ORDER BY issued_at DESC
+      LIMIT 1
+    `).get(id) as { id: string; invoice_number: string; issued_at: string; amount: number; currency: string; status: string } | undefined;
+    return NextResponse.json(row ?? null);
+  } catch (e: any) {
+    console.error('[Invoices] getInvoiceByReservation error:', e.message);
+    return NextResponse.json(null);
+  }
+}
+
+/**
+ * POST /api/bookings/[id]/invoice/reissue
+ * Cancels the current invoice and generates a new one with fresh data.
+ */
+export async function reissueInvoiceHandler(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+    const newInvoiceId = reissueInvoiceForReservation(id);
+    if (!newInvoiceId) {
+      return NextResponse.json({ error: 'Failed to reissue invoice' }, { status: 500 });
+    }
+    const db = getDb();
+    const invoice = db.prepare(
+      'SELECT id, invoice_number, issued_at, amount, currency FROM invoices WHERE id = ?'
+    ).get(newInvoiceId) as { id: string; invoice_number: string; issued_at: string; amount: number; currency: string };
+    return NextResponse.json({ success: true, invoice });
+  } catch (e: any) {
+    console.error('[Invoices] reissueInvoiceHandler error:', e.message);
+    return NextResponse.json({ error: 'Reissue failed' }, { status: 500 });
   }
 }

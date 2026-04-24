@@ -171,11 +171,76 @@ export default function StepCamping({ prices, onNext }: Props) {
       {pricing && (
         <div className="kc-breakdown">
           <div className="kc-breakdown-title">Price breakdown</div>
+
+          {/* Equipment per night */}
           {selectedItems.map(code => {
             const item = CAMPING_ITEMS.find(i => i.code === code);
             const rateItem = getRate(prices, code);
-            return <div key={code} className="kc-breakdown-row"><span>{item?.emoji} {item?.label}</span><span>{formatPrice((rateItem?.rate_standard ?? 0) * pricing.nights)} Kč</span></div>;
+            const rate = rateItem?.rate_standard ?? 0;
+            return (
+              <div key={code} className="kc-breakdown-row">
+                <span>{item?.emoji} {item?.label} × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                <span>{formatPrice(rate * pricing.nights)} Kč</span>
+              </div>
+            );
           })}
+
+          {/* Adults & children */}
+          {adults > 0 && (() => {
+            const adultItem = getRate(prices, 'adult_person');
+            const rate = adultItem?.rate_standard ?? 150;
+            return (
+              <div className="kc-breakdown-row">
+                <span>👤 Adults ({adults} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(adults * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+          {children > 0 && (() => {
+            const childItem = getRate(prices, 'child_person');
+            const rate = childItem?.rate_standard ?? 100;
+            return (
+              <div className="kc-breakdown-row">
+                <span>🧒 Children ({children} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(children * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+
+          {/* Extras */}
+          {electricity && (() => {
+            const elecItem = getRate(prices, 'electricity');
+            const rate = elecItem?.rate_standard ?? 120;
+            return (
+              <div className="kc-breakdown-row">
+                <span>⚡ Electricity × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                <span>{formatPrice(rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+          {pets > 0 && (() => {
+            const petItem = getRate(prices, 'pet');
+            const rate = petItem?.rate_standard ?? 50;
+            return (
+              <div className="kc-breakdown-row">
+                <span>🐾 Pets ({pets} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(pets * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+
+          {/* Tourist tax */}
+          {(() => {
+            const taxItem = getRate(prices, 'tourist_tax');
+            const rate = taxItem?.rate_standard ?? 25;
+            return (
+              <div className="kc-breakdown-row">
+                <span>🏛️ Tourist tax ({adults} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(adults * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+
           <div className="kc-breakdown-divider" />
           <div className="kc-breakdown-total"><span>Total</span><span>{formatPrice(pricing.total)} Kč</span></div>
           <div className="kc-breakdown-deposit"><span>Deposit (30%) — pay now</span><span>{formatPrice(pricing.deposit)} Kč</span></div>
