@@ -25,7 +25,11 @@ export async function createWidgetCheckoutSession(req: Request) {
       service_date, 
       start_hour, 
       hours, 
-      addons 
+      addons,
+      // Client-provided fallbacks (used by BookingWizard /book flow)
+      amount: clientAmount,
+      currency: clientCurrency,
+      description: clientDescription,
     } = body;
 
     const db = getDb();
@@ -98,9 +102,9 @@ export async function createWidgetCheckoutSession(req: Request) {
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
       if (!res) return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
       
-      amount = res.total_price;
+      amount = res.total_price || 0;
       currency = res.currency || 'CZK';
-      description = `Booking #${reservation_id.substring(0, 8)}`;
+      description = clientDescription || `Booking #${reservation_id.substring(0, 8)}`;
 
       // Add services from booking_service_orders that haven't been paid yet
       try {
@@ -129,6 +133,14 @@ export async function createWidgetCheckoutSession(req: Request) {
         }
       } catch (e: any) { console.error('[Checkout] Service orders query error:', e.message); }
 
+      // Fallback: if DB total is 0 but client sent an amount, use client amount
+      // This is needed for BookingWizard (/book) where draft total_price may be 0
+      if (amount <= 0 && clientAmount && clientAmount > 0) {
+        amount = clientAmount;
+        console.log(`[Checkout] Using client-provided amount: ${amount} (DB total was 0)`);
+      }
+      if (clientCurrency) currency = clientCurrency;
+
       // Get guest info
       try {
         const guest = db.prepare(`
@@ -146,6 +158,7 @@ export async function createWidgetCheckoutSession(req: Request) {
     } else {
       return NextResponse.json({ error: 'reservation_id or service_id is required' }, { status: 400, headers: CORS_HEADERS });
     }
+
 
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
