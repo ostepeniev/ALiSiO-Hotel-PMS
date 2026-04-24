@@ -1351,6 +1351,23 @@
   flex-shrink: 0;
 }
 
+
+/* ── INVOICE NOTICE (no payment configured) ── */
+.v3-invoice-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(251,191,36,0.12), rgba(245,158,11,0.06));
+  border: 1px solid rgba(251,191,36,0.35);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-top: 16px;
+}
+.v3-invoice-notice-icon { font-size: 28px; line-height: 1; flex-shrink: 0; }
+.v3-invoice-notice-text { flex: 1; }
+.v3-invoice-notice-text strong { display: block; font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+.v3-invoice-notice-text p { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin: 0; }
+
 /* ── STICKY CTA ── */
 .v3-cta-bar {
   position: sticky;

@@ -593,7 +593,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       goToStep(6);
       return;
     }
-    if (!siteSlug) return;
+    if (!siteSlug) { goToStep(6); return; }
     setSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/booking/checkout-session`, {
@@ -605,6 +605,12 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
           return_path: window.location.href.split('?')[0] + `?res_id=${reservation.reservationId}&payment_status=success`
         }),
       });
+      if (res.status === 403) {
+        // Payment not configured — treat as manual invoice flow
+        goToStep(6);
+        setSubmitting(false);
+        return;
+      }
       const data = await res.json();
       if (data.session_url) {
         window.location.href = data.session_url;
@@ -1204,17 +1210,28 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           </div>
 
-          <div className="v3-pay-method selected">
-            <div className="v3-pay-method-radio"></div>
-            <div className="v3-pay-method-info">
-              <div className="v3-pay-method-name">Teya Payment Gateway</div>
-              <div className="v3-pay-method-sub">Visa · Mastercard · Apple Pay</div>
+          {siteConfig?.config?.payment?.enabled ? (
+            <>
+              <div className="v3-pay-method selected">
+                <div className="v3-pay-method-radio"></div>
+                <div className="v3-pay-method-info">
+                  <div className="v3-pay-method-name">Teya Payment Gateway</div>
+                  <div className="v3-pay-method-sub">Visa · Mastercard · Apple Pay</div>
+                </div>
+              </div>
+              <div className="v3-trust-block">
+                <div className="v3-trust-block-line"><span>{t.securePaymentNote}</span></div>
+              </div>
+            </>
+          ) : (
+            <div className="v3-invoice-notice">
+              <div className="v3-invoice-notice-icon">📬</div>
+              <div className="v3-invoice-notice-text">
+                <strong>Оплата за реквізитами</strong>
+                <p>Ми надішлемо вам реквізити для оплати на email одразу після підтвердження бронювання.</p>
+              </div>
             </div>
-          </div>
-
-          <div className="v3-trust-block">
-            <div className="v3-trust-block-line"><span>{t.securePaymentNote}</span></div>
-          </div>
+          )}
         </div>
 
         {/* STEP 6: SUCCESS */}

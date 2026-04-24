@@ -2,7 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import './booking.css';
+import './booking-v2.css';
 import { BookingLang, BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from './translations';
 
 // API base URL — configurable for subdomain deployment
