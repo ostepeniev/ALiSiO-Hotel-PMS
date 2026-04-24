@@ -22,10 +22,6 @@ function verifySignature(body: string, signature: string): boolean {
   return false;
 }
 
-/**
- * Auto-confirm CRM deposit reservations after Teya payment succeeds.
- * Called only when metadata.source === 'crm_deposit'.
- */
 async function handleCrmDepositPaid(metadata: Record<string, string>, amountCzk: number, sessionId: string) {
   try {
     const db = getDb();
@@ -67,7 +63,7 @@ async function handleCrmDepositPaid(metadata: Record<string, string>, amountCzk:
       SELECT r.check_in, r.check_out, r.total_price, u.code as unit_code
       FROM reservations r JOIN units u ON r.unit_id = u.id
       WHERE r.id = ?
-    `).get(reservationIds[0]) as any;
+    `).get(reservationIds[0]) as { check_in: string; check_out: string; total_price: number; unit_code: string } | undefined;
 
     const esc = (s: string) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -85,8 +81,9 @@ async function handleCrmDepositPaid(metadata: Record<string, string>, amountCzk:
 
     await sendTelegramMessage(msg).catch(e => console.error('[Teya Deposit] TG notify error:', e.message));
     console.log(`[Teya Deposit] Confirmed ${reservationIds.length} reservations for lead ${leadId}`);
-  } catch (err: any) {
-    console.error('[Teya Deposit] Auto-confirm error:', err.message);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[Teya Deposit] Auto-confirm error:', message);
   }
 }
 
@@ -153,6 +150,3 @@ export async function teyaBotWebhook(req: Request): Promise<NextResponse> {
     return NextResponse.json({ received: true, error: message });
   }
 }
-
-// Also export as teyaWebhook for @channels index compatibility
-export const teyaWebhook = teyaBotWebhook;

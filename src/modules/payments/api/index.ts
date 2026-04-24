@@ -5,6 +5,10 @@
 // Universal session factory (new). Callers build a PaymentIntent and pass it here.
 export { createPaymentSession } from '../domain/checkout-session';
 
+// Webhook handlers — route /api/webhooks/teya and /api/webhooks/teya-bot point here.
+export { teyaWebhook } from './webhook-teya.handlers';
+export { teyaBotWebhook } from './webhook-teya-bot.handlers';
+
 // Site-specific Teya credentials resolution (booking_sites.payment_config).
 // Returns null when no per-site config is set — callers fall back to global ENV.
 export { resolveSiteCredentials, isGlobalTeyaConfigured } from '../data/site-credentials.repo';

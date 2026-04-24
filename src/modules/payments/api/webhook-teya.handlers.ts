@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
-import { verifyWebhookSignature } from '@/lib/teya';
+import { verifyWebhookSignature } from '../domain/teya-client';
 import { getDb } from '@core/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 // TODO: replace with eventBus.emit('crm.payment_received') when crm module is migrated
@@ -80,7 +80,6 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
 
   console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: result3.changes });
 
-  // #1 FIX: Mark cart_events as notified so no duplicate abandon emails after payment
   if (result2.changes > 0) {
     try {
       db.prepare(`
@@ -110,6 +109,8 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
       onPaymentReceived(leadByPayment.id, leadByPayment.stage, !!(amount && totalPrice > 0 && amount >= totalPrice * 0.9));
     }
   } catch (stageErr: any) { console.error('[Teya Webhook] Stage transition error:', stageErr.message); }
+
+  void result4;
 }
 
 function handlePaymentFailed(db: any, event: any) {
@@ -171,7 +172,6 @@ function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {
   } catch { /* non-critical */ }
 }
 
-// #2 FIX: Show ALL service_orders for a cart checkout (not just the first one)
 function sendGuestOrderTG(db: any, paymentRef: string, currency: string) {
   try {
     const orders = db.prepare(`

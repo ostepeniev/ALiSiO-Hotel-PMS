@@ -26,8 +26,6 @@ import { listConnections, hostexSync, syncIcal, exportIcal } from '@channels'
 | `testChannels(req)` | Перевірка з'єднання з каналом |
 | `hostexWebhook(req)` | Обробка вебхука від Hostex |
 | `hostexWebhookInfo()` | Метадані вебхука |
-| `teyaWebhook(req)` | Обробка платіжного вебхука Teya |
-| `teyaBotWebhook(req)` | Telegram bot webhook від Teya |
 | `hostexSync(req)` | Ручна синхронізація з Hostex |
 | `hostexSyncStatus(req)` | Статус синхронізації Hostex |
 | `hostexReservations(req)` | Список резервацій з Hostex |
