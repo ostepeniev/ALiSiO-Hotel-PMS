@@ -20,6 +20,29 @@ export type AppEvents = {
   'payment.received': { paymentId: string; bookingId: string; amount: number; currency: string };
   'payment.refunded': { paymentId: string; bookingId: string; amount: number };
 
+  // Payments (session-level, emitted by the payments module)
+  'payment.session_created': {
+    sessionId: string;
+    provider: string;
+    intentKind: string;
+    amount: number;
+    currency: string;
+  };
+  'payment.completed': {
+    sessionId: string;
+    provider: string;
+    intentKind: string;
+    paymentId: string;
+    amount: number;
+    currency: string;
+  };
+  'payment.failed': {
+    sessionId: string;
+    provider: string;
+    intentKind: string;
+    reason?: string;
+  };
+
   // Channels
   'channel.reservation_synced': { reservationCode: string; source: string; bookingId: string };
   'channel.sync_failed': { source: string; error: string };

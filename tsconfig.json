@@ -43,7 +43,9 @@
       "@dashboard": ["./src/modules/dashboard/api"],
       "@dashboard/*": ["./src/modules/dashboard/api/*"],
       "@admin": ["./src/modules/admin/api"],
-      "@admin/*": ["./src/modules/admin/api/*"]
+      "@admin/*": ["./src/modules/admin/api/*"],
+      "@payments": ["./src/modules/payments/api"],
+      "@payments/*": ["./src/modules/payments/api/*"]
     }
   },
   "include": [
