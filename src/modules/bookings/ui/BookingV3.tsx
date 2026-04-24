@@ -71,8 +71,9 @@ function formatFullDate(s: string, lang: BookingLang): string {
   return d.toLocaleDateString(locales[lang] || 'uk-UA', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function formatPrice(n: number): string {
-  return new Intl.NumberFormat('cs-CZ').format(n).replace(',', ' ');
+function formatPrice(n: number, currency: string = 'Kč'): string {
+  const formatted = new Intl.NumberFormat('cs-CZ').format(n).replace(',', ' ');
+  return `${formatted} ${currency}`;
 }
 
 function getDaysInMonth(year: number, month: number): number {
@@ -123,6 +124,17 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   const [promoCode, setPromoCode] = useState('');
   const [showPromo, setShowPromo] = useState(false);
 
+  // New site config states
+  const [siteConfig, setSiteConfig] = useState<any>(null);
+  const [siteDesign, setSiteDesign] = useState<DesignConfig | null>(design || null);
+  const [siteCurrency, setSiteCurrency] = useState('Kč');
+  const [siteThankYouUrl, setSiteThankYouUrl] = useState(thankYouUrl || '');
+
+  // New states for Step 4
+  const [services, setServices] = useState<any[]>([]);
+  const [loadingServices, setLoadingServices] = useState(false);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(new Set());
+
   // Pre-select unit from query param
   useEffect(() => {
     setIsMounted(true);
@@ -132,11 +144,22 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       const payStatus = params.get('payment_status');
       const resId = params.get('res_id');
       if (payStatus === 'success' && resId) {
-        fetch(`${API_BASE}/api/booking/reserve/${resId}`)
+        fetch(`${API_BASE}/api/booking/reservation?id=${resId}`)
           .then(r => r.json())
           .then(data => {
-            if (data.reservationId) {
-              setReservation(data);
+            if (data.reservation) {
+              setReservation({
+                ...data.reservation,
+                reservationId: data.reservation.id,
+                unitName: data.reservation.unit_name,
+                totalPrice: data.reservation.total_price,
+              });
+              // Set selected services from fetched data if they exist
+              if (data.services) {
+                const sIds = new Set<string>();
+                data.services.forEach((s: any) => sIds.add(s.service_id));
+                setSelectedServiceIds(sIds);
+              }
               setStep(6);
             }
           })
@@ -184,6 +207,61 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   }, []);
 
+  // Fetch site config
+  useEffect(() => {
+    if (!isMounted || !siteSlug) return;
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/booking/site-config?slug=${siteSlug}`);
+        const data = await res.json();
+        if (data.id) {
+          setSiteConfig(data);
+          if (data.design) setSiteDesign(data.design);
+          if (data.currency) setSiteCurrency(data.currency);
+          if (data.config?.thank_you_url) setSiteThankYouUrl(data.config.thank_you_url);
+        }
+      } catch (e) { console.error('Fetch site config error:', e); }
+    };
+    fetchConfig();
+  }, [isMounted, siteSlug]);
+
+  // Thank you redirect logic
+  useEffect(() => {
+    if (step === 6 && siteThankYouUrl && !isPreview) {
+      const timer = setTimeout(() => {
+        // Redirect parent window if in iframe
+        if (window.parent !== window) {
+          window.parent.location.href = siteThankYouUrl;
+        } else {
+          window.location.href = siteThankYouUrl;
+        }
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [step, siteThankYouUrl, isPreview]);
+
+  // Fetch services when site is available
+  useEffect(() => {
+    if (!isMounted) return;
+    const fetchServices = async () => {
+      if (!siteId && !siteSlug) return;
+      setLoadingServices(true);
+      try {
+        const url = new URL(`${API_BASE}/api/booking/services`, window.location.origin);
+        if (siteId) url.searchParams.set('siteId', siteId);
+        // Note: siteSlug could also be used if the API supports it, 
+        // but currently the handler expects siteId.
+        const res = await fetch(url.toString());
+        const data = await res.json();
+        if (data.services) {
+          setServices(data.services);
+        }
+      } catch (e) { console.error('Fetch services error:', e); }
+      setLoadingServices(false);
+    };
+    fetchServices();
+  }, [isMounted, siteId, siteSlug]);
+
   // Fetch busy dates when month changes
   useEffect(() => {
     if (!isMounted) return;
@@ -226,8 +304,17 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     // Simple logic for now, similar to page.tsx
     const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
     const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
-    return selectedUnit.totalPrice + extraCharge;
-  }, [selectedUnit, adults, nights]);
+    
+    // Add selected services
+    let servicesTotal = 0;
+    services.forEach(s => {
+      if (selectedServiceIds.has(s.id)) {
+        servicesTotal += (s.price || 0);
+      }
+    });
+
+    return selectedUnit.totalPrice + extraCharge + servicesTotal;
+  }, [selectedUnit, adults, nights, services, selectedServiceIds]);
 
   // ─── Actions ───
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
@@ -322,6 +409,12 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   };
 
   const goToStep = (s: number) => {
+    // Skip Step 4 if no services
+    if (s === 4 && services.length === 0 && !loadingServices) {
+      setStep(5);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     setStep(s);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     // Notify parent of resize if in iframe
@@ -386,6 +479,31 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   };
 
+  const toggleService = async (id: string) => {
+    // Optimistic update
+    setSelectedServiceIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+    if (reservation?.reservationId && !isPreview) {
+      try {
+        await fetch(`${API_BASE}/api/booking/services`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'book-toggle',
+            serviceId: id,
+            reservationId: reservation.reservationId,
+            site_id: siteId
+          })
+        });
+      } catch (e) { console.error('Toggle service error:', e); }
+    }
+  };
+
   const startPayment = async () => {
     if (!reservation) return;
     if (isPreview) {
@@ -441,7 +559,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       styles['--shadow'] = design.show_shadow ? '0 8px 32px rgba(0,0,0,0.12)' : 'none';
     }
     return styles;
-  }, [design]);
+  }, [siteDesign]);
 
   return (
     <div className={`v3-body ${design?.theme?.toLowerCase() || ''}`} style={dynamicStyles}>
@@ -682,7 +800,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                         </div>
                         <div className="v3-house-lock-name">{u.name}</div>
                         <div className="v3-house-lock-feat">
-                          до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice)} Kč</strong>
+                          до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
                         </div>
                       </div>
                       {isSelected && (
@@ -821,33 +939,46 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
           <h1 className="v3-step-title">{t.addToStayTitle || 'Додати до відпочинку?'}</h1>
           <p className="v3-step-sub">{t.everythingOptional || 'Все опційне. Можна пропустити і додати пізніше.'}</p>
 
-          <div className="v3-service-card" onClick={(e) => e.currentTarget.classList.toggle('selected')}>
-            <div className="v3-service-body">
-              <div className="v3-service-visual">🥐</div>
-              <div className="v3-service-info">
-                <div className="v3-service-name">Сніданок у будинок</div>
-                <div className="v3-service-reason">Привозимо о 9:00 — свіже пекарське, кава, фреш.</div>
-                <div className="v3-service-price-row">
-                  <span className="v3-service-price">+ 600 Kč</span>
-                  <div className="v3-service-toggle"></div>
+          {loadingServices ? (
+            <div className="v3-house-list">
+              {[1, 2].map(i => (
+                <div key={i} className="v3-service-card skeleton">
+                  <div className="v3-service-body">
+                    <div className="v3-service-visual skeleton-anim" />
+                    <div className="v3-service-info">
+                      <div style={{ height: 12, width: '60%', background: 'var(--line)', borderRadius: 4, marginBottom: 8 }} className="skeleton-anim" />
+                      <div style={{ height: 8, width: '80%', background: 'var(--line)', borderRadius: 4 }} className="skeleton-anim" />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          </div>
-
-          <div className="v3-service-card" onClick={(e) => e.currentTarget.classList.toggle('selected')}>
-            <div className="v3-service-body">
-              <div className="v3-service-visual s2">🧖</div>
-              <div className="v3-service-info">
-                <div className="v3-service-name">Фінська сауна на 2 години</div>
-                <div className="v3-service-reason">Приватна сауна з видом на ліс.</div>
-                <div className="v3-service-price-row">
-                  <span className="v3-service-price">+ 800 Kč</span>
-                  <div className="v3-service-toggle"></div>
-                </div>
-              </div>
+          ) : (
+            <div className="v3-house-list">
+              {services.map(s => {
+                const isSelected = selectedServiceIds.has(s.id);
+                return (
+                  <div 
+                    key={s.id} 
+                    className={`v3-service-card ${isSelected ? 'selected' : ''}`} 
+                    onClick={() => toggleService(s.id)}
+                  >
+                    <div className="v3-service-body">
+                      <div className="v3-service-visual">{s.icon || '📦'}</div>
+                      <div className="v3-service-info">
+                        <div className="v3-service-name">{s.name}</div>
+                        <div className="v3-service-reason">{s.description}</div>
+                        <div className="v3-service-price-row">
+                          <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>
+                          <div className="v3-service-toggle"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
 
           <button className="v3-skip-link" onClick={() => goToStep(5)}>{t.skipLink || 'Пропустити — не треба нічого'}</button>
         </div>
@@ -860,17 +991,17 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
           <div className="v3-breakdown">
             <div className="v3-breakdown-row">
               <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
-              <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0)} Kč</span>
+              <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
             </div>
-            {totalWithDiscount > (selectedUnit?.totalPrice || 0) && (
-              <div className="v3-breakdown-row">
-                <span>{t.additionalServices}</span>
-                <span className="v3-breakdown-val">{formatPrice(totalWithDiscount - (selectedUnit?.totalPrice || 0))} Kč</span>
+            {services.filter(s => selectedServiceIds.has(s.id)).map(s => (
+              <div key={s.id} className="v3-breakdown-row">
+                <span>{s.name}</span>
+                <span className="v3-breakdown-val">{formatPrice(s.price, siteCurrency)}</span>
               </div>
-            )}
+            ))}
             <div className="v3-breakdown-row total">
               <span>{t.total}</span>
-              <span className="v3-breakdown-val">{formatPrice(totalWithDiscount)} Kč</span>
+              <span className="v3-breakdown-val">{formatPrice(totalWithDiscount, siteCurrency)}</span>
             </div>
           </div>
 
@@ -911,7 +1042,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-cta-summary-line1">
                   {nights > 0 ? `${nights} ${t.nightsShort.toUpperCase()}` : ''} · {adults + kids} {t.guestsShort.toUpperCase()}
                 </div>
-                <div className="v3-cta-summary-line2">{formatPrice(totalWithDiscount)} Kč</div>
+                <div className="v3-cta-summary-line2">{formatPrice(totalWithDiscount, siteCurrency)}</div>
               </div>
               <button
                 className={`v3-cta-btn ${((step === 1 && (!checkIn || !checkOut)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))) ? 'disabled' : ''}`}

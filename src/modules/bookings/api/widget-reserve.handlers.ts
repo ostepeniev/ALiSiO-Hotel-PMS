@@ -53,6 +53,13 @@ export async function createWidgetReservation(request: NextRequest) {
       WHERE u.id = ? AND u.is_active = 1 AND u.room_status = 'available' AND c.type = 'glamping'
     `).get(unitId) as any;
 
+    if (unit && siteId && existingTables.has('site_listings')) {
+      const allowed = db.prepare('SELECT 1 FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId);
+      if (!allowed) {
+        return NextResponse.json({ error: 'Unit not available for this site' }, { status: 403, headers: CORS_HEADERS });
+      }
+    }
+
     if (!unit) {
       return NextResponse.json({ error: 'Unit not found or not available' }, { status: 404, headers: CORS_HEADERS });
     }

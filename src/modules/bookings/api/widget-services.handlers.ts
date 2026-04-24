@@ -375,7 +375,9 @@ export async function bookWidgetService(request: NextRequest) {
           'SELECT id FROM booking_service_orders WHERE reservation_id = ? AND service_id = ?'
         ).get(reservationId, serviceId) as any;
 
-        if (!existing) {
+        if (existing) {
+          db.prepare('DELETE FROM booking_service_orders WHERE id = ?').run(existing.id);
+        } else {
           const orderId = `bso_${Date.now()}_${serviceId}`;
           db.prepare(`
             INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, unit_price, total_price, status)

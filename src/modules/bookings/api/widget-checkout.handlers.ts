@@ -108,10 +108,6 @@ export async function createWidgetCheckoutSession(req: Request) {
         }
       }
 
-      // If client sent amount and it differs (promo applied on client), trust client if lower
-      if (clientAmount && typeof clientAmount === 'number' && clientAmount > 0 && clientAmount < amount) {
-        amount = clientAmount;
-      }
     } else if (reservation_id) {
       // Main Reservation payment
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
@@ -135,12 +131,6 @@ export async function createWidgetCheckoutSession(req: Request) {
       return NextResponse.json({ error: 'reservation_id or service_id is required' }, { status: 400, headers: CORS_HEADERS });
     }
 
-    // Fallback: if DB amount is 0 but client sent a valid amount, use client amount
-    if (amount <= 0 && clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
-      amount = clientAmount;
-      if (clientCurrency) currency = clientCurrency;
-      if (clientDescription) description = clientDescription;
-    }
 
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 

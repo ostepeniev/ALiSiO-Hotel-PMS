@@ -9,7 +9,7 @@ import {
   LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent,
   ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil, Eye, Image as ImageIcon, Upload,
 } from 'lucide-react';
-import BookingV3 from '@/app/booking/BookingV3';
+import BookingV3 from '@/modules/bookings/ui/BookingV3';
 
 /* ════════════════════════════════════════════════
    TYPES
