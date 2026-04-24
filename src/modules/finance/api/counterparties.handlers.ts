@@ -400,9 +400,9 @@ export async function getAliasSuggestions(_request: NextRequest): Promise<NextRe
         WHERE organization_id = ? AND counterparty IS NOT NULL AND TRIM(counterparty) != ''
         GROUP BY counterparty
       UNION ALL
-      SELECT matched_counterparty AS txt, COUNT(*) AS n FROM bank_transactions
-        WHERE organization_id = ? AND matched_counterparty IS NOT NULL AND TRIM(matched_counterparty) != ''
-        GROUP BY matched_counterparty
+      SELECT counterparty AS txt, COUNT(*) AS n FROM bank_transactions
+        WHERE organization_id = ? AND counterparty IS NOT NULL AND TRIM(counterparty) != ''
+        GROUP BY counterparty
     `).all(orgId, orgId, orgId) as { txt: string; n: number }[];
 
     const agg = new Map<string, number>();
