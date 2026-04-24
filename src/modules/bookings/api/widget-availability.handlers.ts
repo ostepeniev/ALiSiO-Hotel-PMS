@@ -20,14 +20,7 @@ export async function getAvailability(request: NextRequest) {
     const checkOut = searchParams.get('checkOut');
     const promoCode = searchParams.get('promoCode') || '';
     const certificateCode = searchParams.get('certificateCode') || '';
-    let siteId = searchParams.get('siteId');
-    const siteSlug = searchParams.get('siteSlug');
-
-    // Resolve siteSlug to siteId if needed
-    if (!siteId && siteSlug) {
-      const site = db.prepare("SELECT id FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug) as any;
-      if (site) siteId = site.id;
-    }
+    const siteId = searchParams.get('siteId');
 
     if (!checkIn || !checkOut) {
       return NextResponse.json({ error: 'checkIn and checkOut required' }, { status: 400, headers: CORS_HEADERS });
@@ -145,6 +138,7 @@ export async function getAvailability(request: NextRequest) {
         typeName: unit.type_name,
         typeCode: unit.type_code,
         description: unit.type_description,
+        photos: unit.type_photos ? unit.type_photos.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         maxAdults: unit.max_adults,
         maxChildren: unit.max_children,
         maxOccupancy: unit.max_occupancy,
@@ -161,7 +155,6 @@ export async function getAvailability(request: NextRequest) {
         petAllowed: unit.pet_allowed !== 0,
         petCharge: unit.pet_charge || 400,
         photos: (() => {
-          // Prefer site_listings photos (more curated), fallback to unit_type photos
           const photoStr = unit.listing_photos || unit.type_photos || '';
           return photoStr ? photoStr.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
         })(),

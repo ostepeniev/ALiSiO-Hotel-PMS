@@ -19,35 +19,47 @@ export async function createWidgetCheckoutSession(req: Request) {
     const body = await req.json();
     const { 
       reservation_id, 
-      site_slug, 
+      site_slug,
+      site_id: clientSiteId,
       return_path,
       service_id, 
       service_date, 
       start_hour, 
       hours, 
-      addons 
+      addons,
+      // Legacy fields from booking/page.tsx (glamping flow)
+      amount: clientAmount,
+      currency: clientCurrency,
+      description: clientDescription,
     } = body;
 
     const db = getDb();
 
     // 1. Resolve Site and Payment Config
-    if (!site_slug) {
-      return NextResponse.json({ error: 'site_slug is required' }, { status: 400, headers: CORS_HEADERS });
-    }
-    const site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
-    if (!site) {
-      return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
-    }
+    //    site_slug is optional — when absent, fall back to global ENV credentials
+    let site: any = null;
+    let payCfg: any = {};
 
-    const payCfg = JSON.parse(site.payment_config || '{}');
-    if (!payCfg.enabled || payCfg.provider !== 'teya' || !payCfg.teya?.client_id) {
-      // Fallback to global env if not configured per site (for backward compatibility during migration)
-      if (!process.env.TEYA_CLIENT_ID) {
-        return NextResponse.json({ error: 'Online payments not configured for this site' }, { status: 403, headers: CORS_HEADERS });
+    if (site_slug) {
+      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
+      if (!site) {
+        return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
       }
+      payCfg = JSON.parse(site.payment_config || '{}');
+    } else if (clientSiteId) {
+      // booking/page.tsx sends site_id instead of site_slug
+      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE id = ?').get(clientSiteId) as any;
+      if (site) payCfg = JSON.parse(site.payment_config || '{}');
     }
 
-    // 2. Resolve Amount (Recalculate from DB for security)
+    // Check if payment is possible: either site-specific Teya config or global ENV
+    const hasSiteTeya = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
+    if (!hasSiteTeya && !process.env.TEYA_CLIENT_ID) {
+      return NextResponse.json({ error: 'Online payments not configured' }, { status: 403, headers: CORS_HEADERS });
+    }
+
+
+    // 2. Resolve Amount (Recalculate from DB for security, with client fallback)
     let amount = 0;
     let currency = 'CZK';
     let description = 'ALiSiO Booking';
@@ -76,9 +88,28 @@ export async function createWidgetCheckoutSession(req: Request) {
       amount = res.total_price;
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
+
+      // Also add unpaid booking_service_orders to the total
+      const svcOrders = db.prepare(
+        "SELECT SUM(total_price) as svc_total FROM booking_service_orders WHERE reservation_id = ? AND payment_status IN ('none','pending',NULL)"
+      ).get(reservation_id) as any;
+      if (svcOrders?.svc_total) amount += svcOrders.svc_total;
+    } else if (clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
+      // Legacy fallback: booking/page.tsx sends amount directly
+      amount = clientAmount;
+      currency = clientCurrency || 'CZK';
+      description = clientDescription || 'ALiSiO Booking';
     } else {
       return NextResponse.json({ error: 'reservation_id or service_id is required' }, { status: 400, headers: CORS_HEADERS });
     }
+
+    // Fallback: if DB amount is 0 but client sent a valid amount, use client amount
+    if (amount <= 0 && clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
+      amount = clientAmount;
+      if (clientCurrency) currency = clientCurrency;
+      if (clientDescription) description = clientDescription;
+    }
+
 
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
@@ -111,7 +142,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       const text = [
         `📦 <b>Запит на оплату: ${esc(description)}</b>`,
         `💰 ${amount} ${currency}`,
-        `🌍 Сайт: ${site_slug}`,
+        `🌍 Сайт: ${site_slug || site?.id || 'default'}`,
         `💳 Очікує сесії...`,
       ].join('\n');
       sendTelegramMessage(text).catch(() => {});
@@ -124,12 +155,14 @@ export async function createWidgetCheckoutSession(req: Request) {
 
     // Validate returnTo for security (prevent open redirects)
     let returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
-    if (returnTo.startsWith('http') && site.site_url) {
-       const allowedHost = new URL(site.site_url).hostname;
-       const targetHost = new URL(returnTo).hostname;
-       if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
-          returnTo = site.site_url; // Fallback to safe URL
-       }
+    if (returnTo.startsWith('http') && site?.site_url) {
+       try {
+         const allowedHost = new URL(site.site_url).hostname;
+         const targetHost = new URL(returnTo).hostname;
+         if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
+            returnTo = site.site_url;
+         }
+       } catch { /* invalid URL — keep returnTo */ }
     }
 
     try {
@@ -137,8 +170,8 @@ export async function createWidgetCheckoutSession(req: Request) {
         amount: amountMinor,
         currency: currency || 'CZK',
         description,
-        metadata: reservation_id ? { reservation_id, site_id: site.id } : { site_id: site.id },
-        credentials: payCfg.teya?.client_id ? {
+        metadata: reservation_id ? { reservation_id, ...(site?.id && { site_id: site.id }) } : (site?.id ? { site_id: site.id } : {}),
+        credentials: hasSiteTeya ? {
           client_id: payCfg.teya.client_id,
           client_secret: payCfg.teya.client_secret,
           store_id: payCfg.teya.store_id
