@@ -23,6 +23,7 @@ export async function createWidgetReservation(request: NextRequest) {
       hasPet = false,
       firstName, lastName, email, phone,
       promoCode, certificateCode,
+      siteId,
     } = body;
 
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {

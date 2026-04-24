@@ -30,6 +30,7 @@ interface UnitResult {
   petAllowed: boolean;
   petCharge: number;
   amenities: { icon: string; name: string }[];
+  prices?: { date: string, price: number }[];
 }
 
 interface AvailabilityResponse {
@@ -113,6 +114,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [unitInfo, setUnitInfo] = useState<UnitResult | null>(null); // unit data without dates
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -249,8 +251,6 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       try {
         const url = new URL(`${API_BASE}/api/booking/services`, window.location.origin);
         if (siteId) url.searchParams.set('siteId', siteId);
-        // Note: siteSlug could also be used if the API supports it, 
-        // but currently the handler expects siteId.
         const res = await fetch(url.toString());
         const data = await res.json();
         if (data.services) {
@@ -262,6 +262,78 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
     fetchServices();
   }, [isMounted, siteId, siteSlug]);
 
+  // Fetch basic unit info on mount (without dates) to show unit card and limits immediately
+  useEffect(() => {
+    if (!isMounted || !selectedUnitId || unitInfo) return;
+    const fetchUnitInfo = async () => {
+      try {
+        const d = new Date();
+        const ci = fmtDate(d);
+        const co = fmtDate(new Date(d.getTime() + 86400000));
+        const params = new URLSearchParams({ checkIn: ci, checkOut: co });
+        if (siteId) params.set('siteId', siteId);
+        const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          const unit = data.units?.find((u: UnitResult) => u.id === selectedUnitId);
+          if (unit) setUnitInfo(unit);
+        }
+      } catch (e) { console.error('Fetch unit info error:', e); }
+    };
+    fetchUnitInfo();
+  }, [isMounted, selectedUnitId, siteId, unitInfo]);
+
+  // Only fetch when both dates are present to avoid stuck loader
+  useEffect(() => {
+    if (!isMounted) return;
+    if (selectedUnitId && checkIn && checkOut && !availability && !loadingAvail) {
+      fetchAvailability(checkIn, checkOut);
+    }
+  }, [isMounted, selectedUnitId, availability, loadingAvail, checkIn, checkOut]);
+
+  // Ultra-robust polling resizer
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const sendResize = () => {
+      const el = document.getElementById('alisio-widget-v3');
+      if (el) {
+        // scrollHeight of the document is the most reliable way to get total content height
+        const height = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+          el.scrollHeight
+        );
+
+        const msg = {
+          type: 'resize',
+          height: height,
+          val: height,
+          h: height,
+          source: 'alisio-widget'
+        };
+
+        window.parent.postMessage(msg, '*');
+        if (window.parent !== window.top) {
+          window.top.postMessage(msg, '*');
+        }
+      }
+    };
+
+    const interval = setInterval(sendResize, 200);
+    sendResize();
+
+    return () => clearInterval(interval);
+  }, [isMounted]);
+
+  // Explicit trigger for state changes
+  const triggerResize = useCallback(() => {
+    const el = document.getElementById('alisio-widget-v3');
+    if (el) {
+      window.parent.postMessage({ type: 'resize', height: el.scrollHeight }, '*');
+    }
+  }, []);
+
   // Fetch busy dates when month changes
   useEffect(() => {
     if (!isMounted) return;
@@ -269,7 +341,12 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       try {
         const date = new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1);
         const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        const res = await fetch(`${API_BASE}/api/widget/calendar?month=${monthStr}${siteId ? `&siteId=${siteId}` : ''}${siteSlug ? `&siteSlug=${siteSlug}` : ''}`);
+        const params = new URLSearchParams({ month: monthStr });
+        if (siteId) params.set('siteId', siteId);
+        if (siteSlug) params.set('siteSlug', siteSlug);
+        if (selectedUnitId) params.set('unitId', selectedUnitId);
+
+        const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
         const data = await res.json();
         if (data.days) {
           const busy = new Set<string>();
@@ -281,7 +358,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       } catch (e) { console.error('Fetch busy dates error:', e); }
     };
     fetchBusyDates();
-  }, [calMonthOffset, isMounted, siteId, siteSlug]);
+  }, [calMonthOffset, isMounted, siteId, siteSlug, selectedUnitId]);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -295,16 +372,19 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   }, [checkIn, checkOut]);
 
   const selectedUnit = useMemo(() => {
-    if (!availability || !selectedUnitId) return null;
-    return availability.units.find(u => u.id === selectedUnitId) || null;
-  }, [availability, selectedUnitId]);
+    if (!selectedUnitId) return null;
+    // Prefer real availability data (with price for selected dates),
+    // fall back to unitInfo (pre-loaded base data without dates)
+    if (availability) return availability.units.find(u => u.id === selectedUnitId) || unitInfo;
+    return unitInfo;
+  }, [availability, selectedUnitId, unitInfo]);
 
   const totalWithDiscount = useMemo(() => {
     if (!selectedUnit) return 0;
     // Simple logic for now, similar to page.tsx
     const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
     const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
-    
+
     // Add selected services
     let servicesTotal = 0;
     services.forEach(s => {
@@ -353,6 +433,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       if (res.ok) {
         const data = await res.json();
         setAvailability(data);
+        setLoadingAvail(false);
         if (data.units?.length === 0) {
           findNextAvailable(co);
         }
@@ -402,7 +483,6 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       } else {
         setCheckOut(dateStr);
         setSelectingCheckOut(false);
-        // setCalOpen(false); // Removed to keep calendar open for refinement
         fetchAvailability(checkIn!, dateStr);
       }
     }
@@ -562,7 +642,7 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
   }, [siteDesign]);
 
   return (
-    <div className={`v3-body ${design?.theme?.toLowerCase() || ''}`} style={dynamicStyles}>
+    <div className={`v3-body ${design?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -599,12 +679,23 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
 
           {selectedUnit && (
             <div className="v3-house-lock">
-              <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                <svg viewBox="0 0 54 54">
-                  <polygon points="12,30 27,16 42,30 42,44 12,44" fill="#C9844A" />
-                  <polygon points="8,30 27,14 46,30" fill="#8B5A2B" />
-                  <rect x="23" y="34" width="8" height="10" fill="#1F3220" />
-                </svg>
+              <div
+                className="v3-house-lock-thumb"
+                style={{
+                  backgroundImage: selectedUnit.photos?.[0] ? `url(${selectedUnit.photos[0]})` : 'none',
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundColor: 'var(--moss)'
+                }}
+              >
+                {!selectedUnit.photos?.[0] && (
+                  <svg viewBox="0 0 54 54">
+                    <polygon points="12,30 27,16 42,30 42,44 12,44" fill="rgba(255,255,255,0.4)" />
+                    <polygon points="8,30 27,14 46,30" fill="rgba(255,255,255,0.6)" />
+                    <rect x="23" y="34" width="8" height="10" fill="rgba(0,0,0,0.2)" />
+                  </svg>
+                )}
               </div>
               <div className="v3-house-lock-info">
                 <div className="v3-house-lock-label">{t.accommodation}</div>
@@ -612,23 +703,46 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-house-lock-feat">
                   {selectedUnit.baseOccupancy} {t.guestsShort} · {selectedUnit.typeName}
                 </div>
+                <div className="v3-house-times">
+                  <span>{t.checkInShort || 'Заїзд'} з 15:00</span>
+                  <span className="v3-house-times-sep">·</span>
+                  <span>{t.checkOutShort || 'Виїзд'} до 11:00</span>
+                </div>
               </div>
             </div>
           )}
 
-          <div className="v3-dates" onClick={() => setCalOpen(!calOpen)}>
-            <div className={`v3-date-cell ${calOpen && !selectingCheckOut ? 'active' : ''}`}>
+          {/* Change unit button — shown when calendar is open, if unit is pre-selected */}
+          {selectedUnitId && calOpen && (
+            <button className="v3-change-unit-btn" onClick={() => {
+              setSelectedUnitId(null);
+              setAvailability(null);
+              setUnitInfo(null);
+              setCalOpen(false);
+            }}>
+              ↺ Не знайшли вільну дату? Оберіть інший варіант
+            </button>
+          )}
+
+          <div className="v3-dates" onClick={() => setCalOpen(true)}>
+            <div className={`v3-date-cell ${!selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkIn}</div>
               <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
               <div className="v3-date-cell-sub">{t.from} 15:00</div>
             </div>
             <div className="v3-date-div"></div>
-            <div className={`v3-date-cell ${calOpen && selectingCheckOut ? 'active' : ''}`}>
+            <div className={`v3-date-cell ${selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(true); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkOut}</div>
               <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
               <div className="v3-date-cell-sub">
                 {nights > 0 ? `${nights} ${t.nightsShort}` : ''} · {t.to} 11:00
               </div>
+            </div>
+            <div className="v3-dates-cal-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="4" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
             </div>
           </div>
 
@@ -637,45 +751,91 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
               <div className="v3-cal-month">
                 {new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'en-GB', { month: 'long', year: 'numeric' })}
               </div>
-              <div className="v3-cal-nav">
-                <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
-                <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div className="v3-cal-nav">
+                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o - 1); }}>‹</button>
+                  <button className="v3-cal-btn" onClick={(e) => { e.stopPropagation(); setCalMonthOffset(o => o + 1); }}>›</button>
+                </div>
+                <button className="v3-cal-close" onClick={() => setCalOpen(false)} title="Закрити">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </button>
               </div>
             </div>
-            <div className="v3-cal-weekdays">
-              {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
-            </div>
-            <div className="v3-cal-days">
-              {(() => {
-                const year = today.getFullYear();
-                const month = today.getMonth() + calMonthOffset;
-                const daysInM = getDaysInMonth(year, month);
-                const first = getFirstDayOfMonth(year, month);
-                const cells = [];
-                for (let i = 0; i < first; i++) cells.push(<div key={`e-${i}`} className="v3-cal-day muted" />);
-                for (let d = 1; d <= daysInM; d++) {
-                  const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                  const isPast = parseDate(ds) < today;
-                  const isBusy = busyDates.has(ds);
 
-                  let cls = 'v3-cal-day';
-                  if (isPast || isBusy) cls += ' muted';
-                  if (isBusy) cls += ' busy';
-                  if (ds === checkIn) cls += ' start';
-                  if (ds === checkOut) cls += ' end';
-                  if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
+            {[0, 1].map(offset => {
+              const year = today.getFullYear();
+              const month = today.getMonth() + calMonthOffset + offset;
+              const monthName = new Date(year, month, 1).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'en-GB', { month: 'long', year: 'numeric' });
+              const daysInM = getDaysInMonth(year, month);
+              const first = getFirstDayOfMonth(year, month);
 
-                  cells.push(
-                    <div key={d} className={cls} onClick={(e) => {
-                      e.stopPropagation();
-                      if (!isPast && !isBusy) handleDayClick(ds);
-                    }}>
-                      <span>{d}</span>
-                    </div>
-                  );
-                }
-                return cells;
-              })()}
+              return (
+                <div key={offset} className="v3-month-section" style={{ marginBottom: offset === 0 ? 24 : 0 }}>
+                  {offset > 0 && <div className="v3-month-divider" style={{ padding: '12px 0', fontSize: 14, fontWeight: 700, textAlign: 'center', color: 'var(--text-primary)', borderTop: '1px solid var(--border-primary)', marginTop: 12 }}>{monthName}</div>}
+                  <div className="v3-cal-weekdays">
+                    {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
+                  </div>
+                  <div className="v3-cal-days">
+                    {(() => {
+                      const cells = [];
+                      for (let i = 0; i < first; i++) cells.push(<div key={`e-${i}`} className="v3-cal-day muted" />);
+                      for (let d = 1; d <= daysInM; d++) {
+                        const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        const isPast = parseDate(ds) < today;
+                        const isBusy = busyDates.has(ds);
+                        const unitInAvail = availability?.units.find(u => u.id === selectedUnitId);
+                        const dayPrice = unitInAvail?.prices?.find(p => p.date === ds)?.price || (ds >= (checkIn || '') && ds < (checkOut || '') ? unitInAvail?.avgPricePerNight : null);
+
+                        let cls = 'v3-cal-day';
+                        if (isPast || isBusy) cls += ' muted';
+                        if (isBusy) cls += ' busy';
+                        if (ds === checkIn) cls += ' start';
+                        if (ds === checkOut) cls += ' end';
+                        if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
+
+                        cells.push(
+                          <div key={d} className={cls} onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isPast && !isBusy) handleDayClick(ds);
+                          }}>
+                            <span className="v3-cal-day-num">{d}</span>
+                            {dayPrice && !isBusy && !isPast && (
+                              <span className="v3-cal-day-price" style={{ fontSize: '9px', opacity: 0.8, marginTop: '2px', fontWeight: 500 }}>
+                                {Math.round(dayPrice)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+                      return cells;
+                    })()}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Calendar footer actions */}
+            <div className="v3-cal-footer">
+              <button
+                className={`v3-cal-footer-btn clear ${(checkIn || checkOut) ? 'active' : ''}`}
+                onClick={() => {
+                  setCheckIn(null);
+                  setCheckOut(null);
+                  setSelectingCheckOut(false);
+                  setAvailability(null);
+                }}
+              >
+                Стерти
+              </button>
+              <button
+                className={`v3-cal-footer-btn ok ${(checkIn && checkOut) ? 'active' : ''}`}
+                disabled={!checkIn || !checkOut}
+                onClick={() => setCalOpen(false)}
+              >
+                OK · {nights > 0 ? `${nights} ${t.nightsShort}` : 'обрати дати'}
+              </button>
             </div>
           </div>
 
@@ -687,21 +847,41 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
             <div className="v3-stepper">
               <button className="v3-stepper-btn" onClick={() => setAdults(Math.max(1, adults - 1))}>−</button>
               <span className="v3-stepper-val">{adults}</span>
-              <button className="v3-stepper-btn" onClick={() => setAdults(adults + 1)}>+</button>
+              <button
+                className="v3-stepper-btn"
+                disabled={selectedUnit ? adults >= selectedUnit.maxAdults : false}
+                onClick={() => setAdults(prev => Math.min(prev + 1, selectedUnit?.maxAdults ?? prev + 1))}
+              >+</button>
             </div>
           </div>
 
           <div className="v3-guests">
             <div>
               <div className="v3-guests-label">{t.children}</div>
-              <div className="v3-guests-sub">0-17</div>
+              <div className="v3-guests-sub">0–17</div>
             </div>
             <div className="v3-stepper">
               <button className="v3-stepper-btn" onClick={() => setKids(Math.max(0, kids - 1))}>−</button>
               <span className="v3-stepper-val">{kids}</span>
-              <button className="v3-stepper-btn" onClick={() => setKids(kids + 1)}>+</button>
+              <button
+                className="v3-stepper-btn"
+                disabled={kids >= 2 || (selectedUnit ? (adults + kids) >= (selectedUnit.maxOccupancy + 1) : false)}
+                onClick={() => setKids(prev => {
+                  if (prev >= 2) return prev;
+                  if (selectedUnit && (adults + prev) >= (selectedUnit.maxOccupancy + 1)) return prev;
+                  return prev + 1;
+                })}
+              >+</button>
             </div>
           </div>
+
+          {/* Occupancy notice */}
+          {selectedUnit && (adults + kids) > selectedUnit.maxOccupancy && (
+            <div className="v3-occupancy-notice">
+              <span className="v3-occupancy-notice-icon">🛏️</span>
+              <span>У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊</span>
+            </div>
+          )}
 
           <div className="v3-promo-section">
             <button className="v3-promo-toggle" onClick={() => setShowPromo(!showPromo)}>
@@ -724,9 +904,10 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         {/* STEP 2: HOUSE LIST / DETAILS */}
         <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
           <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
-          <p className="v3-step-sub">{selectedUnitId ? (t.reviewSelection || 'Перевірте деталі та продовжуйте бронювання') : t.availableForDates}</p>
+          <p className="v3-step-sub">{selectedUnitId ? ('Перевірте деталі та продовжуйте бронювання') : t.availableForDates}</p>
 
-          {loadingAvail ? (
+          {/* Loading skeleton — only when no unit info available yet */}
+          {loadingAvail && !selectedUnit && (
             <div className="v3-house-list">
               {[1, 2, 3].map(i => (
                 <div key={i} className="v3-house-lock skeleton">
@@ -739,11 +920,14 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               ))}
             </div>
-          ) : (
+          )}
+
+          {/* Unit selection list — only when no unit is pre-selected */}
+          {!loadingAvail && !selectedUnitId && (
             <div className="v3-house-list">
-              {availability?.units.length === 0 ? (
+              {availability?.units?.length === 0 ? (
                 <div className="v3-no-avail">
-                  <div className="v3-no-avail-icon">📭</div>
+                  <div className="v3-no-avail-icon">💭</div>
                   <h3>{t.noUnitsFound}</h3>
                   <p>{t.noAvailabilityDesc}</p>
 
@@ -778,48 +962,42 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   </div>
                 </div>
               ) : (
+                // Deduplicate units by id to prevent duplicate key warnings
                 availability?.units
-                  .filter(u => !selectedUnitId || selectedUnitId === u.id)
+                  .filter((u, idx, arr) => arr.findIndex(x => x.id === u.id) === idx)
                   .map(u => {
-                  const isSelected = selectedUnitId === u.id;
-                  return (
-                    <div
-                      key={u.id}
-                      className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setSelectedUnitId(u.id)}
-                    >
-                      <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
-                        <svg viewBox="0 0 54 54">
-                          <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
-                          <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
-                        </svg>
-                      </div>
-                      <div className="v3-house-lock-info">
-                        <div className="v3-house-lock-label">
-                          {isSelected ? `${t.youSelected || 'Ви обрали'} · ${nights} ${t.nightsShort}` : u.typeName}
-                        </div>
-                        <div className="v3-house-lock-name">{u.name}</div>
-                        <div className="v3-house-lock-feat">
-                          до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
-                        </div>
-                      </div>
-                      {isSelected && (
-                        <div className="v3-house-lock-check">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                    const isSelected = selectedUnitId === u.id;
+                    return (
+                      <div
+                        key={u.id}
+                        className={`v3-house-lock select ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setSelectedUnitId(u.id)}
+                      >
+                        <div className="v3-house-lock-thumb" style={{ background: 'linear-gradient(135deg,#6B8A5F,#2F4F2B)' }}>
+                          <svg viewBox="0 0 54 54">
+                            <polygon points="12,30 27,16 42,30 42,44 12,44" fill={isSelected ? '#fff' : '#C9844A'} />
+                            <polygon points="8,30 27,14 46,30" fill={isSelected ? '#fff' : '#8B5A2B'} />
                           </svg>
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                        <div className="v3-house-lock-info">
+                          <div className="v3-house-lock-label">{u.typeName}</div>
+                          <div className="v3-house-lock-name">{u.name}</div>
+                          <div className="v3-house-lock-feat">
+                            до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <div className="v3-house-lock-check">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                              <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
               )}
-              {selectedUnitId && availability && availability.units.length > 1 && (
-                <button className="v3-change-unit-btn" onClick={() => setSelectedUnitId(null)}>
-                  ↺ Обрати інший варіант
-                </button>
-              )}
-              {availability && availability.units.length > 0 && socialProof && (
+              {availability && availability.units?.length > 0 && socialProof && (
                 <div className="v3-social-badges">
                   <div className="v3-badge viewers">
                     <span className="v3-badge-dot pulse"></span>
@@ -832,7 +1010,6 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
               )}
             </div>
           )}
-
           {selectedUnit && (
             <div className="v3-house-detail-fade">
               <div className="v3-gallery">
@@ -842,9 +1019,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                   }
                 }}>
                   {selectedUnit.photos && selectedUnit.photos.length > 0 ? (
-                    <img 
-                      src={selectedUnit.photos[currentImgIndex % selectedUnit.photos.length]} 
-                      alt={selectedUnit.name} 
+                    <img
+                      src={selectedUnit.photos[currentImgIndex % selectedUnit.photos.length]}
+                      alt={selectedUnit.name}
                       className="v3-gallery-img"
                     />
                   ) : (
@@ -958,9 +1135,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
               {services.map(s => {
                 const isSelected = selectedServiceIds.has(s.id);
                 return (
-                  <div 
-                    key={s.id} 
-                    className={`v3-service-card ${isSelected ? 'selected' : ''}`} 
+                  <div
+                    key={s.id}
+                    className={`v3-service-card ${isSelected ? 'selected' : ''}`}
                     onClick={() => toggleService(s.id)}
                   >
                     <div className="v3-service-body">
@@ -980,7 +1157,29 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           )}
 
-          <button className="v3-skip-link" onClick={() => goToStep(5)}>{t.skipLink || 'Пропустити — не треба нічого'}</button>
+          {/* Step 4 action buttons */}
+          <div className="v3-services-actions">
+            <button
+              className="v3-cta-btn"
+              style={{ width: '100%', marginTop: 4 }}
+              onClick={() => goToStep(5)}
+            >
+              <span>
+                {selectedServiceIds.size > 0 ? (() => {
+                  const servicesTotal = services
+                    .filter(s => selectedServiceIds.has(s.id))
+                    .reduce((sum, s) => sum + (s.price || 0), 0);
+                  return `Підтвердити вибір (${selectedServiceIds.size}) · +${formatPrice(servicesTotal, siteCurrency)}`;
+                })() : 'Перейти до оплати'}
+              </span>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button className="v3-skip-link" onClick={() => { setSelectedServiceIds(new Set()); goToStep(5); }}>
+              {t.skipLink || 'Пропустити — не треба нічого'}
+            </button>
+          </div>
         </div>
 
         {/* STEP 5: PAYMENT (Breakdown) */}
@@ -1019,12 +1218,12 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         </div>
 
         {/* STEP 6: SUCCESS */}
-        <div className={`v3-step ${step === 6 || !!reservation ? 'visible' : ''} success`}>
+        <div className={`v3-step ${step === 6 ? 'visible' : ''} success`}>
           <div className="v3-success-icon">
             <svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M7 15L12 20L23 9" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </div>
           <h1 className="v3-success-title">{t.bookedSuccess}</h1>
-          <p className="v3-success-sub">{t.supportContactNote}</p>
+          <p className="v3-success-sub">{siteConfig?.config?.supportContact || t.supportContactNote}</p>
 
           <div className="v3-success-details">
             <div className="v3-success-row"><span>{t.bookingNumber}</span><strong>#{reservation?.reservationId.slice(-4).toUpperCase()}</strong></div>
@@ -1035,14 +1234,27 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
         </div>
 
         {/* STICKY CTA */}
-        {step < 6 && !reservation && (
+        {step < 6 && (
           <div className="v3-cta-bar">
             <div className="v3-cta-inner">
               <div className="v3-cta-summary">
                 <div className="v3-cta-summary-line1">
-                  {nights > 0 ? `${nights} ${t.nightsShort.toUpperCase()}` : ''} · {adults + kids} {t.guestsShort.toUpperCase()}
+                  {checkIn && checkOut && nights > 0
+                    ? `${nights} ${t.nightsShort.toUpperCase()} · ${adults + kids} ${t.guestsShort.toUpperCase()}`
+                    : `${adults + kids} ${t.guestsShort.toUpperCase()}`
+                  }
                 </div>
-                <div className="v3-cta-summary-line2">{formatPrice(totalWithDiscount, siteCurrency)}</div>
+                <div className="v3-cta-summary-line2">
+                  {checkIn && checkOut && loadingAvail ? (
+                    <span className="v3-cta-loader"></span>
+                  ) : nights > 0 && totalWithDiscount > 0 ? (
+                    formatPrice(totalWithDiscount, siteCurrency)
+                  ) : nights > 0 && selectedUnit ? (
+                    `${t.from || 'від'} ${formatPrice(selectedUnit.avgPricePerNight, siteCurrency)} / ${t.night || 'ніч'}`
+                  ) : (
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Оберіть дати щоб дізнатись ціну</span>
+                  )}
+                </div>
               </div>
               <button
                 className={`v3-cta-btn ${((step === 1 && (!checkIn || !checkOut)) || (step === 2 && !selectedUnitId) || (step === 3 && (!firstName || !lastName || !phone || !email))) ? 'disabled' : ''}`}

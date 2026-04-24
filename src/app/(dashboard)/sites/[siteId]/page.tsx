@@ -47,6 +47,7 @@ interface WidgetConfig {
   search_result_url?: string;
   enable_prefill?: boolean;
   default_lang?: string;
+  supportContact?: string;
 }
 interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; unit_type_photos?: string; photos?: string; actual_unit_type_id?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
 interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; }
@@ -345,15 +346,15 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
             fontSize:12, overflowX:'auto', fontFamily:'monospace', lineWeight:1.5,
             border:'1px solid var(--border-primary)'
           }}>
-{`<div id="alisio-booking-widget"
-  data-site="${siteSlug}"
-  data-unit="${listing.unit_id || listing.unit_type_id}"
+{`<script 
+  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" 
+  data-site="${siteSlug}" 
+  data-unit="${listing.unit_id || listing.unit_type_id}" 
   data-lang="${embedLang}">
-</div>
-<script src="${origin || 'https://alisio.swipescape.eu'}/widget/embed.v2.js"></script>`}
+</script>`}
           </pre>
           <div style={{position:'absolute', top:8, right:8}}>
-            <CopyBtn text={`<div id="alisio-booking-widget" data-site="${siteSlug}" data-unit="${listing.unit_id || listing.unit_type_id}" data-lang="${embedLang}"></div><script src="${origin || 'https://alisio.swipescape.eu'}/widget/embed.v2.js"></script>`}/>
+            <CopyBtn text={`<script src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" data-site="${siteSlug}" data-unit="${listing.unit_id || listing.unit_type_id}" data-lang="${embedLang}"></script>`}/>
           </div>
         </div>
       </div>
@@ -814,8 +815,11 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   const widgetUrl = site.site_url || origin || 'https://YOUR_DOMAIN';
   
-  const scriptTag = `<div id="alisio-booking-widget" data-site="${site.slug}"></div>
-<script src="${origin || 'https://YOUR_PMS_DOMAIN'}/widget/embed.v2.js"></script>`;
+  const scriptTag = `<script 
+  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" 
+  data-site="${site.slug}" 
+  data-lang="${lang}">
+</script>`;
 
   const iframeEmbed = `<iframe
   src="${origin || 'https://YOUR_PMS_DOMAIN'}/booking?site=${site.slug}&lang=${lang}"
@@ -825,11 +829,11 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   // Dynamic locale injection example
   const dynamicLocaleSnippet = `<!-- Передайте мову сайту у віджет динамічно -->
-<script>
-  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
-</script>
-<div id="alisio-booking-widget" data-site="${site.slug}" data-lang-from="window.__BOOKING_LANG__"></div>
-<script src="${origin || 'https://YOUR_PMS_DOMAIN'}/widget/embed.v2.js"></script>`;
+<script 
+  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" 
+  data-site="${site.slug}" 
+  data-lang="${lang}">
+</script>`;
 
   const save = async () => {
     setSaving(true);
@@ -932,6 +936,19 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
             onChange={e => onUpdate({ ...site, site_url: e.target.value } as any)} />
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Допомагає правильно генерувати посилання на бронювання</div>
         </div>
+      </Step>
+
+      <Step n={7} title="Контактне повідомлення після бронювання">
+        <div style={{marginBottom:8,fontSize:13,color:'var(--text-secondary)'}}>
+          Текст, який побачить гість на екрані підтвердження бронювання. Вкажіть email та телефон для зв&apos;язку.
+        </div>
+        <input
+          className="form-input"
+          placeholder="Якщо щось — пиши на hello@yoursite.com або +420 000 000 000"
+          value={cfg.supportContact || ''}
+          onChange={e => setCfg(c => ({...c, supportContact: e.target.value}))}
+        />
+        <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>Якщо порожньо — використовується текст за замовчуванням з налаштувань мови</div>
       </Step>
 
       <button className="btn btn-primary" onClick={save} disabled={saving}>

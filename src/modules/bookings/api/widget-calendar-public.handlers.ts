@@ -17,13 +17,25 @@ export async function getWidgetCalendar(request: NextRequest) {
     const db = getDb();
     const { searchParams } = new URL(request.url);
     const propertyId = searchParams.get('propertyId');
+    const unitId = searchParams.get('unitId');
     const monthParam = searchParams.get('month');
 
     let property: any;
-    if (propertyId) {
-      property = db.prepare('SELECT id FROM properties WHERE id = ? AND is_active = 1').get(propertyId);
-    } else {
-      property = db.prepare('SELECT id FROM properties WHERE is_active = 1 LIMIT 1').get();
+    let targetUnitId = unitId;
+
+    if (unitId) {
+      const unit = db.prepare('SELECT property_id FROM units WHERE id = ?').get(unitId) as any;
+      if (unit) {
+        property = { id: unit.property_id };
+      }
+    }
+
+    if (!property) {
+      if (propertyId) {
+        property = db.prepare('SELECT id FROM properties WHERE id = ? AND is_active = 1').get(propertyId);
+      } else {
+        property = db.prepare('SELECT id FROM properties WHERE is_active = 1 LIMIT 1').get();
+      }
     }
 
     if (!property) {
@@ -63,7 +75,8 @@ export async function getWidgetCalendar(request: NextRequest) {
       JOIN unit_types ut ON u.unit_type_id = ut.id
       JOIN categories c ON ut.category_id = c.id
       WHERE c.type = 'glamping' AND u.is_active = 1 AND u.room_status = 'available' AND ut.property_id = ?
-    `).get(property.id) as any;
+        ${targetUnitId ? 'AND u.id = ?' : ''}
+    `).get(...(targetUnitId ? [property.id, targetUnitId] : [property.id])) as any;
     const totalCount = totalUnits?.cnt || 0;
 
     const reservations = db.prepare(`
@@ -74,7 +87,8 @@ export async function getWidgetCalendar(request: NextRequest) {
       WHERE c.type = 'glamping' AND ut.property_id = ?
         AND r.status NOT IN ('cancelled', 'no_show')
         AND r.check_in < ? AND r.check_out > ?
-    `).all(property.id, nextMonthStart, monthStart) as any[];
+        ${targetUnitId ? 'AND r.unit_id = ?' : ''}
+    `).all(...(targetUnitId ? [property.id, nextMonthStart, monthStart, targetUnitId] : [property.id, nextMonthStart, monthStart])) as any[];
 
     let blocks: any[] = [];
     if (hasAvailBlocks) {
@@ -85,7 +99,8 @@ export async function getWidgetCalendar(request: NextRequest) {
         JOIN categories c ON ut.category_id = c.id
         WHERE c.type = 'glamping' AND ut.property_id = ?
           AND ab.date_from < ? AND ab.date_to > ?
-      `).all(property.id, nextMonthStart, monthStart) as any[];
+          ${targetUnitId ? 'AND ab.unit_id = ?' : ''}
+      `).all(...(targetUnitId ? [property.id, nextMonthStart, monthStart, targetUnitId] : [property.id, nextMonthStart, monthStart])) as any[];
     }
 
     const hasPriceCalendar = existingTables.has('price_calendar');

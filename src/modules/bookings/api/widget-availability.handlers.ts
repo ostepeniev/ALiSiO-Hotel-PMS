@@ -22,17 +22,19 @@ export async function getAvailability(request: NextRequest) {
     const certificateCode = searchParams.get('certificateCode') || '';
     const siteId = searchParams.get('siteId');
 
-    if (!checkIn || !checkOut) {
-      return NextResponse.json({ error: 'checkIn and checkOut required' }, { status: 400, headers: CORS_HEADERS });
-    }
+    const hasDates = checkIn && checkOut;
+    let ciDate: Date | null = null;
+    let coDate: Date | null = null;
+    let nights = 0;
 
-    const ciDate = new Date(checkIn);
-    const coDate = new Date(checkOut);
-    if (coDate <= ciDate) {
-      return NextResponse.json({ error: 'checkOut must be after checkIn' }, { status: 400, headers: CORS_HEADERS });
+    if (hasDates) {
+      ciDate = new Date(checkIn!);
+      coDate = new Date(checkOut!);
+      if (coDate <= ciDate) {
+        return NextResponse.json({ error: 'checkOut must be after checkIn' }, { status: 400, headers: CORS_HEADERS });
+      }
+      nights = Math.round((coDate.getTime() - ciDate.getTime()) / 86400000);
     }
-
-    const nights = Math.round((coDate.getTime() - ciDate.getTime()) / 86400000);
 
     const existingTables = new Set(
       (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
@@ -68,63 +70,67 @@ export async function getAvailability(request: NextRequest) {
     const results = [];
 
     for (const unit of units) {
-      const isBooked = db.prepare(`
-        SELECT 1 FROM reservations r
-        WHERE r.unit_id = ?
-          AND r.status NOT IN ('cancelled', 'no_show')
-          AND r.check_in < ? AND r.check_out > ?
-        LIMIT 1
-      `).get(unit.id, checkOut, checkIn);
-
-      if (isBooked) continue;
-
-      if (hasAvailBlocks) {
-        const isBlocked = db.prepare(`
-          SELECT 1 FROM availability_blocks
-          WHERE unit_id = ?
-            AND date_from < ? AND date_to > ?
+      if (hasDates) {
+        const isBooked = db.prepare(`
+          SELECT 1 FROM reservations r
+          WHERE r.unit_id = ?
+            AND r.status NOT IN ('cancelled', 'no_show')
+            AND r.check_in < ? AND r.check_out > ?
           LIMIT 1
         `).get(unit.id, checkOut, checkIn);
-        if (isBlocked) continue;
+
+        if (isBooked) continue;
+
+        if (hasAvailBlocks) {
+          const isBlocked = db.prepare(`
+            SELECT 1 FROM availability_blocks
+            WHERE unit_id = ?
+              AND date_from < ? AND date_to > ?
+            LIMIT 1
+          `).get(unit.id, checkOut, checkIn);
+          if (isBlocked) continue;
+        }
       }
 
       let prices: any[] = [];
-      if (hasPriceCalendar) {
-        prices = db.prepare(`
-          SELECT pc.date, pc.base_price, pc.weekend_price
-          FROM price_calendar pc
-          WHERE pc.unit_type_id = ? AND pc.date >= ? AND pc.date < ?
-          ORDER BY pc.date ASC
-        `).all(unit.unit_type_id, checkIn, checkOut) as any[];
-      }
-
-      const priceMap = new Map<string, any>();
-      for (const p of prices) priceMap.set(p.date, p);
-
       const dayNames = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
       const breakdown: { date: string; dayName: string; price: number; isWeekend: boolean }[] = [];
       let totalPrice = 0;
       let hasPricing = false;
       const STUB_PRICE = 2500;
 
-      const current = new Date(ciDate);
-      for (let i = 0; i < nights; i++) {
-        const dateStr = current.toISOString().split('T')[0];
-        const dayOfWeek = current.getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
-        const priceEntry = priceMap.get(dateStr);
-
-        let dayPrice = STUB_PRICE;
-        if (priceEntry) {
-          dayPrice = isWeekend && priceEntry.weekend_price != null
-            ? priceEntry.weekend_price
-            : priceEntry.base_price;
-          hasPricing = true;
+      if (hasDates && ciDate) {
+        if (hasPriceCalendar) {
+          prices = db.prepare(`
+            SELECT pc.date, pc.base_price, pc.weekend_price
+            FROM price_calendar pc
+            WHERE pc.unit_type_id = ? AND pc.date >= ? AND pc.date < ?
+            ORDER BY pc.date ASC
+          `).all(unit.unit_type_id, checkIn, checkOut) as any[];
         }
 
-        breakdown.push({ date: dateStr, dayName: dayNames[dayOfWeek], price: dayPrice, isWeekend });
-        totalPrice += dayPrice;
-        current.setDate(current.getDate() + 1);
+        const priceMap = new Map<string, any>();
+        for (const p of prices) priceMap.set(p.date, p);
+
+        const current = new Date(ciDate);
+        for (let i = 0; i < nights; i++) {
+          const dateStr = current.toISOString().split('T')[0];
+          const dayOfWeek = current.getDay();
+          const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+          const priceEntry = priceMap.get(dateStr);
+
+          let dayPrice = STUB_PRICE;
+          if (priceEntry) {
+            dayPrice = isWeekend && priceEntry.weekend_price != null
+              ? priceEntry.weekend_price
+              : priceEntry.base_price;
+            hasPricing = true;
+          }
+
+          breakdown.push({ date: dateStr, dayName: dayNames[dayOfWeek], price: dayPrice, isWeekend });
+          totalPrice += dayPrice;
+          current.setDate(current.getDate() + 1);
+        }
       }
 
       const avgPricePerNight = nights > 0 ? Math.round(totalPrice / nights) : 0;

@@ -23,7 +23,7 @@ export async function getWidgetSiteConfig(req: NextRequest) {
 
     const db = getDb();
     const site = db.prepare(`
-      SELECT id, name, slug, title, design_config, widget_config, currency, site_url
+      SELECT id, name, slug, design_config, widget_config, currency, site_url
       FROM booking_sites
       WHERE slug = ?
     `).get(slug) as any;
@@ -36,7 +36,7 @@ export async function getWidgetSiteConfig(req: NextRequest) {
       id: site.id,
       name: site.name,
       slug: site.slug,
-      title: site.title,
+      title: site.name,
       design: JSON.parse(site.design_config || '{}'),
       config: JSON.parse(site.widget_config || '{}'),
       currency: site.currency || 'CZK',
