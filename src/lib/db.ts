@@ -1662,6 +1662,21 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_org ON finance_counterparties(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_parent ON finance_counterparties(parent_id)');
 
+  // --- Finance PR #5: flat tags table (cross-cutting labels on operations) ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_tags (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#6b7280',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_org_name ON finance_tags(organization_id, LOWER(name))');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_tags_org ON finance_tags(organization_id)');
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS income (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

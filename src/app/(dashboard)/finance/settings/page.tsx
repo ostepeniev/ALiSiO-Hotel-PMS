@@ -7,6 +7,7 @@ import ExchangeRatesTab from './_components/ExchangeRatesTab';
 import CategoriesTab from './_components/CategoriesTab';
 import ProjectsTab from './_components/ProjectsTab';
 import CounterpartiesTab from './_components/CounterpartiesTab';
+import TagsTab from './_components/TagsTab';
 
 type TabId =
   | 'accounts'
@@ -31,7 +32,7 @@ const TABS: TabDef[] = [
   { id: 'categories', label: 'Категорії', icon: <FolderTree size={16} />, enabled: true },
   { id: 'projects', label: 'Проєкти', icon: <FolderKanban size={16} />, enabled: true },
   { id: 'counterparties', label: 'Контрагенти', icon: <Users size={16} />, enabled: true },
-  { id: 'tags', label: 'Теги', icon: <Tag size={16} />, enabled: false },
+  { id: 'tags', label: 'Теги', icon: <Tag size={16} />, enabled: true },
   { id: 'auto-rules', label: 'Автоправила', icon: <Zap size={16} />, enabled: false },
   { id: 'users', label: 'Користувачі', icon: <UserCog size={16} />, enabled: false },
 ];
@@ -110,6 +111,7 @@ export default function FinanceSettingsPage() {
           {activeTab === 'categories' && <CategoriesTab />}
           {activeTab === 'projects' && <ProjectsTab />}
           {activeTab === 'counterparties' && <CounterpartiesTab />}
+          {activeTab === 'tags' && <TagsTab />}
         </main>
       </div>
     </div>

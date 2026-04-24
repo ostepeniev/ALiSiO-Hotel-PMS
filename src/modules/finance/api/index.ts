@@ -17,6 +17,9 @@ export {
   updateCounterparty, archiveCounterparty, deleteCounterparty,
   moveCounterparty, matchCounterpartyByText, getAliasSuggestions,
 } from './counterparties.handlers';
+export {
+  listTags, createTag, updateTag, archiveTag, deleteTag,
+} from './tags.handlers';
 export { listCapex, createCapex } from './capex.handlers';
 export { getCapexItem, updateCapexItem, deleteCapexItem } from './capex-item.handlers';
 export { listAccruals, createAccrual } from './accruals.handlers';

@@ -48,6 +48,11 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 | `moveCounterparty(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop, match `kind`) |
 | `matchCounterpartyByText(req)` | Пошук контрагента за підрядком коментаря через `aliases_json` (longest-match, case-insensitive) |
 | `getAliasSuggestions(req)` | Топ-10 часто-вживаних рядків з existing counterparty полів (expenses/income/bank_transactions) |
+| `listTags(req)` | Список тегів (?archived=1) |
+| `createTag(req)` | Новий тег (UNIQUE case-insensitive на `name`) |
+| `updateTag(req, ctx)` | Оновлення |
+| `archiveTag(req, ctx)` | Архівація (is_active) |
+| `deleteTag(req, ctx)` | Видалення (поки без FK-перевірок — буде у PR #6) |
 | `listCapex()` | Список CapEx |
 | `createCapex(req)` | Додати CapEx |
 | `getCapexItem(req, ctx)` | Отримати CapEx-запис |
