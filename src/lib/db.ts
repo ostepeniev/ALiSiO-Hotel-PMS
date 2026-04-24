@@ -43,6 +43,15 @@ export function getDb(): any {
   // Run migrations for existing databases
   runMigrations(db);
 
+  // PR #8: run recurring templates if 24h has elapsed since last tick
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runRecurringTickIfDue } = require('@/modules/finance/data/recurring-engine');
+    runRecurringTickIfDue(db);
+  } catch (e: any) {
+    console.log('[Recurring] tick-if-due error:', e.message);
+  }
+
   return db;
 }
 
@@ -1669,6 +1678,43 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_org ON finance_counterparties(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_parent ON finance_counterparties(parent_id)');
+
+  // --- Finance PR #8: recurring templates + system state ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_recurring_templates (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      op_type TEXT NOT NULL CHECK (op_type IN ('income','expense','transfer')),
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CZK',
+      account_from_id TEXT REFERENCES finance_accounts(id),
+      account_to_id TEXT REFERENCES finance_accounts(id),
+      category_id TEXT REFERENCES expense_categories(id),
+      project_id TEXT REFERENCES business_units(id),
+      counterparty_id TEXT REFERENCES finance_counterparties(id),
+      comment TEXT,
+      schedule TEXT NOT NULL CHECK (schedule IN ('daily','weekly','monthly','yearly')),
+      schedule_day INTEGER,
+      next_run_at TEXT NOT NULL,
+      end_at TEXT,
+      last_run_at TEXT,
+      runs_created INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_rt_org ON fin_recurring_templates(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_rt_next_run ON fin_recurring_templates(next_run_at, is_active)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_system_state (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 
   // --- Finance PR #7: auto-rules + match log ---
   database.exec(`

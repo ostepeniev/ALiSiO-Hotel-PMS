@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Wallet, ArrowLeftRight, FolderTree, FolderKanban, Users, Tag, Zap, UserCog } from 'lucide-react';
+import { Settings, Wallet, ArrowLeftRight, FolderTree, FolderKanban, Users, Tag, Zap, UserCog, Repeat } from 'lucide-react';
 import AccountsTab from './_components/AccountsTab';
 import ExchangeRatesTab from './_components/ExchangeRatesTab';
 import CategoriesTab from './_components/CategoriesTab';
@@ -9,6 +9,7 @@ import ProjectsTab from './_components/ProjectsTab';
 import CounterpartiesTab from './_components/CounterpartiesTab';
 import TagsTab from './_components/TagsTab';
 import AutoRulesTab from './_components/AutoRulesTab';
+import RecurringTemplatesTab from './_components/RecurringTemplatesTab';
 
 type TabId =
   | 'accounts'
@@ -18,6 +19,7 @@ type TabId =
   | 'counterparties'
   | 'tags'
   | 'auto-rules'
+  | 'recurring'
   | 'users';
 
 interface TabDef {
@@ -35,6 +37,7 @@ const TABS: TabDef[] = [
   { id: 'counterparties', label: 'Контрагенти', icon: <Users size={16} />, enabled: true },
   { id: 'tags', label: 'Теги', icon: <Tag size={16} />, enabled: true },
   { id: 'auto-rules', label: 'Автоправила', icon: <Zap size={16} />, enabled: true },
+  { id: 'recurring', label: 'Регулярки', icon: <Repeat size={16} />, enabled: true },
   { id: 'users', label: 'Користувачі', icon: <UserCog size={16} />, enabled: false },
 ];
 
@@ -114,6 +117,7 @@ export default function FinanceSettingsPage() {
           {activeTab === 'counterparties' && <CounterpartiesTab />}
           {activeTab === 'tags' && <TagsTab />}
           {activeTab === 'auto-rules' && <AutoRulesTab />}
+          {activeTab === 'recurring' && <RecurringTemplatesTab />}
         </main>
       </div>
     </div>

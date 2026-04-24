@@ -46,3 +46,10 @@ export {
   listAutoRules, createAutoRule, updateAutoRule, deleteAutoRule,
   toggleAutoRule, moveAutoRule, applyAutoRulesToOperations, autoMatchCounterpartiesAllOps,
 } from './auto-rules.handlers';
+
+// PR #8: recurring templates + calendar
+export {
+  listRecurringTemplates, createRecurringTemplate, updateRecurringTemplate,
+  deleteRecurringTemplate, toggleRecurringTemplate, runRecurringNow, runAllDue,
+} from './recurring.handlers';
+export { getCalendarMonth } from './calendar.handlers';
