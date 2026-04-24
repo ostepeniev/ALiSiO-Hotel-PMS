@@ -212,8 +212,12 @@ export async function createWidgetReservation(request: NextRequest) {
       currency: 'CZK',
     }, { status: 201, headers: CORS_HEADERS });
   } catch (error: any) {
-    console.error('POST /api/booking/reserve error:', error?.message || error);
-    return NextResponse.json({ error: 'Failed to create reservation' }, { status: 500, headers: CORS_HEADERS });
+    const msg = error?.message || String(error);
+    console.error('POST /api/booking/reserve error:', msg);
+    const clientMsg = process.env.NODE_ENV === 'development'
+      ? `Failed to create reservation: ${msg}`
+      : 'Failed to create reservation';
+    return NextResponse.json({ error: clientMsg }, { status: 500, headers: CORS_HEADERS });
   }
 }
 

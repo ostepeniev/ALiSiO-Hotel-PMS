@@ -9,7 +9,11 @@ import {
   LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent,
   ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil, Eye, Image as ImageIcon, Upload,
 } from 'lucide-react';
-import BookingV2 from '@/modules/bookings/ui/BookingV2';
+import dynamic from 'next/dynamic';
+const BookingV2 = dynamic(() => import('@/modules/bookings/ui/BookingV2'), {
+  ssr: false,
+  loading: () => <div style={{ height: 680, background: '#FAFAF7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 13 }}>Завантаження...</div>,
+});
 
 /* ════════════════════════════════════════════════
    TYPES
@@ -678,10 +682,12 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
               <button key={t} onClick={() => setCfg(c => ({ ...c, theme: t, primary_color: THEME_CONFIGS[t].color }))}
                 style={{
                   padding: '10px 8px', borderRadius: 8, fontSize: 12, fontWeight: cfg.theme === t ? 700 : 400,
-                  border: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderTop: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderRight: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderBottom: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderLeft: `4px solid ${THEME_CONFIGS[t].color}`,
                   background: cfg.theme === t ? 'var(--accent-primary-dim)' : 'var(--surface-secondary)',
                   cursor: 'pointer', color: 'var(--text-primary)', transition: 'all .15s',
-                  borderLeft: `4px solid ${THEME_CONFIGS[t].color}`
                 }}>
                 {t}
               </button>

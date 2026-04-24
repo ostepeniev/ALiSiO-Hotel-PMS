@@ -763,19 +763,49 @@
 }
 
 .v3-cal-day.busy {
-  color: var(--line-2);
   position: relative;
   cursor: not-allowed;
+  color: rgba(0, 0, 0, 0.25);
+  background: rgba(200, 50, 50, 0.07);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.v3-cal-day.busy::after {
+.v3-cal-day.busy::before {
   content: "";
   position: absolute;
-  width: 4px;
-  height: 4px;
-  background: var(--line-2);
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(180, 50, 50, 0.18) 4px,
+    rgba(180, 50, 50, 0.18) 5px
+  );
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* Remove old dot */
+.v3-cal-day.busy::after {
+  display: none;
+}
+
+/* Partial — деякі юніти ще вільні */
+.v3-cal-day.partial {
+  position: relative;
+}
+
+.v3-cal-day.partial::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: #f59e0b;
   border-radius: 50%;
-  bottom: 8px;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .v3-cal-price {
@@ -788,6 +818,73 @@
 .v3-cal-day.start .v3-cal-price,
 .v3-cal-day.end .v3-cal-price {
   color: rgba(255, 255, 255, .7);
+}
+
+/* ── CALENDAR LEGEND ── */
+.v3-cal-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 0 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--border-primary);
+  margin-top: 4px;
+}
+
+.v3-cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.v3-cal-legend-busy {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(200, 50, 50, 0.07)
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 3px,
+      rgba(180, 50, 50, 0.22) 3px,
+      rgba(180, 50, 50, 0.22) 4px
+    );
+  flex-shrink: 0;
+}
+
+.v3-cal-legend-partial {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-primary);
+  position: relative;
+  flex-shrink: 0;
+}
+.v3-cal-legend-partial::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #f59e0b;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.v3-cal-legend-free {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(47, 79, 43, 0.12);
+  border: 1px solid rgba(47, 79, 43, 0.25);
+  flex-shrink: 0;
 }
 
 /* ── GALLERY ── */

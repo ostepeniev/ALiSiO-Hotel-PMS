@@ -1,3 +1,4 @@
+// Bookings module public API — v2
 export { listReservations, createReservation } from './reservations.handlers';
 export { getReservation, updateReservation, deleteReservation } from './reservation.handlers';
 export { listActivity, createActivity } from './reservation-activity.handlers';

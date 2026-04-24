@@ -38,7 +38,7 @@ import { listReservations, createReservation, type Reservation } from '@bookings
 | `deleteAvailabilityBlock(req)` | Видалення блокування |
 | `listServiceOrders(req)` | Замовлення послуг (PMS + гостьова сторінка) |
 | `updateServiceOrder(req)` | Зміна статусу замовлення (complete/cancel/reopen) |
-| `getAvailability(req)` | Доступність для віджету |
+| `getAvailability(req)` | Доступність для віджету; підтримує `siteId` або `siteSlug` для фільтрації за сайтом |
 | `getAvailabilityOptions()` | CORS preflight |
 | `validatePromo(req)` | Перевірка промокоду |
 | `validatePromoOptions()` | CORS preflight |
@@ -52,7 +52,7 @@ import { listReservations, createReservation, type Reservation } from '@bookings
 | `getWidgetServices(req)` | Послуги для гостьової сторінки |
 | `bookWidgetService(req)` | Замовлення послуги через віджет |
 | `getWidgetServicesOptions()` | CORS preflight |
-| `getWidgetCalendar(req)` | Календар доступності (публічний) |
+| `getWidgetCalendar(req)` | Календар доступності (публічний); підтримує `siteSlug`, `siteId`, `unitId`, `propertyId` |
 | `getWidgetCalendarOptions()` | CORS preflight |
 
 ## Залежності
@@ -75,7 +75,7 @@ import { listReservations, createReservation, type Reservation } from '@bookings
 
 ## Схема даних
 
-**Таблиці:** `reservations`, `reservation_activity`, `reservation_registrations`, `group_bookings`, `group_booking_guests`, `booking_sources`, `additional_services`, `availability_blocks`, `service_orders`, `booking_service_orders`
+**Таблиці:** `reservations`, `reservation_activity`, `reservation_registrations`, `group_bookings`, `group_booking_guests`, `booking_sources`, `additional_services`, `availability_blocks`, `service_orders`, `booking_service_orders`, `booking_sites`, `site_listings`
 
 ## Структура файлів
 
@@ -103,6 +103,11 @@ bookings/
     widget-payment-return.handlers.ts
     widget-services.handlers.ts
     widget-calendar-public.handlers.ts
+    widget-site.handlers.ts
+  ui/
+    BookingV2.tsx                       ← embed iframe widget component
+    booking-v2.css                      ← widget styles + themes
+    translations.ts                     ← uk/en/cs/de i18n strings
   domain/
     types.ts
   events/

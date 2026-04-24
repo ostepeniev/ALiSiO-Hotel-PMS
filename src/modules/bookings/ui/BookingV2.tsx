@@ -107,6 +107,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const [calMonthOffset, setCalMonthOffset] = useState(0);
   const [calOpen, setCalOpen] = useState(false);
   const [busyDates, setBusyDates] = useState<Set<string>>(new Set());
+  const [partialDates, setPartialDates] = useState<Set<string>>(new Set());
   const [socialProof, setSocialProof] = useState<{ viewers: number, lastBooking?: string } | null>(null);
   const [waitlistStatus, setWaitlistStatus] = useState<'none' | 'submitting' | 'success'>('none');
   const [nextAvailable, setNextAvailable] = useState<string | null>(null);
@@ -128,7 +129,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
   // New site config states
   const [siteConfig, setSiteConfig] = useState<any>(null);
-  const [siteDesign, setSiteDesign] = useState<DesignConfig | null>(design || null);
+  const [siteDesign, setSiteDesign] = useState<DesignConfig | null>(null);
   const [siteCurrency, setSiteCurrency] = useState('Kč');
   const [siteThankYouUrl, setSiteThankYouUrl] = useState(thankYouUrl || '');
 
@@ -211,9 +212,9 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   }, []);
 
-  // Fetch site config
+  // Fetch site config (skip in preview — design comes from props directly)
   useEffect(() => {
-    if (!isMounted || !siteSlug) return;
+    if (!isMounted || !siteSlug || isPreview) return;
     const fetchConfig = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/booking/site-config?slug=${siteSlug}`);
@@ -222,12 +223,13 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           setSiteConfig(data);
           if (data.design) setSiteDesign(data.design);
           if (data.currency) setSiteCurrency(data.currency);
+          if (data.hasPayment !== undefined) setSiteConfig(data);
           if (data.config?.thank_you_url) setSiteThankYouUrl(data.config.thank_you_url);
         }
       } catch (e) { console.error('Fetch site config error:', e); }
     };
     fetchConfig();
-  }, [isMounted, siteSlug]);
+  }, [isMounted, siteSlug, isPreview]);
 
   // Thank you redirect logic
   useEffect(() => {
@@ -274,6 +276,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         const co = fmtDate(new Date(d.getTime() + 86400000));
         const params = new URLSearchParams({ checkIn: ci, checkOut: co });
         if (siteId) params.set('siteId', siteId);
+        if (siteSlug) params.set('siteSlug', siteSlug);
         const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
         if (res.ok) {
           const data = await res.json();
@@ -293,38 +296,30 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   }, [isMounted, selectedUnitId, availability, loadingAvail, checkIn, checkOut]);
 
-  // Ultra-robust polling resizer
+  // Resize reporter — sends widget content height to parent iframe host
   useEffect(() => {
     if (!isMounted) return;
 
     const sendResize = () => {
       const el = document.getElementById('alisio-widget-v3');
-      if (el) {
-        // scrollHeight of the document is the most reliable way to get total content height
-        const height = Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
-          el.scrollHeight
-        );
+      if (!el) return;
 
-        const msg = {
-          type: 'resize',
-          height: height,
-          val: height,
-          h: height,
-          source: 'alisio-widget'
-        };
+      // Use getBoundingClientRect().height — this is the actual RENDERED height
+      // of the widget element, unaffected by the iframe document/body size.
+      // Using document.body.scrollHeight causes infinite growth because:
+      //   iframe grows → body.scrollHeight grows → widget reports bigger height → loop
+      const height = Math.ceil(el.getBoundingClientRect().height);
+      if (height <= 0) return;
 
-        window.parent.postMessage(msg, '*');
-        if (window.parent !== window.top) {
-          window.top.postMessage(msg, '*');
-        }
+      const msg = { type: 'resize', height, val: height, h: height, source: 'alisio-widget' };
+      window.parent.postMessage(msg, '*');
+      if (window.parent !== window.top) {
+        window.top?.postMessage(msg, '*');
       }
     };
 
-    const interval = setInterval(sendResize, 200);
+    const interval = setInterval(sendResize, 500);
     sendResize();
-
     return () => clearInterval(interval);
   }, [isMounted]);
 
@@ -352,10 +347,13 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         const data = await res.json();
         if (data.days) {
           const busy = new Set<string>();
+          const partial = new Set<string>();
           data.days.forEach((d: any) => {
             if (d.status === 'booked') busy.add(d.date);
+            if (d.status === 'partial') partial.add(d.date);
           });
           setBusyDates(busy);
+          setPartialDates(partial);
         }
       } catch (e) { console.error('Fetch busy dates error:', e); }
     };
@@ -431,6 +429,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     try {
       const params = new URLSearchParams({ checkIn: ci, checkOut: co });
       if (siteId) params.set('siteId', siteId);
+      if (siteSlug) params.set('siteSlug', siteSlug);
       const res = await fetch(`${API_BASE}/api/booking/availability?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
@@ -444,7 +443,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     } catch (e) { console.error(e); }
     setLoadingAvail(false);
     return null;
-  }, [siteId]);
+  }, [siteId, siteSlug]);
 
   const findNextAvailable = async (co: string) => {
     try {
@@ -626,31 +625,34 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     setSubmitting(false);
   };
 
-  // ─── Render ───
+  // In preview, always use the live design prop (it changes when user picks a theme).
+  // In production, prefer siteDesign fetched from API, fall back to design prop.
+  const activeDesign = isPreview ? (design || siteDesign) : (siteDesign || design);
+
   // Dynamic styles based on design config
   const dynamicStyles = useMemo(() => {
-    if (!design) return {};
+    const d = activeDesign;
+    if (!d) return {};
     const styles: any = {};
-    if (design.primary_color) {
-      styles['--moss'] = design.primary_color;
-      // Also derive some variations
-      styles['--moss-dark'] = design.primary_color; // Simplified
-      styles['--accent-primary'] = design.primary_color;
+    if (d.primary_color) {
+      styles['--moss'] = d.primary_color;
+      styles['--moss-dark'] = d.primary_color;
+      styles['--accent-primary'] = d.primary_color;
     }
-    if (design.button_style) {
-      const isSharp = design.button_style.includes('sharp');
-      const isPill = design.button_style.includes('pill');
+    if (d.button_style) {
+      const isSharp = d.button_style.includes('sharp');
+      const isPill = d.button_style.includes('pill');
       styles['--radius'] = isSharp ? '2px' : isPill ? '24px' : '12px';
       styles['--radius-lg'] = isSharp ? '4px' : isPill ? '32px' : '16px';
     }
-    if (design.show_shadow !== undefined) {
-      styles['--shadow'] = design.show_shadow ? '0 8px 32px rgba(0,0,0,0.12)' : 'none';
+    if (d.show_shadow !== undefined) {
+      styles['--shadow'] = d.show_shadow ? '0 8px 32px rgba(0,0,0,0.12)' : 'none';
     }
     return styles;
-  }, [siteDesign]);
+  }, [activeDesign]);
 
   return (
-    <div className={`v3-body ${design?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
+    <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -733,13 +735,13 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           )}
 
           <div className="v3-dates" onClick={() => setCalOpen(true)}>
-            <div className={`v3-date-cell ${!selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
+            <div className={`v3-date-cell ${(checkIn && checkOut) || !selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkIn}</div>
               <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
               <div className="v3-date-cell-sub">{t.from} 15:00</div>
             </div>
             <div className="v3-date-div"></div>
-            <div className={`v3-date-cell ${selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(true); setCalOpen(true); }}>
+            <div className={`v3-date-cell ${(checkIn && checkOut) || selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(true); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkOut}</div>
               <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
               <div className="v3-date-cell-sub">
@@ -793,12 +795,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         const ds = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                         const isPast = parseDate(ds) < today;
                         const isBusy = busyDates.has(ds);
+                        const isPartial = !isBusy && partialDates.has(ds);
                         const unitInAvail = availability?.units.find(u => u.id === selectedUnitId);
                         const dayPrice = unitInAvail?.prices?.find(p => p.date === ds)?.price || (ds >= (checkIn || '') && ds < (checkOut || '') ? unitInAvail?.avgPricePerNight : null);
 
                         let cls = 'v3-cal-day';
                         if (isPast || isBusy) cls += ' muted';
                         if (isBusy) cls += ' busy';
+                        if (isPartial) cls += ' partial';
                         if (ds === checkIn) cls += ' start';
                         if (ds === checkOut) cls += ' end';
                         if (checkIn && checkOut && ds > checkIn && ds < checkOut) cls += ' in-range';
@@ -846,6 +850,28 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </button>
             </div>
           </div>
+
+          {/* Calendar legend */}
+          {(busyDates.size > 0 || partialDates.size > 0) && (
+            <div className="v3-cal-legend">
+              {busyDates.size > 0 && (
+                <div className="v3-cal-legend-item">
+                  <span className="v3-cal-legend-busy" />
+                  <span>Зайнято</span>
+                </div>
+              )}
+              {partialDates.size > 0 && (
+                <div className="v3-cal-legend-item">
+                  <span className="v3-cal-legend-partial" />
+                  <span>Частково</span>
+                </div>
+              )}
+              <div className="v3-cal-legend-item">
+                <span className="v3-cal-legend-free" />
+                <span>Вільно</span>
+              </div>
+            </div>
+          )}
 
           <div className="v3-guests">
             <div>
