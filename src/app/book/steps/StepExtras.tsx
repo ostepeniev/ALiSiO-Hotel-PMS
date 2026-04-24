@@ -3,7 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { formatPrice } from '../lib/pricing';
 
-interface Service { id: string; name: string; name_en: string; price: number; unit_label: string; icon: string; category: string; }
+interface Service {
+  id: string;
+  name: string;
+  name_en: string;
+  price: number;
+  unit_label: string;
+  icon: string;
+  category: string;
+}
+
 interface Props {
   accommodationType: string;
   nights: number;
@@ -11,13 +20,11 @@ interface Props {
   onSkip: () => void;
 }
 
-// Default extras for Kemp Carlsbad
-const DEFAULT_EXTRAS: Service[] = [
-  { id: 'ext_sauna', name: 'Sauna', name_en: 'Sauna session', price: 1500, unit_label: '2h session / up to 6 ppl', icon: '🧖', category: 'wellness' },
-  { id: 'ext_hottub', name: 'Koupací sud', name_en: 'Hot tub', price: 2000, unit_label: '2h session / up to 6 ppl', icon: '🛁', category: 'wellness' },
-  { id: 'ext_grill', name: 'Grill set', name_en: 'Grill set', price: 350, unit_label: 'per set (charcoal + tools)', icon: '🔥', category: 'bbq' },
-  { id: 'ext_breakfast', name: 'Snídaně', name_en: 'Breakfast', price: 180, unit_label: 'per person / day', icon: '🥐', category: 'food' },
-];
+// Sauna and Hot Tub require minimum 2 hours
+const MIN_HOURS: Record<string, number> = {
+  svc_sauna: 2,
+  svc_tub: 2,
+};
 
 export default function StepExtras({ accommodationType, nights, onNext, onSkip }: Props) {
   const [services, setServices] = useState<Service[]>([]);
@@ -28,30 +35,30 @@ export default function StepExtras({ accommodationType, nights, onNext, onSkip }
     fetch('/api/widget/config')
       .then(r => r.json())
       .then(data => {
-        const apiSvcs = (data.services || []).filter((s: Service) => s.category !== 'other');
-        // Merge: API services + defaults (avoid duplicates by id)
-        const apiIds = new Set(apiSvcs.map((s: Service) => s.id));
-        const merged = [...apiSvcs, ...DEFAULT_EXTRAS.filter(d => !apiIds.has(d.id))];
-        setServices(merged);
+        // Use only PMS services — prices come from DB, never hardcoded
+        const svcs = (data.services || []).filter((s: Service) => s.category !== 'other');
+        setServices(svcs);
       })
-      .catch(() => {
-        // API failed — use defaults
-        setServices(DEFAULT_EXTRAS);
-      })
+      .catch(() => setServices([]))
       .finally(() => setLoading(false));
   }, []);
 
   const toggle = (id: string) => {
     setSelected(prev => {
       const copy = { ...prev };
-      if (copy[id]) delete copy[id];
-      else copy[id] = 1;
+      if (copy[id]) {
+        delete copy[id];
+      } else {
+        // Start at minimum quantity (2 for sauna/tub, 1 for others)
+        copy[id] = MIN_HOURS[id] ?? 1;
+      }
       return copy;
     });
   };
 
   const setQty = (id: string, qty: number) => {
-    if (qty <= 0) {
+    const min = MIN_HOURS[id] ?? 1;
+    if (qty < min) {
       setSelected(prev => { const c = { ...prev }; delete c[id]; return c; });
     } else {
       setSelected(prev => ({ ...prev, [id]: qty }));
@@ -66,29 +73,61 @@ export default function StepExtras({ accommodationType, nights, onNext, onSkip }
     .filter(s => selected[s.id])
     .map(s => ({ id: s.id, name: s.name_en || s.name, quantity: selected[s.id], price: s.price * selected[s.id] }));
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><div className="kc-spinner" style={{ margin: '0 auto', borderColor: 'rgba(46,107,79,0.2)', borderTopColor: 'var(--kc-green)' }} /></div>;
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: 40 }}>
+        <div className="kc-spinner" style={{ margin: '0 auto', borderColor: 'rgba(46,107,79,0.2)', borderTopColor: 'var(--kc-green)' }} />
+      </div>
+    );
+  }
 
   return (
     <div className="kc-fade-in">
       <h1 className="kc-title">Extras</h1>
       <p className="kc-subtitle">Make your stay even better</p>
 
+      {services.length === 0 && (
+        <div className="kc-alert info">
+          <span className="kc-alert-icon">ℹ️</span> No extras available — continue to booking summary
+        </div>
+      )}
+
       {services.map(s => {
-        const isPerPerson = s.unit_label.includes('person');
-        const hint = isPerPerson ? `💡 Tip: set quantity = guests × ${nights} night${nights > 1 ? 's' : ''}` : null;
+        const isSelected = !!selected[s.id];
+        const min = MIN_HOURS[s.id] ?? 1;
+        const isPerPerson = s.unit_label?.includes('person') || s.unit_label?.includes('особу');
+        const isHourly = s.unit_label?.includes('hod') || s.unit_label?.includes('hour') || s.unit_label?.includes('годин');
+        let hint: string | null = null;
+        if (isSelected && isPerPerson) hint = `💡 Set qty = guests × ${nights} night${nights > 1 ? 's' : ''}`;
+        if (isSelected && min > 1) hint = `⏱ Min ${min} hours`;
+
         return (
-          <div key={s.id} className={`kc-svc-card ${selected[s.id] ? 'added' : ''}`} onClick={() => !selected[s.id] && toggle(s.id)}>
+          <div
+            key={s.id}
+            className={`kc-svc-card ${isSelected ? 'added' : ''}`}
+            onClick={() => !isSelected && toggle(s.id)}
+          >
             <div className="kc-svc-icon">{s.icon}</div>
             <div className="kc-svc-info">
               <div className="kc-svc-name">{s.name_en || s.name}</div>
-              <div className="kc-svc-price">{formatPrice(s.price)} Kč · {s.unit_label}</div>
-              {selected[s.id] && hint && <div style={{ fontSize: 11, color: 'var(--kc-green)', marginTop: 2 }}>{hint}</div>}
+              <div className="kc-svc-price">
+                {formatPrice(s.price)} Kč · {isHourly ? 'per hour' : s.unit_label}
+              </div>
+              {hint && <div style={{ fontSize: 11, color: 'var(--kc-green)', marginTop: 2 }}>{hint}</div>}
             </div>
-            {selected[s.id] ? (
+            {isSelected ? (
               <div className="kc-stepper" onClick={e => e.stopPropagation()}>
-                <button className="kc-stepper-btn" onClick={() => setQty(s.id, (selected[s.id] || 1) - 1)} type="button">−</button>
+                <button
+                  className="kc-stepper-btn"
+                  onClick={() => setQty(s.id, (selected[s.id] || min) - 1)}
+                  type="button"
+                >−</button>
                 <span className="kc-stepper-val">{selected[s.id]}</span>
-                <button className="kc-stepper-btn" onClick={() => setQty(s.id, (selected[s.id] || 0) + 1)} type="button">+</button>
+                <button
+                  className="kc-stepper-btn"
+                  onClick={() => setQty(s.id, (selected[s.id] || 0) + 1)}
+                  type="button"
+                >+</button>
               </div>
             ) : (
               <button className="kc-svc-action" type="button">+ Add</button>
@@ -99,14 +138,26 @@ export default function StepExtras({ accommodationType, nights, onNext, onSkip }
 
       {totalExtras > 0 && (
         <div className="kc-breakdown">
-          <div className="kc-breakdown-total"><span>Extras total</span><span>{formatPrice(totalExtras)} Kč</span></div>
+          <div className="kc-breakdown-total">
+            <span>Extras total</span>
+            <span>{formatPrice(totalExtras)} Kč</span>
+          </div>
         </div>
       )}
 
-      <button className="kc-btn kc-btn-primary" onClick={() => onNext(selectedList)} style={{ marginTop: 8 }} type="button">
-        {selectedList.length > 0 ? `Continue with ${selectedList.length} extra${selectedList.length > 1 ? 's' : ''} →` : 'Continue without extras →'}
+      <button
+        className="kc-btn kc-btn-primary"
+        onClick={() => onNext(selectedList)}
+        style={{ marginTop: 8 }}
+        type="button"
+      >
+        {selectedList.length > 0
+          ? `Continue with ${selectedList.length} extra${selectedList.length > 1 ? 's' : ''} →`
+          : 'Continue without extras →'}
       </button>
-      <button className="kc-btn kc-btn-ghost" onClick={onSkip} type="button">Skip this step</button>
+      <button className="kc-btn kc-btn-ghost" onClick={onSkip} type="button">
+        Skip this step
+      </button>
     </div>
   );
 }

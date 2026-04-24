@@ -11,6 +11,7 @@ interface Props {
   checkOut: string;
   nights: number;
   total: number;
+  adults?: number;
   guestPageToken?: string;
   paymentUrl?: string;
   qrCodeUrl?: string;
@@ -18,15 +19,24 @@ interface Props {
   onAdminConfirm?: () => void;
 }
 
-export default function StepSuccess({ status, reservationId, accommodationLabel, checkIn, checkOut, nights, total, guestPageToken, paymentUrl, qrCodeUrl, onReset, onAdminConfirm }: Props) {
+export default function StepSuccess({
+  status, reservationId, accommodationLabel, checkIn, checkOut,
+  nights, total, adults = 1, guestPageToken, paymentUrl, qrCodeUrl,
+  onReset, onAdminConfirm,
+}: Props) {
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
+  // Track registration per guest slot (0-indexed)
+  const [currentGuest, setCurrentGuest] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [registeredNames, setRegisteredNames] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
+    setPhotos([]);
     Array.from(files).forEach(file => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -39,19 +49,46 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
   const submitPhotos = async () => {
     if (photos.length === 0 || !reservationId) return;
     setUploading(true);
+    setError(null);
     try {
-      // Upload document photos
+      // 1. Upload each photo to /api/file-upload
+      const uploadedUrls: string[] = [];
       for (const photo of photos) {
         const blob = await fetch(photo).then(r => r.blob());
         const formData = new FormData();
-        formData.append('file', blob, `doc_${Date.now()}.jpg`);
-        formData.append('reservation_id', reservationId);
-        formData.append('type', 'guest_document');
-        await fetch('/api/uploads', { method: 'POST', body: formData });
+        formData.append('file', blob, `doc_guest${currentGuest + 1}_${Date.now()}.jpg`);
+        formData.append('folder', `guest_docs/${reservationId}`);
+        const uploadRes = await fetch('/api/file-upload', { method: 'POST', body: formData });
+        const uploadData = await uploadRes.json();
+        if (uploadData.url) uploadedUrls.push(uploadData.url);
       }
-      setRegStep('done');
+
+      // 2. OCR + register guest
+      if (uploadedUrls.length > 0) {
+        const regRes = await fetch('/api/booking/register-guest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reservation_id: reservationId, document_urls: uploadedUrls }),
+        });
+        const regData = await regRes.json();
+        if (regData.ocr_results) {
+          const names = (regData.ocr_results as { firstName: string; lastName: string }[])
+            .map(r => `${r.firstName} ${r.lastName}`.trim()).filter(Boolean);
+          setRegisteredNames(prev => [...prev, ...names]);
+        }
+      }
+
+      // Move to next guest or finish
+      const nextGuest = currentGuest + 1;
+      if (nextGuest < adults) {
+        setCurrentGuest(nextGuest);
+        setPhotos([]);
+      } else {
+        setRegStep('done');
+      }
     } catch (err) {
       console.error('[Registration]', err);
+      setError('Upload failed. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -79,15 +116,12 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
         <p>Please wait while we confirm your payment.</p>
         <div className="kc-spinner" style={{ margin: '16px auto', borderColor: 'rgba(46,107,79,0.2)', borderTopColor: 'var(--kc-green)' }} />
 
-        {/* QR code if available */}
         {qrCodeUrl && (
           <div style={{ margin: '20px auto', textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Scan to pay</div>
             <img src={qrCodeUrl} alt="Payment QR" style={{ width: 200, height: 200, borderRadius: 12, border: '2px solid var(--kc-border)' }} />
           </div>
         )}
-
-        {/* Direct payment link */}
         {paymentUrl && (
           <a href={paymentUrl} target="_blank" rel="noopener noreferrer" className="kc-btn kc-btn-primary" style={{ textDecoration: 'none', display: 'flex', marginTop: 12 }}>
             💳 Open payment page →
@@ -115,7 +149,6 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
             ✅ Administrator: Confirm payment received
           </button>
         )}
-
         <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact administrator</a>
       </div>
     );
@@ -149,7 +182,7 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
         <div style={{ marginTop: 24 }}>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, textAlign: 'left' }}>Guest registration</div>
           <p style={{ fontSize: 14, color: 'var(--kc-text-secondary)', textAlign: 'left', marginBottom: 12 }}>
-            Upload a photo of your ID or passport for check-in registration.
+            Upload a photo of your ID or passport for each guest ({adults} adult{adults > 1 ? 's' : ''}).
           </p>
           <button className="kc-btn kc-btn-primary" onClick={() => setRegStep('photo')} type="button">
             📷 Register via photo
@@ -159,19 +192,28 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
 
       {regStep === 'photo' && (
         <div style={{ marginTop: 24 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, textAlign: 'left' }}>📷 Document photo</div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, textAlign: 'left' }}>
+            📷 Guest {currentGuest + 1} of {adults} — Document photo
+          </div>
+          {adults > 1 && (
+            <div style={{ fontSize: 13, color: 'var(--kc-text-muted)', marginBottom: 12 }}>
+              {currentGuest + 1 < adults ? `After this, ${adults - currentGuest - 1} more guest(s) to register` : 'Last guest'}
+            </div>
+          )}
 
-          <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple
+          <input ref={fileRef} type="file" accept="image/*" multiple
             onChange={handleFileSelect} style={{ display: 'none' }} />
 
-          {/* Photo previews */}
           {photos.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
               {photos.map((src, i) => (
                 <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 10, overflow: 'hidden', border: '2px solid var(--kc-green)' }}>
-                  <img src={src} alt={`Doc ${i+1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <button onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))} type="button"
-                    style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                  <img src={src} alt={`Doc ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <button
+                    onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
+                    type="button"
+                    style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >×</button>
                 </div>
               ))}
             </div>
@@ -188,19 +230,34 @@ export default function StepSuccess({ status, reservationId, accommodationLabel,
             </button>
           </div>
 
+          {error && <div className="kc-alert" style={{ color: 'var(--kc-error)', marginBottom: 8 }}>⚠️ {error}</div>}
+
           {photos.length > 0 && (
             <button className="kc-btn kc-btn-primary" onClick={submitPhotos} disabled={uploading} type="button">
-              {uploading ? <><div className="kc-spinner" /> Uploading...</> : `Upload ${photos.length} photo${photos.length > 1 ? 's' : ''}`}
+              {uploading
+                ? <><div className="kc-spinner" /> Processing...</>
+                : currentGuest + 1 < adults
+                  ? `Upload & continue to guest ${currentGuest + 2}`
+                  : `Upload & complete registration`}
             </button>
           )}
-          <button className="kc-btn kc-btn-ghost" onClick={() => setRegStep('none')} type="button">Skip registration</button>
+          <button className="kc-btn kc-btn-ghost" onClick={() => setRegStep('none')} type="button">
+            Skip registration
+          </button>
         </div>
       )}
 
       {regStep === 'done' && (
         <div className="kc-alert info" style={{ marginTop: 20 }}>
           <span className="kc-alert-icon">✅</span>
-          Documents uploaded successfully! Registration is complete.
+          <div>
+            Registration complete!
+            {registeredNames.length > 0 && (
+              <div style={{ marginTop: 4, fontSize: 13 }}>
+                Registered: <strong>{registeredNames.join(', ')}</strong>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

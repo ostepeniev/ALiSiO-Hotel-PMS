@@ -144,18 +144,22 @@ export default function BookingWizard() {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
       const { draft, grandTotal } = await createDraft(contact);
+      // Use PMS reservation_id for Teya (server reads amount from DB)
+      const pmsResId = draft.reservation_id || draft.id;
       const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
+      const returnPath = `/book?payment=success&reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
       const checkoutRes = await fetch('/api/booking/checkout-session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: grandTotal, currency: 'CZK', description: desc,
-          reservation_id: draft.id, return_path: `/book?payment=success&reservation_id=${draft.id}`,
+          reservation_id: pmsResId, return_path: returnPath,
         }),
       });
       const checkout = await checkoutRes.json();
       if (!checkoutRes.ok) throw new Error(checkout.error || 'Payment system error');
 
-      setReservationId(draft.id);
+      setReservationId(pmsResId);
+      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
       if (checkout.qr_code_url) setQrCodeUrl(checkout.qr_code_url);
       if (checkout.session_url) {
         setPaymentUrl(checkout.session_url);
@@ -176,7 +180,8 @@ export default function BookingWizard() {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
       const { draft } = await createDraft(contact);
-      setReservationId(draft.id);
+      setReservationId(draft.reservation_id || draft.id);
+      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
       setPaymentStatus('admin_pending'); setStep('success');
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err: unknown) {
@@ -292,6 +297,7 @@ export default function BookingWizard() {
             accommodationLabel={getAccommodationLabel(state)}
             checkIn={state.checkIn} checkOut={state.checkOut}
             nights={nights} total={state.total}
+            adults={(state.accommodationData.adults as number) || 1}
             guestPageToken={guestPageToken}
             paymentUrl={paymentUrl} qrCodeUrl={qrCodeUrl}
             onReset={resetAll} onAdminConfirm={handleAdminConfirm}

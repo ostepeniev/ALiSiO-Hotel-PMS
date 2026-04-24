@@ -4,7 +4,7 @@ import { getDb } from '@core/db';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -12,20 +12,35 @@ export async function createBookingDraftOptions() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
+// ─── Helper: generate a short token ─────────────────────────────────────────
+function genId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+}
+
+function genToken(len = 32) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let s = '';
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+// ─── POST — create draft + real PMS reservation ──────────────────────────────
 export async function createBookingDraft(req: Request) {
   try {
     const body = await req.json();
     const db = getDb();
-    const id = `bkd_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const sessionId = body.session_id || `sess_${Date.now()}`;
 
+    const draftId = genId('bkd');
+    const sessionId = body.session_id || genId('sess');
+
+    // 1. Save booking_draft (always — as a log)
     db.prepare(`
       INSERT INTO booking_drafts (id, session_id, accommodation_type, unit_type, check_in, check_out,
         adults, children, extras, options, guest_name, guest_email, guest_phone,
         total_price, deposit_amount, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
     `).run(
-      id, sessionId,
+      draftId, sessionId,
       body.accommodation_type || null,
       body.accommodation_data?.unit || body.accommodation_data?.building || null,
       body.check_in || null,
@@ -41,14 +56,192 @@ export async function createBookingDraft(req: Request) {
       body.deposit_amount || 0,
     );
 
-    console.log('[Booking Draft] Created:', id);
-    return NextResponse.json({ id, session_id: sessionId }, { headers: CORS_HEADERS });
+    // 2. Find or create Guest in PMS
+    const [firstName, ...rest] = (body.guest_name || 'Guest').trim().split(' ');
+    const lastName = rest.join(' ') || '';
+
+    // Get first property's organization_id
+    const property = db.prepare(`SELECT id, organization_id FROM properties LIMIT 1`).get() as any;
+    if (!property) {
+      console.warn('[BookingDraft] No property found — returning draft only');
+      return NextResponse.json({ id: draftId, session_id: sessionId }, { headers: CORS_HEADERS });
+    }
+
+    let guestId: string | null = null;
+    const existingGuest = body.guest_email
+      ? (db.prepare(`SELECT id FROM guests WHERE organization_id = ? AND email = ? LIMIT 1`).get(property.organization_id, body.guest_email) as any)
+      : null;
+
+    if (existingGuest) {
+      guestId = existingGuest.id;
+      // Update phone if provided
+      if (body.guest_phone) {
+        db.prepare(`UPDATE guests SET phone = COALESCE(phone, ?), updated_at = datetime('now') WHERE id = ?`)
+          .run(body.guest_phone, guestId);
+      }
+    } else {
+      guestId = genId('g');
+      db.prepare(`
+        INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, source, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'widget_kemp', datetime('now'))
+      `).run(guestId, property.organization_id, firstName, lastName, body.guest_email || null, body.guest_phone || null);
+    }
+
+    // 3. Find a suitable unit
+    const accommodationType: string = body.accommodation_type || 'camping';
+    let unitId: string | null = null;
+
+    if (accommodationType === 'camping') {
+      // First available camping unit (category = camping or type contains camping)
+      const campingUnit = db.prepare(`
+        SELECT u.id FROM units u
+        JOIN unit_types ut ON u.unit_type_id = ut.id
+        WHERE u.property_id = ? AND u.is_active = 1
+          AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
+               OR LOWER(u.name) LIKE '%camp%')
+        ORDER BY u.sort_order, u.name
+        LIMIT 1
+      `).get(property.id) as any;
+      unitId = campingUnit?.id || null;
+
+      // Fallback: any unit in property if no camping-specific found
+      if (!unitId) {
+        const anyUnit = db.prepare(`SELECT id FROM units WHERE property_id = ? AND is_active = 1 ORDER BY sort_order LIMIT 1`).get(property.id) as any;
+        unitId = anyUnit?.id || null;
+      }
+    } else if (accommodationType === 'glamping') {
+      const glamUnit = db.prepare(`
+        SELECT u.id FROM units u
+        JOIN unit_types ut ON u.unit_type_id = ut.id
+        WHERE u.property_id = ? AND u.is_active = 1
+          AND (LOWER(ut.code) LIKE '%glamp%' OR LOWER(ut.name) LIKE '%glamp%'
+               OR LOWER(u.name) LIKE '%glamp%' OR LOWER(u.name) LIKE '%tiny%' OR LOWER(u.name) LIKE '%barn%')
+        ORDER BY u.sort_order LIMIT 1
+      `).get(property.id) as any;
+      unitId = glamUnit?.id || null;
+    }
+
+    // 4. Calculate nights
+    const nights = (() => {
+      if (!body.check_in || !body.check_out) return 1;
+      const d1 = new Date(body.check_in);
+      const d2 = new Date(body.check_out);
+      return Math.max(1, Math.round((d2.getTime() - d1.getTime()) / 86400000));
+    })();
+
+    // 5. Create Reservation in PMS
+    const reservationId = genId('r');
+    const guestPageToken = genToken(32);
+
+    db.prepare(`
+      INSERT INTO reservations (
+        id, property_id, unit_id, guest_id, source,
+        check_in, check_out, nights,
+        adults, children,
+        total_price, currency,
+        status, payment_status,
+        guest_page_token,
+        notes, created_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, 'widget_kemp',
+        ?, ?, ?,
+        ?, ?,
+        ?, 'CZK',
+        'tentative', 'unpaid',
+        ?,
+        ?, datetime('now'), datetime('now')
+      )
+    `).run(
+      reservationId,
+      property.id,
+      unitId,
+      guestId,
+      body.check_in || null,
+      body.check_out || null,
+      nights,
+      body.accommodation_data?.adults || 1,
+      body.accommodation_data?.children || 0,
+      body.total_price || 0,
+      guestPageToken,
+      body.accommodation_data ? `Type: ${accommodationType}, Options: ${JSON.stringify(body.accommodation_data)}` : null,
+    );
+
+    // Link draft → reservation
+    db.prepare(`UPDATE booking_drafts SET reservation_id = ? WHERE id = ?`).run(reservationId, draftId);
+
+    // 6. Create service_orders for extras
+    const extras: any[] = body.extras || [];
+    for (const extra of extras) {
+      if (!extra.id || !extra.price) continue;
+      const orderId = genId('so');
+      try {
+        db.prepare(`
+          INSERT INTO service_orders (
+            id, reservation_id, service_id, quantity, total_price,
+            status, payment_status, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, 'pending', 'unpaid', 'Booked via widget', datetime('now'))
+        `).run(orderId, reservationId, extra.id, extra.quantity || 1, extra.price || 0);
+      } catch (e: any) {
+        // service_orders table might use different schema — try booking_service_orders
+        try {
+          db.prepare(`
+            INSERT INTO booking_service_orders (
+              id, reservation_id, service_id, quantity, unit_price, total_price,
+              status, payment_status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'unpaid', datetime('now'))
+          `).run(orderId, reservationId, extra.id, extra.quantity || 1,
+            (extra.price / (extra.quantity || 1)) || 0, extra.price || 0);
+        } catch { /* ignore if neither table exists */ }
+      }
+    }
+
+    console.log(`[BookingDraft] Created draft=${draftId} reservation=${reservationId} guest=${guestId}`);
+
+    return NextResponse.json({
+      id: draftId,
+      session_id: sessionId,
+      reservation_id: reservationId,
+      guest_page_token: guestPageToken,
+    }, { headers: CORS_HEADERS });
+
   } catch (err: any) {
-    console.error('[Booking Draft] Error:', err.message);
+    console.error('[BookingDraft] Error:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
   }
 }
 
+// ─── PUT — admin confirm payment ─────────────────────────────────────────────
+export async function updateBookingDraft(req: Request) {
+  try {
+    const body = await req.json();
+    const db = getDb();
+    const { id, status } = body;
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400, headers: CORS_HEADERS });
+
+    // Get associated reservation_id from the draft
+    const draft = db.prepare('SELECT reservation_id FROM booking_drafts WHERE id = ?').get(id) as any;
+
+    if (status === 'paid' && draft?.reservation_id) {
+      const rid = draft.reservation_id;
+      db.prepare(`UPDATE reservations SET payment_status = 'paid', status = 'confirmed', updated_at = datetime('now') WHERE id = ?`).run(rid);
+      // Confirm service orders
+      try {
+        db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid);
+      } catch { /* */ }
+      try {
+        db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid);
+      } catch { /* */ }
+    }
+
+    db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id);
+
+    return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
+  }
+}
+
+// ─── GET ──────────────────────────────────────────────────────────────────────
 export async function getBookingDraft(req: Request) {
   try {
     const db = getDb();
@@ -73,6 +266,7 @@ export async function getBookingDraft(req: Request) {
   }
 }
 
+// ─── DELETE ───────────────────────────────────────────────────────────────────
 export async function deleteBookingDraft(req: Request) {
   try {
     const db = getDb();
