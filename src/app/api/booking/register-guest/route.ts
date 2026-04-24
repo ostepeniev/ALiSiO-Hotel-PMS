@@ -85,11 +85,11 @@ export async function POST(req: Request) {
     const registeredGuests = ocrResults.map(ocr => ({
       firstName: ocr.firstName,
       lastName: ocr.lastName,
-      dateOfBirth: ocr.dateOfBirth,
-      documentNumber: ocr.documentNumber,
+      dateOfBirth: ocr.dateOfBirth ?? undefined,
+      documentNumber: ocr.documentNumber ?? undefined,
       documentType: ocr.documentType,
-      nationality: ocr.nationality,
-      address: ocr.address,
+      nationality: ocr.nationality ?? undefined,
+      address: ocr.address ?? undefined,
     }));
 
     const saved = saveRegistrations(

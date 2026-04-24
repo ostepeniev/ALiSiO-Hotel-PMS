@@ -559,11 +559,12 @@ export default function BookingPage() {
       const returnBase = currentSlug ? `/w/${currentSlug}` : '/booking';
       const returnPath = `${returnBase}?success=${resId}&payment_kind=room`;
 
+      const totalAmount = (reservation?.totalPrice ?? 0) + servicesTotal;
       const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: reservation?.totalPrice ?? 0,
+          amount: totalAmount,
           currency: 'CZK',
           description: `Booking ${resId} — ${reservation?.unitName}`,
           reservation_id: resId,
@@ -584,7 +585,7 @@ export default function BookingPage() {
       setError(e?.message || t.errorOccurred);
       setRedirectingToPayment(false);
     }
-  }, [reservation, t]);
+  }, [reservation, servicesTotal, t]);
 
   // ─── Submit Services (Step 4: write services + second Teya checkout) ──────
 
