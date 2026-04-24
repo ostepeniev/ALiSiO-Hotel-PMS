@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { createOperationInTx, recalcReservationPaymentStatus } from './operations.handlers';
 
 export async function listBankStatements(): Promise<NextResponse> {
   try {
@@ -24,10 +25,13 @@ export async function listBankTransactions(request: NextRequest): Promise<NextRe
     if (match_status) { where += ' AND bt.match_status = ?'; params.push(match_status); }
 
     const transactions = db.prepare(`
-      SELECT bt.*, ec.name as category_name, ec.icon as category_icon, ec.color as category_color, bu.name as bu_name
+      SELECT bt.*, ec.name as category_name, ec.icon as category_icon, ec.color as category_color,
+             bu.name as bu_name,
+             fo.op_type as matched_op_type, fo.amount as matched_op_amount
       FROM bank_transactions bt
       LEFT JOIN expense_categories ec ON bt.matched_category_id = ec.id
       LEFT JOIN business_units bu ON bt.matched_business_unit_id = bu.id
+      LEFT JOIN fin_operations fo ON bt.matched_operation_id = fo.id
       ${where} ORDER BY bt.transaction_date DESC
     `).all(...params);
 
@@ -56,15 +60,24 @@ export async function updateBankTransaction(request: Request): Promise<NextRespo
 
     if (create_expense && matched_category_id && (match_status === 'confirmed' || match_status === 'manual')) {
       const orgRow = db.prepare("SELECT id FROM organizations LIMIT 1").get() as any;
-      const expId = `exp_bank_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const month = tx.transaction_date.substring(0, 7);
+      // Negative amount → expense (money out), positive → income
+      const opType: 'expense' | 'income' = tx.amount < 0 ? 'expense' : 'income';
+      const operationId = createOperationInTx(db, orgRow.id, {
+        op_type: opType,
+        account_from_id: opType === 'expense' ? null : null,
+        account_to_id: opType === 'income' ? null : null,
+        amount: Math.abs(tx.amount),
+        currency: 'CZK',
+        paid_at: tx.transaction_date,
+        category_id: matched_category_id,
+        project_id: matched_business_unit_id || null,
+        comment: `${tx.description || 'Bank import'}${tx.reference ? ' — ref ' + tx.reference : ''}`,
+        method: 'bank_transfer',
+        source: 'bank_import',
+        source_ref: tx.id,
+      });
 
-      db.prepare(`
-        INSERT INTO expenses (id, organization_id, category_id, business_unit_id, amount, description, counterparty, method, expense_date, month, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'bank_transfer', ?, ?, ?)
-      `).run(expId, orgRow.id, matched_category_id, matched_business_unit_id || null, tx.amount, tx.description || 'Bank import', tx.counterparty || null, tx.transaction_date, month, `Imported from bank: ${tx.reference || ''}`);
-
-      db.prepare("UPDATE bank_transactions SET matched_expense_id = ? WHERE id = ?").run(expId, id);
+      db.prepare("UPDATE bank_transactions SET matched_operation_id = ? WHERE id = ?").run(operationId, id);
       db.prepare(`
         UPDATE bank_statements SET matched_transactions = (
           SELECT COUNT(*) FROM bank_transactions WHERE statement_id = ? AND match_status IN ('confirmed', 'manual', 'auto_matched')
@@ -105,7 +118,7 @@ export async function importBankStatement(request: Request): Promise<NextRespons
     `).run(stmtId, orgRow.id, file_name, bank_name || null, account_number || null, dates[0] || '', dates[dates.length - 1] || '', rows.length);
 
     const insTx = db.prepare(`
-      INSERT INTO bank_transactions (id, statement_id, organization_id, transaction_date, amount, counterparty, description, reference, matched_category_id, matched_payment_id, match_status, confidence)
+      INSERT INTO bank_transactions (id, statement_id, organization_id, transaction_date, amount, counterparty, description, reference, matched_category_id, matched_operation_id, match_status, confidence)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
@@ -140,38 +153,35 @@ export async function importBankStatement(request: Request): Promise<NextRespons
           }
         }
 
-        let matchedPaymentId: string | null = null;
+        // Try to match against pending income operations (replaces old pending payments matching)
+        let matchedOperationId: string | null = null;
         if (row.amount > 0) {
           if (row.reference) {
             const ref = row.reference.trim();
-            const paymentByRef = db.prepare(`
-              SELECT p.id FROM payments p JOIN reservations r ON p.reservation_id = r.id
-              WHERE p.status = 'pending' AND (r.id LIKE ? OR p.id LIKE ?) LIMIT 1
+            const opByRef = db.prepare(`
+              SELECT o.id FROM fin_operations o
+              WHERE o.op_type = 'income' AND o.status = 'pending'
+                AND (o.source_ref LIKE ? OR o.id LIKE ?) LIMIT 1
             `).get(`%${ref}%`, `%${ref}%`) as any;
-            if (paymentByRef) { matchedPaymentId = paymentByRef.id; matchStatus = 'matched_payment'; confidence = 0.9; matched++; }
+            if (opByRef) { matchedOperationId = opByRef.id; matchStatus = 'matched_payment'; confidence = 0.9; matched++; }
           }
-          if (!matchedPaymentId) {
-            const paymentByAmount = db.prepare(`
-              SELECT p.id, p.reservation_id FROM payments p
-              WHERE p.status = 'pending' AND ABS(p.amount - ?) < 0.01
-                AND p.id NOT IN (SELECT COALESCE(matched_payment_id, '') FROM bank_transactions WHERE matched_payment_id IS NOT NULL)
-              ORDER BY ABS(julianday(COALESCE(p.paid_at, datetime('now'))) - julianday(?)) LIMIT 1
+          if (!matchedOperationId) {
+            const opByAmount = db.prepare(`
+              SELECT o.id, o.reservation_id FROM fin_operations o
+              WHERE o.op_type = 'income' AND o.status = 'pending' AND ABS(o.amount - ?) < 0.01
+                AND o.id NOT IN (SELECT COALESCE(matched_operation_id, '') FROM bank_transactions WHERE matched_operation_id IS NOT NULL)
+              ORDER BY ABS(julianday(COALESCE(o.paid_at, datetime('now'))) - julianday(?)) LIMIT 1
             `).get(row.amount, row.date) as any;
-            if (paymentByAmount) { matchedPaymentId = paymentByAmount.id; matchStatus = 'matched_payment'; confidence = 0.6; matched++; }
+            if (opByAmount) { matchedOperationId = opByAmount.id; matchStatus = 'matched_payment'; confidence = 0.6; matched++; }
           }
-          if (matchedPaymentId) {
-            db.prepare("UPDATE payments SET status = 'completed', paid_at = COALESCE(paid_at, ?) WHERE id = ?").run(row.date, matchedPaymentId);
-            const pay = db.prepare("SELECT reservation_id FROM payments WHERE id = ?").get(matchedPaymentId) as any;
-            if (pay) {
-              const totalDue = db.prepare("SELECT total_price FROM reservations WHERE id = ?").get(pay.reservation_id) as any;
-              const totalPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE reservation_id = ? AND status = 'completed' AND type != 'refund'").get(pay.reservation_id) as any;
-              if (totalPaid.total >= totalDue.total_price) db.prepare("UPDATE reservations SET payment_status = 'paid' WHERE id = ?").run(pay.reservation_id);
-              else if (totalPaid.total > 0) db.prepare("UPDATE reservations SET payment_status = 'prepaid' WHERE id = ?").run(pay.reservation_id);
-            }
+          if (matchedOperationId) {
+            db.prepare("UPDATE fin_operations SET status = 'completed', paid_at = COALESCE(paid_at, ?) WHERE id = ?").run(row.date, matchedOperationId);
+            const op = db.prepare("SELECT reservation_id FROM fin_operations WHERE id = ?").get(matchedOperationId) as any;
+            if (op?.reservation_id) recalcReservationPaymentStatus(db, op.reservation_id);
           }
         }
 
-        insTx.run(txId, stmtId, orgRow.id, row.date, row.amount, row.counterparty || null, row.description || null, row.reference || null, matchedCategoryId, matchedPaymentId, matchStatus, confidence);
+        insTx.run(txId, stmtId, orgRow.id, row.date, row.amount, row.counterparty || null, row.description || null, row.reference || null, matchedCategoryId, matchedOperationId, matchStatus, confidence);
       }
     });
 

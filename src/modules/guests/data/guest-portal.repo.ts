@@ -43,9 +43,14 @@ export function getRegisteredGuests(reservationId: string) {
 }
 
 export function getPaymentsSummary(reservationId: string) {
-  return getDb().prepare(
-    "SELECT SUM(CASE WHEN type != 'refund' THEN amount ELSE 0 END) as total_paid, SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as total_refunded FROM payments WHERE reservation_id = ? AND status = 'completed'"
-  ).get(reservationId) as any;
+  // Post PR #6: sum from fin_operations. Income = paid, refund-expense = refunded.
+  return getDb().prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN op_type = 'income' THEN amount ELSE 0 END), 0) as total_paid,
+      COALESCE(SUM(CASE WHEN op_type = 'expense' AND payment_subtype = 'refund' THEN amount ELSE 0 END), 0) as total_refunded
+    FROM fin_operations
+    WHERE reservation_id = ? AND status = 'completed'
+  `).get(reservationId) as any;
 }
 
 export function getUnitTypePhotos(unitTypeId: string) {

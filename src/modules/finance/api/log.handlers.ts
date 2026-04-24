@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 
+// Transaction log — single SELECT from fin_operations (post-PR #6).
+// Reports all operations with shape compatible with the previous union-based log.
 export async function getFinanceLog(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
@@ -16,126 +18,88 @@ export async function getFinanceLog(request: NextRequest): Promise<NextResponse>
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = (page - 1) * limit;
 
-    // Build date filter suffix (applied as HAVING on the union)
-    const dateCond: string[] = [];
-    const dateParams: any[] = [];
-    if (month) { dateCond.push("strftime('%Y-%m', date) = ?"); dateParams.push(month); }
-    if (dateFrom) { dateCond.push('date >= ?'); dateParams.push(dateFrom); }
-    if (dateTo) { dateCond.push('date <= ?'); dateTo && dateParams.push(dateTo); }
-    const dateWhere = dateCond.length ? `WHERE ${dateCond.join(' AND ')}` : '';
+    const where: string[] = ['1=1'];
+    const params: any[] = [];
 
-    // Search + account filter applied per-subquery
-    const searchQ = search ? `%${search}%` : null;
+    // Semantic type mapping:
+    //  'income'   → op_type='income' and no reservation_id (manual income)
+    //  'expense'  → op_type='expense' and no reservation_id
+    //  'payment'  → any reservation-linked op (both income + refund-expense)
+    //  'transfer' → op_type='transfer'
+    if (type === 'income') {
+      where.push("o.op_type = 'income' AND o.reservation_id IS NULL");
+    } else if (type === 'expense') {
+      where.push("o.op_type = 'expense' AND o.reservation_id IS NULL");
+    } else if (type === 'payment') {
+      where.push("o.reservation_id IS NOT NULL");
+    } else if (type === 'transfer') {
+      where.push("o.op_type = 'transfer'");
+    }
 
-    const buildIncomeQuery = () => `
+    if (month) { where.push("strftime('%Y-%m', o.paid_at) = ?"); params.push(month); }
+    if (dateFrom) { where.push('o.paid_at >= ?'); params.push(dateFrom); }
+    if (dateTo) { where.push('o.paid_at <= ?'); params.push(dateTo); }
+    if (account_id) { where.push('(o.account_from_id = ? OR o.account_to_id = ?)'); params.push(account_id, account_id); }
+    if (search) {
+      where.push('(o.comment LIKE ? OR ec.name LIKE ? OR cp.name LIKE ? OR g.first_name LIKE ? OR g.last_name LIKE ?)');
+      const q = `%${search}%`;
+      params.push(q, q, q, q, q);
+    }
+    where.push("o.status = 'completed'");
+
+    const whereSql = where.join(' AND ');
+
+    const countRow = db.prepare(`
+      SELECT COUNT(*) AS total FROM fin_operations o
+      LEFT JOIN expense_categories    ec ON ec.id = o.category_id
+      LEFT JOIN finance_counterparties cp ON cp.id = o.counterparty_id
+      LEFT JOIN reservations           r ON r.id = o.reservation_id
+      LEFT JOIN guests                 g ON g.id = r.guest_id
+      WHERE ${whereSql}
+    `).get(...params) as { total: number };
+
+    const rows = db.prepare(`
       SELECT
-        'income' as tx_type,
-        i.id, i.income_date as date, i.amount as amount_raw, i.currency,
-        i.account_id, fa.name as account_name, fa.color as account_color,
-        i.counterparty, i.category,
-        bu.name as bu_name, i.description as notes,
-        NULL as reservation_code
-      FROM income i
-      LEFT JOIN finance_accounts fa ON fa.id = i.account_id
-      LEFT JOIN business_units bu ON bu.id = i.business_unit_id
-      WHERE 1=1
-        ${account_id ? 'AND i.account_id = ?' : ''}
-        ${searchQ ? 'AND (i.description LIKE ? OR i.counterparty LIKE ? OR i.category LIKE ?)' : ''}
-    `;
-
-    const buildExpenseQuery = () => `
-      SELECT
-        'expense' as tx_type,
-        e.id, e.expense_date as date, -e.amount as amount_raw, e.currency,
-        e.account_id, fa.name as account_name, fa.color as account_color,
-        e.counterparty, ec.name as category,
-        bu.name as bu_name, e.description as notes,
-        NULL as reservation_code
-      FROM expenses e
-      LEFT JOIN finance_accounts fa ON fa.id = e.account_id
-      LEFT JOIN expense_categories ec ON ec.id = e.category_id
-      LEFT JOIN business_units bu ON bu.id = e.business_unit_id
-      WHERE 1=1
-        ${account_id ? 'AND e.account_id = ?' : ''}
-        ${searchQ ? 'AND (e.description LIKE ? OR e.counterparty LIKE ? OR ec.name LIKE ?)' : ''}
-    `;
-
-    const buildPaymentQuery = () => `
-      SELECT
-        'payment' as tx_type,
-        p.id, p.paid_at as date, p.amount as amount_raw, p.currency,
-        p.account_id, fa.name as account_name, fa.color as account_color,
-        (g.first_name || ' ' || g.last_name) as counterparty,
-        p.type as category,
-        NULL as bu_name, p.notes,
-        r.reservation_code
-      FROM payments p
-      LEFT JOIN reservations r ON r.id = p.reservation_id
-      LEFT JOIN guests g ON g.id = r.guest_id
-      LEFT JOIN finance_accounts fa ON fa.id = p.account_id
-      WHERE p.status = 'completed' AND p.paid_at IS NOT NULL
-        ${account_id ? 'AND p.account_id = ?' : ''}
-        ${searchQ ? "AND (p.notes LIKE ? OR (g.first_name || ' ' || g.last_name) LIKE ?)" : ''}
-    `;
-
-    const buildTransferQuery = () => `
-      SELECT
-        'transfer' as tx_type,
-        t.id, t.transfer_date as date, t.amount as amount_raw, t.currency,
-        t.from_account_id as account_id,
-        (fa_from.name || ' → ' || fa_to.name) as account_name,
-        fa_from.color as account_color,
-        NULL as counterparty, 'Переказ' as category,
-        NULL as bu_name, t.notes,
-        NULL as reservation_code
-      FROM transfers t
-      LEFT JOIN finance_accounts fa_from ON fa_from.id = t.from_account_id
-      LEFT JOIN finance_accounts fa_to ON fa_to.id = t.to_account_id
-      WHERE 1=1
-        ${account_id ? 'AND (t.from_account_id = ? OR t.to_account_id = ?)' : ''}
-        ${searchQ ? 'AND t.notes LIKE ?' : ''}
-    `;
-
-    // Determine which types to include
-    const includeTypes = new Set(type ? [type] : ['income', 'expense', 'payment', 'transfer']);
-
-    const unionParts: string[] = [];
-    const unionParams: any[] = [];
-
-    if (includeTypes.has('income')) {
-      unionParts.push(buildIncomeQuery());
-      if (account_id) unionParams.push(account_id);
-      if (searchQ) unionParams.push(searchQ, searchQ, searchQ);
-    }
-    if (includeTypes.has('expense')) {
-      unionParts.push(buildExpenseQuery());
-      if (account_id) unionParams.push(account_id);
-      if (searchQ) unionParams.push(searchQ, searchQ, searchQ);
-    }
-    if (includeTypes.has('payment')) {
-      unionParts.push(buildPaymentQuery());
-      if (account_id) unionParams.push(account_id);
-      if (searchQ) {
-        // payment search only 2 params
-        unionParams.push(searchQ, searchQ);
-      }
-    }
-    if (includeTypes.has('transfer')) {
-      unionParts.push(buildTransferQuery());
-      if (account_id) unionParams.push(account_id, account_id);
-      if (searchQ) unionParams.push(searchQ);
-    }
-
-    if (unionParts.length === 0) {
-      return NextResponse.json({ transactions: [], total: 0, page, limit });
-    }
-
-    const unionSql = unionParts.join(' UNION ALL ');
-    const wrappedSql = `SELECT * FROM (${unionSql}) log ${dateWhere} ORDER BY date DESC LIMIT ? OFFSET ?`;
-    const countSql = `SELECT COUNT(*) as total FROM (${unionSql}) log ${dateWhere}`;
-
-    const countRow = db.prepare(countSql).get(...unionParams, ...dateParams) as any;
-    const rows = db.prepare(wrappedSql).all(...unionParams, ...dateParams, limit, offset);
+        CASE
+          WHEN o.reservation_id IS NOT NULL THEN 'payment'
+          WHEN o.op_type = 'transfer' THEN 'transfer'
+          WHEN o.op_type = 'income' THEN 'income'
+          ELSE 'expense'
+        END AS tx_type,
+        o.id,
+        o.paid_at AS date,
+        CASE WHEN o.op_type = 'expense' AND o.reservation_id IS NULL THEN -o.amount ELSE o.amount END AS amount_raw,
+        o.currency,
+        CASE WHEN o.op_type = 'transfer' THEN o.account_from_id ELSE COALESCE(o.account_from_id, o.account_to_id) END AS account_id,
+        CASE
+          WHEN o.op_type = 'transfer' THEN (afr.name || ' → ' || ato.name)
+          ELSE COALESCE(afr.name, ato.name)
+        END AS account_name,
+        COALESCE(afr.color, ato.color) AS account_color,
+        CASE
+          WHEN o.reservation_id IS NOT NULL AND g.first_name IS NOT NULL THEN (g.first_name || ' ' || g.last_name)
+          ELSE cp.name
+        END AS counterparty,
+        CASE
+          WHEN o.op_type = 'transfer' THEN 'Переказ'
+          WHEN o.reservation_id IS NOT NULL THEN COALESCE(o.payment_subtype, 'payment')
+          ELSE ec.name
+        END AS category,
+        bu.name AS bu_name,
+        o.comment AS notes,
+        r.hostex_reservation_code AS reservation_code
+      FROM fin_operations o
+      LEFT JOIN expense_categories    ec  ON ec.id  = o.category_id
+      LEFT JOIN business_units        bu  ON bu.id  = o.project_id
+      LEFT JOIN finance_counterparties cp ON cp.id  = o.counterparty_id
+      LEFT JOIN finance_accounts      afr ON afr.id = o.account_from_id
+      LEFT JOIN finance_accounts      ato ON ato.id = o.account_to_id
+      LEFT JOIN reservations           r  ON r.id   = o.reservation_id
+      LEFT JOIN guests                 g  ON g.id   = r.guest_id
+      WHERE ${whereSql}
+      ORDER BY o.paid_at DESC, o.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
 
     return NextResponse.json({ transactions: rows, total: countRow.total, page, limit });
   } catch (error: any) {

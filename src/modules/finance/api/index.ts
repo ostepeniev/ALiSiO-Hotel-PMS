@@ -1,7 +1,4 @@
 export { getFinanceOverview, getPnl, getCashflow, getExpectedPayments } from './reports.handlers';
-export { listPayments, createPayment, deletePayment } from './payments.handlers';
-export { listExpenses, createExpense } from './expenses.handlers';
-export { getExpense, updateExpense, deleteExpense } from './expense.handlers';
 export { listExpenseCategories, createExpenseCategory } from './expense-categories.handlers';
 export {
   listCategories, getCategoryTree, createCategory,
@@ -33,6 +30,13 @@ export {
 export {
   listExchangeRates, upsertExchangeRate, deleteExchangeRate,
 } from './exchange-rates.handlers';
-export { listIncome, createIncome, updateIncome, deleteIncome } from './income.handlers';
-export { listTransfers, createTransfer, deleteTransfer } from './transfers.handlers';
 export { getFinanceLog } from './log.handlers';
+
+// PR #6: unified operations
+export {
+  listOperations, getOperation, createOperation, updateOperation, deleteOperation, duplicateOperation,
+  getReservationPaymentTotals, recalcReservationPaymentStatus,
+} from './operations.handlers';
+export {
+  createPaymentOperation, hasPaymentOperation, deletePaymentOperationsForReservation,
+} from './payment-bridge';

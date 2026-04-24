@@ -20,7 +20,7 @@ export async function previewIcalCleanup() {
     `).all() as any[];
 
     const paymentCount = db.prepare(`
-      SELECT COUNT(*) as cnt FROM payments
+      SELECT COUNT(*) as cnt FROM fin_operations
       WHERE reservation_id IN (
         SELECT id FROM reservations
         WHERE (id LIKE 'r_ical_%' OR external_uid LIKE 'ical_%')
@@ -81,7 +81,8 @@ export async function deleteIcalCleanup(request: NextRequest) {
 
     const tx = db.transaction(() => {
       for (const id of ids) {
-        const r = db.prepare('DELETE FROM payments WHERE reservation_id = ?').run(id);
+        db.prepare('UPDATE bank_transactions SET matched_operation_id = NULL WHERE matched_operation_id IN (SELECT id FROM fin_operations WHERE reservation_id = ?)').run(id);
+        const r = db.prepare('DELETE FROM fin_operations WHERE reservation_id = ?').run(id);
         deletedPayments += r.changes;
       }
       for (const id of ids) {

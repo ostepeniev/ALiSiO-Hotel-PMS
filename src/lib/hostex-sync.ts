@@ -299,7 +299,9 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
 
     // Auto-create payment if prepaid and none exists
     if (paymentInfo.isPrepaid && totalCzk > 0) {
-      const hasPay = db.prepare('SELECT id FROM payments WHERE reservation_id = ? AND auto_created = 1').get(existing.id);
+      const hasPay = db.prepare(
+        "SELECT id FROM fin_operations WHERE reservation_id = ? AND source IN ('hostex','booking_widget','teia') LIMIT 1"
+      ).get(existing.id);
       if (!hasPay) createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
     }
 
@@ -442,14 +444,25 @@ function findOrCreateGuest(db: any, res: HostexReservation): string {
 
 // ─── Payment auto-creation ────────────────────────────────
 
-function createAutoPayment(db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
-  const payId = `hx_pay_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+function createAutoPayment(_db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
   const paidAt = bookedAt ? bookedAt.split('T')[0] : new Date().toISOString().split('T')[0];
   const notes = `Авто-оплата через ${channelType === 'airbnb' ? 'Airbnb' : channelType === 'booking.com' ? 'Booking.com' : channelType}`;
-  db.prepare(`
-    INSERT INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
-    VALUES (?, ?, ?, 'CZK', 'booking_platform', 'full', 'completed', ?, ?, 1)
-  `).run(payId, reservationId, amountCzk, paidAt, notes);
+  // PR #6: payments table replaced by fin_operations. Use finance bridge.
+  // Lazy-import to avoid circular dependencies in Turbopack.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createPaymentOperation } = require('@/modules/finance/api/payment-bridge');
+  createPaymentOperation({
+    reservationId,
+    amount: amountCzk,
+    currency: 'CZK',
+    method: 'booking_platform',
+    paymentSubtype: 'full',
+    source: 'hostex',
+    paidAt,
+    status: 'completed',
+    comment: notes,
+    sourceRef: `hostex:${reservationId}`,
+  });
 }
 
 // ─── Status mapping ───────────────────────────────────────
@@ -523,9 +536,13 @@ function ensureHostexColumns(db: any) {
 
   db.exec('CREATE INDEX IF NOT EXISTS idx_reservations_hostex_code ON reservations(hostex_reservation_code)');
 
-  const payCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
-  if (!payCols.some((c: any) => c.name === 'auto_created')) {
-    db.exec('ALTER TABLE payments ADD COLUMN auto_created INTEGER DEFAULT 0');
+  // Payments table was replaced by fin_operations in PR #6 — skip legacy ALTER if table is gone.
+  const paymentsTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='payments'").get();
+  if (paymentsTableExists) {
+    const payCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
+    if (!payCols.some((c: any) => c.name === 'auto_created')) {
+      db.exec('ALTER TABLE payments ADD COLUMN auto_created INTEGER DEFAULT 0');
+    }
   }
 
   db.exec(`

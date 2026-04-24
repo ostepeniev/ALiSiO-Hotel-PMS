@@ -17,11 +17,10 @@ function selectAccountsWithBalance(db: any, orgId: string, opts: { includeArchiv
       fa.*,
       (
         fa.initial_balance
-        + COALESCE((SELECT SUM(i.amount) FROM income i WHERE i.account_id = fa.id), 0)
-        + COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.account_id = fa.id AND p.status = 'completed'), 0)
-        - COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.account_id = fa.id), 0)
-        + COALESCE((SELECT SUM(t.amount) FROM transfers t WHERE t.to_account_id = fa.id), 0)
-        - COALESCE((SELECT SUM(t.amount) FROM transfers t WHERE t.from_account_id = fa.id), 0)
+        + COALESCE((SELECT SUM(amount) FROM fin_operations
+                     WHERE account_to_id = fa.id AND status = 'completed'), 0)
+        - COALESCE((SELECT SUM(amount) FROM fin_operations
+                     WHERE account_from_id = fa.id AND status = 'completed'), 0)
       ) as balance
     FROM finance_accounts fa
     ${where}
@@ -30,14 +29,11 @@ function selectAccountsWithBalance(db: any, orgId: string, opts: { includeArchiv
 }
 
 function countLinkedOperations(db: any, accountId: string): number {
-  const rows = db.prepare(`
-    SELECT
-      (SELECT COUNT(*) FROM income WHERE account_id = ?) +
-      (SELECT COUNT(*) FROM payments WHERE account_id = ?) +
-      (SELECT COUNT(*) FROM expenses WHERE account_id = ?) +
-      (SELECT COUNT(*) FROM transfers WHERE from_account_id = ? OR to_account_id = ?) AS n
-  `).get(accountId, accountId, accountId, accountId, accountId) as { n: number };
-  return rows.n;
+  const row = db.prepare(`
+    SELECT COUNT(*) AS n FROM fin_operations
+    WHERE account_from_id = ? OR account_to_id = ?
+  `).get(accountId, accountId) as { n: number };
+  return row.n;
 }
 
 export async function listAccounts(request: NextRequest): Promise<NextResponse> {
@@ -210,29 +206,23 @@ export async function reconcileAccount(
     }
 
     const today = new Date().toISOString().substring(0, 10);
-    const month = today.substring(0, 7);
     const description = note?.trim() || `Звірка залишків (${account.name})`;
-    let adjustmentId: string;
-    let adjustmentType: 'income' | 'expense';
+    const adjustmentType: 'income' | 'expense' = delta > 0 ? 'income' : 'expense';
+    const categoryId = delta > 0 ? null : ensureReconcileCategory(db, orgId);
 
-    if (delta > 0) {
-      adjustmentId = `inc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      adjustmentType = 'income';
-      db.prepare(`
-        INSERT INTO income
-          (id, organization_id, account_id, amount, currency, category, counterparty, description, income_date, month)
-        VALUES (?, ?, ?, ?, ?, 'Звірка залишків', NULL, ?, ?, ?)
-      `).run(adjustmentId, orgId, id, delta, account.currency, description, today, month);
-    } else {
-      const categoryId = ensureReconcileCategory(db, orgId);
-      adjustmentId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      adjustmentType = 'expense';
-      db.prepare(`
-        INSERT INTO expenses
-          (id, organization_id, category_id, business_unit_id, account_id, amount, currency, description, counterparty, method, expense_date, month)
-        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, NULL, NULL, ?, ?)
-      `).run(adjustmentId, orgId, categoryId, id, Math.abs(delta), account.currency, description, today, month);
-    }
+    const { createOperationInTx } = await import('./operations.handlers');
+    const adjustmentId = createOperationInTx(db, orgId, {
+      op_type: adjustmentType,
+      account_to_id: delta > 0 ? id : null,
+      account_from_id: delta > 0 ? null : id,
+      amount: Math.abs(delta),
+      currency: account.currency,
+      paid_at: today,
+      category_id: categoryId,
+      comment: description,
+      source: 'manual',
+      status: 'completed',
+    });
 
     return NextResponse.json({
       computed,

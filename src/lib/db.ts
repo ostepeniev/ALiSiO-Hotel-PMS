@@ -309,6 +309,12 @@ function initSchema(database: any) {
 
 // Migrate existing databases — add new columns safely
 function runMigrations(database: any) {
+  // --- Finance PR #6: check if we have migrated to unified fin_operations ---
+  // Used below to guard legacy table re-creation after DROP in migration block.
+  const finOpsMigrated = !!database.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='fin_operations'"
+  ).get();
+
   // --- Check if app_users needs role migration ---
   try {
     // Test INSERT to check if new CHECK constraint is in place
@@ -1396,33 +1402,35 @@ function runMigrations(database: any) {
     console.log('[DB] expense_categories hierarchy migration note:', e.message);
   }
 
-  // --- Migration: create expenses table ---
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS expenses (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      category_id TEXT NOT NULL REFERENCES expense_categories(id),
-      business_unit_id TEXT REFERENCES business_units(id),
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'CZK',
-      description TEXT NOT NULL,
-      counterparty TEXT,
-      method TEXT CHECK (method IN ('cash', 'card', 'bank_transfer', 'invoice')),
-      expense_date TEXT NOT NULL,
-      month TEXT NOT NULL,
-      receipt_id TEXT,
-      needs_review INTEGER NOT NULL DEFAULT 0,
-      notes TEXT,
-      created_by TEXT REFERENCES app_users(id),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_org ON expenses(organization_id)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_bu ON expenses(business_unit_id)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(month)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date)');
+  // --- Migration: create expenses table (skipped after fin_operations migration) ---
+  if (!finOpsMigrated) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        category_id TEXT NOT NULL REFERENCES expense_categories(id),
+        business_unit_id TEXT REFERENCES business_units(id),
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'CZK',
+        description TEXT NOT NULL,
+        counterparty TEXT,
+        method TEXT CHECK (method IN ('cash', 'card', 'bank_transfer', 'invoice')),
+        expense_date TEXT NOT NULL,
+        month TEXT NOT NULL,
+        receipt_id TEXT,
+        needs_review INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_by TEXT REFERENCES app_users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_org ON expenses(organization_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_bu ON expenses(business_unit_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_month ON expenses(month)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date)');
+  }
 
   // --- Migration: create receipts table ---
   database.exec(`
@@ -1677,52 +1685,253 @@ function runMigrations(database: any) {
   database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_org_name ON finance_tags(organization_id, LOWER(name))');
   database.exec('CREATE INDEX IF NOT EXISTS idx_tags_org ON finance_tags(organization_id)');
 
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS income (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      account_id TEXT REFERENCES finance_accounts(id),
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'CZK',
-      category TEXT,
-      counterparty TEXT,
-      description TEXT NOT NULL,
-      income_date TEXT NOT NULL,
-      month TEXT NOT NULL,
-      business_unit_id TEXT REFERENCES business_units(id),
-      notes TEXT,
-      created_by TEXT REFERENCES app_users(id),
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  if (!finOpsMigrated) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS income (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        account_id TEXT REFERENCES finance_accounts(id),
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'CZK',
+        category TEXT,
+        counterparty TEXT,
+        description TEXT NOT NULL,
+        income_date TEXT NOT NULL,
+        month TEXT NOT NULL,
+        business_unit_id TEXT REFERENCES business_units(id),
+        notes TEXT,
+        created_by TEXT REFERENCES app_users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_income_org ON income(organization_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_income_date ON income(income_date)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_income_month ON income(month)');
+
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS transfers (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+        from_account_id TEXT REFERENCES finance_accounts(id),
+        to_account_id TEXT REFERENCES finance_accounts(id),
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'CZK',
+        transfer_date TEXT NOT NULL,
+        notes TEXT,
+        created_by TEXT REFERENCES app_users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_income_org ON income(organization_id)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_income_date ON income(income_date)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_income_month ON income(month)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_org ON transfers(organization_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_date ON transfers(transfer_date)');
 
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS transfers (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-      from_account_id TEXT REFERENCES finance_accounts(id),
-      to_account_id TEXT REFERENCES finance_accounts(id),
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'CZK',
-      transfer_date TEXT NOT NULL,
-      notes TEXT,
-      created_by TEXT REFERENCES app_users(id),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_org ON transfers(organization_id)');
-  database.exec('CREATE INDEX IF NOT EXISTS idx_transfers_date ON transfers(transfer_date)');
+    try {
+      database.exec("ALTER TABLE expenses ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
+    } catch { /* column already exists */ }
+    try {
+      database.exec("ALTER TABLE payments ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
+    } catch { /* column already exists */ }
+  }
 
-  try {
-    database.exec("ALTER TABLE expenses ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
-  } catch { /* column already exists */ }
-  try {
-    database.exec("ALTER TABLE payments ADD COLUMN account_id TEXT REFERENCES finance_accounts(id)");
-  } catch { /* column already exists */ }
+  // ═══════════════════════════════════════════════════════
+  // FINANCE PR #6: UNIFIED fin_operations TABLE
+  // One-time hard migration from payments + expenses + income + transfers
+  // ═══════════════════════════════════════════════════════
+  if (!finOpsMigrated) {
+    // 1) Create fin_operations table
+    database.exec(`
+      CREATE TABLE fin_operations (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+
+        op_type TEXT NOT NULL CHECK (op_type IN ('income', 'expense', 'transfer')),
+
+        account_from_id TEXT REFERENCES finance_accounts(id),
+        account_to_id   TEXT REFERENCES finance_accounts(id),
+
+        amount         REAL NOT NULL,
+        currency       TEXT NOT NULL DEFAULT 'CZK',
+        amount_to      REAL,
+        currency_to    TEXT,
+        fx_rate        REAL,
+        amount_company REAL NOT NULL,
+
+        paid_at      TEXT NOT NULL,
+        accrued_at   TEXT NOT NULL,
+        period_from  TEXT,
+        period_to    TEXT,
+
+        category_id     TEXT REFERENCES expense_categories(id),
+        project_id      TEXT REFERENCES business_units(id),
+        counterparty_id TEXT REFERENCES finance_counterparties(id),
+
+        reservation_id  TEXT REFERENCES reservations(id) ON DELETE CASCADE,
+        status          TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','pending','failed','refunded')),
+        method          TEXT,
+        payment_subtype TEXT,
+
+        comment     TEXT,
+        is_planned  INTEGER NOT NULL DEFAULT 0,
+        source      TEXT NOT NULL DEFAULT 'manual',
+        source_ref  TEXT,
+
+        created_by TEXT REFERENCES app_users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_org ON fin_operations(organization_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_type ON fin_operations(op_type)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_paid ON fin_operations(paid_at)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_accrued ON fin_operations(accrued_at)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_acct_from ON fin_operations(account_from_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_acct_to ON fin_operations(account_to_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_reservation ON fin_operations(reservation_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_status ON fin_operations(status)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_source_ref ON fin_operations(source, source_ref)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_category ON fin_operations(category_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_project ON fin_operations(project_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fop_counterparty ON fin_operations(counterparty_id)');
+
+    database.exec(`
+      CREATE TABLE fin_operation_tags (
+        operation_id TEXT NOT NULL REFERENCES fin_operations(id) ON DELETE CASCADE,
+        tag_id TEXT NOT NULL REFERENCES finance_tags(id) ON DELETE CASCADE,
+        PRIMARY KEY (operation_id, tag_id)
+      )
+    `);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_fot_tag ON fin_operation_tags(tag_id)');
+
+    // 2) Migration: copy rows from legacy tables.
+    // Income → op_type='income'
+    database.exec(`
+      INSERT INTO fin_operations
+        (id, organization_id, op_type, account_to_id, amount, currency, amount_company,
+         paid_at, accrued_at, project_id,
+         comment, status, source, created_by, created_at, updated_at)
+      SELECT
+        id, organization_id, 'income', account_id, amount, COALESCE(currency, 'CZK'), amount,
+        income_date, income_date, business_unit_id,
+        COALESCE(notes, description), 'completed', 'manual', created_by, created_at, updated_at
+      FROM income
+    `);
+
+    // Expenses → op_type='expense'
+    database.exec(`
+      INSERT INTO fin_operations
+        (id, organization_id, op_type, account_from_id, amount, currency, amount_company,
+         paid_at, accrued_at, category_id, project_id,
+         comment, method, source, created_by, created_at, updated_at)
+      SELECT
+        id, organization_id, 'expense', account_id, amount, COALESCE(currency, 'CZK'), amount,
+        expense_date, expense_date, category_id, business_unit_id,
+        COALESCE(notes, description, counterparty), method, 'manual', created_by, created_at, updated_at
+      FROM expenses
+    `);
+
+    // Transfers → op_type='transfer'
+    database.exec(`
+      INSERT INTO fin_operations
+        (id, organization_id, op_type, account_from_id, account_to_id,
+         amount, currency, amount_company, paid_at, accrued_at,
+         comment, source, created_by, created_at, updated_at)
+      SELECT
+        id, organization_id, 'transfer', from_account_id, to_account_id,
+        amount, COALESCE(currency, 'CZK'), amount, transfer_date, transfer_date,
+        notes, 'manual', created_by, created_at, created_at
+      FROM transfers
+    `);
+
+    // Payments → op_type='income' (or 'expense' for refund). Derive source from notes.
+    // reservations has no organization_id — pull it through properties.
+    database.exec(`
+      INSERT INTO fin_operations
+        (id, organization_id, op_type, account_from_id, account_to_id,
+         amount, currency, amount_company, paid_at, accrued_at,
+         reservation_id, status, method, payment_subtype,
+         comment, source, source_ref, created_at, updated_at)
+      SELECT
+        p.id, prop.organization_id,
+        CASE WHEN p.type = 'refund' THEN 'expense' ELSE 'income' END,
+        CASE WHEN p.type = 'refund' THEN p.account_id ELSE NULL END,
+        CASE WHEN p.type = 'refund' THEN NULL ELSE p.account_id END,
+        p.amount, COALESCE(p.currency, 'CZK'), p.amount,
+        COALESCE(p.paid_at, p.created_at), COALESCE(p.paid_at, p.created_at),
+        p.reservation_id, COALESCE(p.status, 'completed'), p.method, p.type,
+        p.notes,
+        CASE
+          WHEN p.auto_created = 1 AND p.notes LIKE '%Hostex%' THEN 'hostex'
+          WHEN p.auto_created = 1 AND (p.notes LIKE '%Teya%' OR p.notes LIKE '%Teia%') THEN 'teia'
+          WHEN p.auto_created = 1 AND p.method = 'online' THEN 'booking_widget'
+          WHEN p.auto_created = 1 THEN 'booking_widget'
+          ELSE 'manual'
+        END,
+        p.reservation_id,
+        p.created_at, p.created_at
+      FROM payments p
+      JOIN reservations r ON p.reservation_id = r.id
+      JOIN properties prop ON r.property_id = prop.id
+    `);
+
+    // 3) Rename bank_transactions FK: matched_expense_id + matched_payment_id → matched_operation_id
+    const btxCols = database.prepare("PRAGMA table_info(bank_transactions)").all() as { name: string }[];
+    if (!btxCols.some((c) => c.name === 'matched_operation_id')) {
+      database.exec('ALTER TABLE bank_transactions ADD COLUMN matched_operation_id TEXT REFERENCES fin_operations(id)');
+      database.exec(`
+        UPDATE bank_transactions
+        SET matched_operation_id = COALESCE(matched_expense_id, matched_payment_id)
+        WHERE matched_expense_id IS NOT NULL OR matched_payment_id IS NOT NULL
+      `);
+      database.exec('CREATE INDEX IF NOT EXISTS idx_btx_matched_op ON bank_transactions(matched_operation_id)');
+    }
+
+    // 4) Add link-columns to capex_items / accruals / invoices (placeholders for future)
+    for (const tbl of ['capex_items', 'accruals', 'invoices']) {
+      try {
+        const cols = database.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
+        if (!cols.some((c) => c.name === 'fin_operation_id')) {
+          database.exec(`ALTER TABLE ${tbl} ADD COLUMN fin_operation_id TEXT REFERENCES fin_operations(id)`);
+        }
+      } catch { /* table may not exist on fresh DBs */ }
+    }
+
+    // 5) Verification. Use the same JOIN chain as the INSERT (payments → reservations → properties)
+    const counts = database.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM income) +
+        (SELECT COUNT(*) FROM expenses) +
+        (SELECT COUNT(*) FROM transfers) +
+        (SELECT COUNT(*) FROM payments p
+           JOIN reservations r ON p.reservation_id = r.id
+           JOIN properties prop ON r.property_id = prop.id) AS old_total,
+        (SELECT COUNT(*) FROM fin_operations) AS new_total
+    `).get() as { old_total: number; new_total: number };
+    if (counts.old_total !== counts.new_total) {
+      throw new Error(`[DB] fin_operations migration count mismatch: old=${counts.old_total}, new=${counts.new_total}`);
+    }
+    const sums = database.prepare(`
+      SELECT
+        (SELECT COALESCE(SUM(amount), 0) FROM income) +
+        (SELECT COALESCE(SUM(amount), 0) FROM expenses) +
+        (SELECT COALESCE(SUM(amount), 0) FROM transfers) +
+        (SELECT COALESCE(SUM(p.amount), 0) FROM payments p
+           JOIN reservations r ON p.reservation_id = r.id
+           JOIN properties prop ON r.property_id = prop.id) AS old_sum,
+        (SELECT COALESCE(SUM(amount), 0) FROM fin_operations) AS new_sum
+    `).get() as { old_sum: number; new_sum: number };
+    if (Math.abs(sums.old_sum - sums.new_sum) > 0.01) {
+      throw new Error(`[DB] fin_operations migration sum mismatch: old=${sums.old_sum}, new=${sums.new_sum}`);
+    }
+    console.log(`[DB] fin_operations migration verified: ${counts.new_total} rows, sum=${sums.new_sum.toFixed(2)} ✓`);
+
+    // 6) DROP legacy tables
+    database.exec('DROP TABLE payments');
+    database.exec('DROP TABLE expenses');
+    database.exec('DROP TABLE income');
+    database.exec('DROP TABLE transfers');
+    console.log('[DB] Dropped legacy tables: payments, expenses, income, transfers');
+  }
 
   // ═══════════════════════════════════════════════════════
   // PRICING MODULE
@@ -2329,8 +2538,9 @@ function runMigrations(database: any) {
   // CRITICAL FIX: Recreate payments table with extended CHECK constraints
   // Old table rejected type='service' (Teya) and method='booking_platform' (Hostex)
   // causing INSERT OR IGNORE to silently discard payment records
+  // Skipped after PR #6 — payments table no longer exists, replaced by fin_operations.
   // ═══════════════════════════════════════════════════════
-  try {
+  if (!finOpsMigrated) try {
     // Check if payments table has restrictive CHECK by trying an insert with 'service' type
     const testId = '_check_test_' + Date.now();
     const testRes = database.prepare("SELECT id FROM reservations LIMIT 1").get() as any;

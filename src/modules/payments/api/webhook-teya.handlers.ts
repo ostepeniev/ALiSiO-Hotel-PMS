@@ -194,13 +194,27 @@ function recordPayment(db: any, paymentRef: string, amount: number, currency: st
     `).get(paymentRef, paymentRef) as any;
     if (!order) return;
     const amountMajor = amount > 1000 ? amount / 100 : amount;
-    const payId = `pay_teya_${Date.now()}`;
     let notes = `Teya online: ${order.service_id}`;
     if (order.options_json) {
       try { const opts = JSON.parse(order.options_json); notes += ` ${order.service_date || ''} ${opts.startHour || ''}:00–${(opts.startHour || 0) + (opts.hours || 0)}:00`; } catch { /* ignore */ }
     }
-    db.prepare("INSERT OR IGNORE INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created) VALUES (?, ?, ?, ?, 'online', 'service', 'completed', datetime('now'), ?, 1)").run(payId, order.reservation_id, amountMajor, currency, notes);
-    console.log('[Teya Webhook] Payment recorded in finance:', payId, amountMajor, currency);
+    // PR #6: record via finance fin_operations bridge
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createPaymentOperation, hasPaymentOperation } = require('@/modules/finance/api/payment-bridge');
+    if (!hasPaymentOperation(order.reservation_id, 'teia', paymentRef)) {
+      const { operationId } = createPaymentOperation({
+        reservationId: order.reservation_id,
+        amount: amountMajor,
+        currency,
+        method: 'online',
+        paymentSubtype: 'service',
+        source: 'teia',
+        sourceRef: paymentRef,
+        status: 'completed',
+        comment: notes,
+      });
+      console.log('[Teya Webhook] Payment recorded in finance:', operationId, amountMajor, currency);
+    }
   } catch (e: any) { console.error('[Teya Webhook] Failed to record payment:', e.message); }
 }
 

@@ -89,16 +89,45 @@ export default function ExpensesPage() {
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ month });
+    // Derive date range from month (YYYY-MM → YYYY-MM-01 .. YYYY-MM-31)
+    const from = `${month}-01`;
+    const to = `${month}-31`;
+    const params = new URLSearchParams({ op_type: 'expense', from, to, pageSize: '500' });
     if (filterCategory) params.set('category_id', filterCategory);
-    if (filterBU) params.set('business_unit_id', filterBU);
+    if (filterBU) params.set('project_id', filterBU);
     if (search) params.set('search', search);
     try {
-      const res = await fetch(`/api/finance/expenses?${params}`);
+      const res = await fetch(`/api/finance/operations?${params}`);
       const json = await res.json();
-      setExpenses(json.expenses || []);
-      setTotal(json.total || 0);
-      setCategorySummary(json.categorySummary || []);
+      // Adapt fin_operations shape → legacy Expense shape for this page
+      const items = (json.items || []).filter((o: any) => !o.reservation_id).map((o: any) => ({
+        id: o.id,
+        amount: -o.amount, // negative for display (legacy convention)
+        description: o.comment || '',
+        counterparty: '',
+        method: o.method,
+        expense_date: o.paid_at,
+        month: (o.paid_at || '').substring(0, 7),
+        category_name: o.category_name,
+        category_icon: o.category_icon,
+        category_color: o.category_color,
+        std_group: '',
+        bu_name: o.project_name || '',
+        category_id: o.category_id,
+        business_unit_id: o.project_id,
+        notes: o.comment || '',
+      }));
+      setExpenses(items);
+      setTotal(items.reduce((s: number, e: any) => s + e.amount, 0));
+      // Aggregate category summary client-side
+      const agg = new Map<string, any>();
+      for (const e of items) {
+        const k = e.category_id || 'none';
+        const cur = agg.get(k) || { id: k, name: e.category_name || '—', icon: e.category_icon, color: e.category_color, std_group: '', total: 0 };
+        cur.total += e.amount;
+        agg.set(k, cur);
+      }
+      setCategorySummary([...agg.values()]);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [month, filterCategory, filterBU, search]);
@@ -151,23 +180,25 @@ export default function ExpensesPage() {
   };
 
   const handleSubmit = async () => {
-    const amount = parseFloat(form.amount) * (form.is_revenue ? 1 : -1);
+    const amount = Math.abs(parseFloat(form.amount));
     const body = {
+      op_type: form.is_revenue ? 'income' : 'expense',
+      account_to_id: form.is_revenue ? null : null,
+      account_from_id: null,
       category_id: form.category_id,
-      business_unit_id: form.business_unit_id || null,
+      project_id: form.business_unit_id || null,
       amount,
-      description: form.description,
-      counterparty: form.counterparty,
+      currency: 'CZK',
+      paid_at: form.expense_date,
       method: form.method,
-      expense_date: form.expense_date,
-      notes: form.notes,
+      comment: [form.description, form.notes, form.counterparty ? `Контрагент: ${form.counterparty}` : null].filter(Boolean).join(' · '),
     };
 
     try {
       if (editingId) {
-        await fetch(`/api/finance/expenses/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await fetch(`/api/finance/operations/${editingId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       } else {
-        await fetch('/api/finance/expenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await fetch('/api/finance/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       setShowModal(false);
       fetchExpenses();
@@ -177,7 +208,7 @@ export default function ExpensesPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Видалити цю транзакцію?')) return;
     try {
-      await fetch(`/api/finance/expenses/${id}`, { method: 'DELETE' });
+      await fetch(`/api/finance/operations/${id}`, { method: 'DELETE' });
       fetchExpenses();
     } catch (e) { console.error(e); }
   };

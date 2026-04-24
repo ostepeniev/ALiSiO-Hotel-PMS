@@ -45,15 +45,23 @@ export async function getReport(request: NextRequest) {
       revenueBySource[src].commission += b.commission_amount || 0;
     }
 
+    // PR #6: read reservation-linked payments from fin_operations (income minus refunds).
     const payments = db.prepare(`
-      SELECT * FROM payments
-      WHERE paid_at BETWEEN ? AND ? AND status = 'completed'
+      SELECT method, amount, op_type, payment_subtype
+      FROM fin_operations
+      WHERE reservation_id IS NOT NULL AND status = 'completed'
+        AND paid_at BETWEEN ? AND ?
     `).all(from, to) as any[];
 
-    const totalPayments = payments.reduce((s: number, p: any) => s + p.amount, 0);
+    const totalPayments = payments.reduce((s: number, p: any) => {
+      const signed = p.op_type === 'expense' && p.payment_subtype === 'refund' ? -p.amount : p.amount;
+      return s + signed;
+    }, 0);
     const paymentsByMethod: Record<string, number> = {};
     for (const p of payments) {
-      paymentsByMethod[p.method] = (paymentsByMethod[p.method] || 0) + p.amount;
+      const signed = p.op_type === 'expense' && p.payment_subtype === 'refund' ? -p.amount : p.amount;
+      const key = p.method || 'unknown';
+      paymentsByMethod[key] = (paymentsByMethod[key] || 0) + signed;
     }
 
     const totalUnits = (db.prepare('SELECT COUNT(*) as cnt FROM units').get() as any).cnt;

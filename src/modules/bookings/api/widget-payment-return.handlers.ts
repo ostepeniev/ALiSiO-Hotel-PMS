@@ -50,16 +50,26 @@ export async function handlePaymentReturn(req: Request) {
           WHERE id = ? AND status = 'tentative'
         `).run(reservationId);
 
-        // Record payment in payments table for booking payments (source=guest_booking_payment)
+        // Record payment via fin_operations bridge
         if (resResult.changes > 0) {
           try {
             const res = db.prepare('SELECT total_price, currency, unit_name FROM reservations r LEFT JOIN units u ON r.unit_id = u.id WHERE r.id = ?').get(reservationId) as any;
             if (res) {
-              const payId = `pay_booking_${Date.now()}`;
-              db.prepare(`
-                INSERT OR IGNORE INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
-                VALUES (?, ?, ?, ?, 'online', 'full', 'completed', datetime('now'), 'Guest page Teya payment', 1)
-              `).run(payId, reservationId, res.total_price, res.currency || 'CZK');
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const { createPaymentOperation, hasPaymentOperation } = require('@/modules/finance/api/payment-bridge');
+              if (!hasPaymentOperation(reservationId, 'booking_widget', sessionId)) {
+                createPaymentOperation({
+                  reservationId,
+                  amount: res.total_price,
+                  currency: res.currency || 'CZK',
+                  method: 'online',
+                  paymentSubtype: 'full',
+                  source: 'booking_widget',
+                  sourceRef: sessionId,
+                  status: 'completed',
+                  comment: 'Guest page Teya payment',
+                });
+              }
 
               const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
               sendTelegramMessage([
@@ -98,7 +108,6 @@ export async function handlePaymentReturn(req: Request) {
           `).get(sessionId, sessionId) as any;
 
           if (order) {
-            const payId = `pay_return_${Date.now()}`;
             let notes = `Online: ${order.service_id}`;
             if (order.options_json) {
               try {
@@ -106,11 +115,22 @@ export async function handlePaymentReturn(req: Request) {
                 notes += ` ${order.service_date || ''} ${opts.startHour || ''}:00–${(opts.startHour || 0) + (opts.hours || 0)}:00`;
               } catch { /* ignore */ }
             }
-            db.prepare(`
-              INSERT OR IGNORE INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
-              VALUES (?, ?, ?, 'CZK', 'online', 'service', 'completed', datetime('now'), ?, 1)
-            `).run(payId, order.reservation_id, order.total_price, notes);
-            console.log('[Payment Return] Payment recorded:', payId, order.total_price);
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { createPaymentOperation, hasPaymentOperation } = require('@/modules/finance/api/payment-bridge');
+            if (!hasPaymentOperation(order.reservation_id, 'booking_widget', sessionId)) {
+              const { operationId } = createPaymentOperation({
+                reservationId: order.reservation_id,
+                amount: order.total_price,
+                currency: 'CZK',
+                method: 'online',
+                paymentSubtype: 'service',
+                source: 'booking_widget',
+                sourceRef: sessionId,
+                status: 'completed',
+                comment: notes,
+              });
+              console.log('[Payment Return] Payment recorded:', operationId, order.total_price);
+            }
           }
         } catch (e: any) {
           console.error('[Payment Return] Payment record error:', e.message);
