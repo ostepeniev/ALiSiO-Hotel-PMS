@@ -392,7 +392,7 @@ export default function BookingPage() {
       const data = await res.json();
       setAvailability(data);
     } catch {
-      setError(t.errorOccurred || 'An error occurred. Please try again.');
+      setError(t.errorOccurred);
     }
     setLoadingAvail(false);
   }, [checkIn, checkOut, promoApplied, certInput, t]);
@@ -401,7 +401,7 @@ export default function BookingPage() {
   const applyPromo = useCallback(async () => {
     if (!promoInput.trim()) return;
     setPromoApplied(promoInput.trim());
-    setPromoMessage({ type: 'success', text: t.promoApplied || 'Promo code applied' });
+    setPromoMessage({ type: 'success', text: t.promoApplied });
   }, [promoInput, t]);
 
   // ─── Navigation ──────
@@ -559,13 +559,14 @@ export default function BookingPage() {
       const returnBase = currentSlug ? `/w/${currentSlug}` : '/booking';
       const returnPath = `${returnBase}?success=${resId}&payment_kind=room`;
 
-      const totalAmount = (reservation?.totalPrice ?? 0) + servicesTotal;
       const payRes = await fetch(`${API_BASE}/api/booking/checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          amount: reservation?.totalPrice ?? 0,
+          currency: 'CZK',
+          description: `Booking ${resId} — ${reservation?.unitName}`,
           reservation_id: resId,
-          site_slug: currentSlug || undefined,
           site_id: currentSiteId || undefined,
           return_path: returnPath,
         }),
@@ -583,7 +584,7 @@ export default function BookingPage() {
       setError(e?.message || t.errorOccurred);
       setRedirectingToPayment(false);
     }
-  }, [reservation, servicesTotal, t]);
+  }, [reservation, t]);
 
   // ─── Submit Services (Step 4: write services + second Teya checkout) ──────
 

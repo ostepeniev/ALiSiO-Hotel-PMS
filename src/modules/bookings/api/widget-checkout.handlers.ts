@@ -25,40 +25,32 @@ export async function createWidgetCheckoutSession(req: Request) {
       service_date, 
       start_hour, 
       hours, 
-      addons,
-      // Client-provided fallbacks (used by BookingWizard /book flow)
-      amount: clientAmount,
-      currency: clientCurrency,
-      description: clientDescription,
+      addons 
     } = body;
 
     const db = getDb();
 
     // 1. Resolve Site and Payment Config
-    // site_slug is optional — if not provided, use global env credentials
-    let site: any = null;
-    let payCfg: any = {};
-
-    if (site_slug) {
-      site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
-      if (!site) {
-        return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
-      }
-      payCfg = JSON.parse(site.payment_config || '{}');
+    if (!site_slug) {
+      return NextResponse.json({ error: 'site_slug is required' }, { status: 400, headers: CORS_HEADERS });
+    }
+    const site = db.prepare('SELECT id, payment_config, site_url FROM booking_sites WHERE slug = ?').get(site_slug) as any;
+    if (!site) {
+      return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
     }
 
-    const useSiteTeya = payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id;
-    if (!useSiteTeya && !process.env.TEYA_CLIENT_ID) {
-      return NextResponse.json({ error: 'Online payments not configured' }, { status: 403, headers: CORS_HEADERS });
+    const payCfg = JSON.parse(site.payment_config || '{}');
+    if (!payCfg.enabled || payCfg.provider !== 'teya' || !payCfg.teya?.client_id) {
+      // Fallback to global env if not configured per site (for backward compatibility during migration)
+      if (!process.env.TEYA_CLIENT_ID) {
+        return NextResponse.json({ error: 'Online payments not configured for this site' }, { status: 403, headers: CORS_HEADERS });
+      }
     }
 
     // 2. Resolve Amount (Recalculate from DB for security)
     let amount = 0;
     let currency = 'CZK';
     let description = 'ALiSiO Booking';
-    let servicesBreakdown: { name: string; total: number; details?: string }[] = [];
-    let guestInfo = '';
-    let unitName = '';
 
     if (service_id && service_date) {
       // Service-only order (e.g. Sauna from Guest Page)
@@ -76,89 +68,17 @@ export async function createWidgetCheckoutSession(req: Request) {
           amount += (addon.price || 0) * (addon.quantity || 1);
         }
       }
-
-      servicesBreakdown.push({
-        name: svc.name,
-        total: amount,
-        details: `${h} hod, ${service_date}${start_hour != null ? `, ${start_hour}:00–${start_hour + h}:00` : ''}`,
-      });
-
-      // Try to get guest info from reservation if provided
-      if (reservation_id) {
-        const guest = db.prepare(`
-          SELECT g.first_name, g.last_name, u.name as unit_name
-          FROM reservations r
-          JOIN guests g ON r.guest_id = g.id
-          LEFT JOIN units u ON r.unit_id = u.id
-          WHERE r.id = ?
-        `).get(reservation_id) as any;
-        if (guest) {
-          guestInfo = `${guest.first_name} ${guest.last_name}`;
-          unitName = guest.unit_name || '';
-        }
-      }
     } else if (reservation_id) {
-      // Main Reservation payment — include booked services
+      // Main Reservation payment
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
       if (!res) return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
       
-      amount = res.total_price || 0;
+      amount = res.total_price;
       currency = res.currency || 'CZK';
-      description = clientDescription || `Booking #${reservation_id.substring(0, 8)}`;
-
-      // Add services from booking_service_orders that haven't been paid yet
-      try {
-        const pendingSvcOrders = db.prepare(`
-          SELECT bso.total_price, bso.service_id, bso.quantity, bso.service_date, bso.options_json,
-                 s.name as svc_name, s.name_en as svc_name_en
-          FROM booking_service_orders bso
-          LEFT JOIN additional_services s ON bso.service_id = s.id
-          WHERE bso.reservation_id = ? AND (bso.payment_status = 'none' OR bso.payment_status = 'pending' OR bso.payment_status IS NULL)
-        `).all(reservation_id) as any[];
-
-        for (const svcOrd of pendingSvcOrders) {
-          amount += svcOrd.total_price || 0;
-          let details = '';
-          try {
-            const opts = JSON.parse(svcOrd.options_json || '{}');
-            if (opts.startHour != null && opts.hours) {
-              details = `${svcOrd.service_date || ''}, ${opts.startHour}:00–${opts.startHour + opts.hours}:00`;
-            }
-          } catch { /* */ }
-          servicesBreakdown.push({
-            name: svcOrd.svc_name_en || svcOrd.svc_name || svcOrd.service_id,
-            total: svcOrd.total_price || 0,
-            details,
-          });
-        }
-      } catch (e: any) { console.error('[Checkout] Service orders query error:', e.message); }
-
-      // Fallback: if DB total is 0 but client sent an amount, use client amount
-      // This is needed for BookingWizard (/book) where draft total_price may be 0
-      if (amount <= 0 && clientAmount && clientAmount > 0) {
-        amount = clientAmount;
-        console.log(`[Checkout] Using client-provided amount: ${amount} (DB total was 0)`);
-      }
-      if (clientCurrency) currency = clientCurrency;
-
-      // Get guest info
-      try {
-        const guest = db.prepare(`
-          SELECT g.first_name, g.last_name, u.name as unit_name
-          FROM reservations r
-          JOIN guests g ON r.guest_id = g.id
-          LEFT JOIN units u ON r.unit_id = u.id
-          WHERE r.id = ?
-        `).get(reservation_id) as any;
-        if (guest) {
-          guestInfo = `${guest.first_name} ${guest.last_name}`;
-          unitName = guest.unit_name || '';
-        }
-      } catch { /* */ }
+      description = `Booking #${reservation_id.substring(0, 8)}`;
     } else {
       return NextResponse.json({ error: 'reservation_id or service_id is required' }, { status: 400, headers: CORS_HEADERS });
     }
-
 
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
@@ -186,23 +106,14 @@ export async function createWidgetCheckoutSession(req: Request) {
       }
     }
 
-    // Step 2: TG Notification (detailed format)
+    // Step 2: TG Notification
     try {
-      const lines = [
+      const text = [
         `📦 <b>Запит на оплату: ${esc(description)}</b>`,
-        ``,
-      ];
-      if (guestInfo) lines.push(`👤 ${esc(guestInfo)}`);
-      if (unitName) lines.push(`🏠 ${esc(unitName)}`);
-      if (servicesBreakdown.length > 0) {
-        for (const svc of servicesBreakdown) {
-          lines.push(`🔹 ${esc(svc.name)}${svc.details ? ` — ${esc(svc.details)}` : ''}: ${svc.total} ${currency}`);
-        }
-      }
-      lines.push(`💰 ${amount} ${currency}`);
-      lines.push(`🌍 Сайт: ${site_slug || 'kemp-widget'}`);
-      lines.push(`💳 Створюється сесія оплати...`);
-      const text = lines.join('\n');
+        `💰 ${amount} ${currency}`,
+        `🌍 Сайт: ${site_slug}`,
+        `💳 Очікує сесії...`,
+      ].join('\n');
       sendTelegramMessage(text).catch(() => {});
     } catch { /* */ }
 
@@ -213,7 +124,7 @@ export async function createWidgetCheckoutSession(req: Request) {
 
     // Validate returnTo for security (prevent open redirects)
     let returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
-    if (returnTo.startsWith('http') && site?.site_url) {
+    if (returnTo.startsWith('http') && site.site_url) {
        const allowedHost = new URL(site.site_url).hostname;
        const targetHost = new URL(returnTo).hostname;
        if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
@@ -226,8 +137,8 @@ export async function createWidgetCheckoutSession(req: Request) {
         amount: amountMinor,
         currency: currency || 'CZK',
         description,
-        metadata: reservation_id ? { reservation_id, site_id: site?.id || 'kemp' } : { site_id: site?.id || 'kemp' },
-        credentials: useSiteTeya ? {
+        metadata: reservation_id ? { reservation_id, site_id: site.id } : { site_id: site.id },
+        credentials: payCfg.teya?.client_id ? {
           client_id: payCfg.teya.client_id,
           client_secret: payCfg.teya.client_secret,
           store_id: payCfg.teya.store_id
