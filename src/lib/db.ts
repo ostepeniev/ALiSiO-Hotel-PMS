@@ -1541,9 +1541,10 @@ function runMigrations(database: any) {
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'investment', 'other')),
+      type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'card', 'investment', 'other')),
       currency TEXT NOT NULL DEFAULT 'CZK',
       initial_balance REAL NOT NULL DEFAULT 0,
+      credit_limit REAL,
       color TEXT DEFAULT '#6366f1',
       is_active INTEGER NOT NULL DEFAULT 1,
       sort_order INTEGER NOT NULL DEFAULT 0,
@@ -1551,6 +1552,55 @@ function runMigrations(database: any) {
     )
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id)');
+
+  // Migration: rebuild finance_accounts to add 'card' to type CHECK and credit_limit column.
+  // SQLite cannot ALTER a CHECK constraint, so we rebuild via swap-and-rename.
+  try {
+    const acctCols = database.prepare("PRAGMA table_info(finance_accounts)").all() as { name: string }[];
+    const hasCreditLimit = acctCols.some((c) => c.name === 'credit_limit');
+    if (!hasCreditLimit) {
+      database.exec(`
+        CREATE TABLE finance_accounts_new (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'card', 'investment', 'other')),
+          currency TEXT NOT NULL DEFAULT 'CZK',
+          initial_balance REAL NOT NULL DEFAULT 0,
+          credit_limit REAL,
+          color TEXT DEFAULT '#6366f1',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO finance_accounts_new
+          (id, organization_id, name, type, currency, initial_balance, color, is_active, sort_order, created_at)
+        SELECT id, organization_id, name, type, currency, initial_balance, color, is_active, sort_order, created_at
+        FROM finance_accounts;
+        DROP TABLE finance_accounts;
+        ALTER TABLE finance_accounts_new RENAME TO finance_accounts;
+        CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id);
+      `);
+      console.log('[DB] Rebuilt finance_accounts: added card type and credit_limit column');
+    }
+  } catch (e: any) {
+    console.log('[DB] finance_accounts rebuild note:', e.message);
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_exchange_rates (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      from_currency TEXT NOT NULL,
+      to_currency TEXT NOT NULL,
+      rate REAL NOT NULL CHECK (rate > 0),
+      effective_from TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(organization_id, from_currency, to_currency, effective_from)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fx_org ON finance_exchange_rates(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_fx_pair ON finance_exchange_rates(from_currency, to_currency, effective_from)');
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS income (

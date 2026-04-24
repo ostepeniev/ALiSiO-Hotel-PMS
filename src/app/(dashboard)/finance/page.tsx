@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle } from 'lucide-react';
+import Link from 'next/link';
+import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle, Settings } from 'lucide-react';
 import { useDevice } from '@/lib/useDevice';
 import MobileFinanceOverview from '@/components/mobile/pages/MobileFinanceOverview';
 
@@ -119,18 +120,37 @@ export default function FinanceOverviewPage() {
             CEO Dashboard — зведена фінансова панель
           </p>
         </div>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          style={{
-            padding: '0.5rem 1rem',
-            borderRadius: '8px',
-            border: '1px solid var(--border)',
-            background: 'var(--surface)',
-            color: 'var(--text-primary)',
-          }}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text-primary)',
+            }}
+          />
+          <Link
+            href="/finance/settings"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text-primary)',
+              textDecoration: 'none',
+              fontSize: 14,
+            }}
+          >
+            <Settings size={16} /> Налаштування
+          </Link>
+        </div>
       </div>
 
       {/* KPI Cards */}

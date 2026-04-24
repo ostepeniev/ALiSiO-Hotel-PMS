@@ -39,6 +39,15 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 | `listBankTransactions(req)` | Транзакції виписки |
 | `updateBankTransaction(req, ctx)` | Оновити/зматчити транзакцію |
 | `importBankStatement(req)` | Імпортувати XML виписку |
+| `listAccounts(req)` | Список рахунків з обчисленим залишком (?archived=1 включно з архівними) |
+| `createAccount(req)` | Додати рахунок |
+| `updateAccount(req)` | Оновити рахунок |
+| `archiveAccount(req)` | Архівувати/відновити рахунок (`is_active`) |
+| `deleteAccount(req, ctx)` | Видалити рахунок (тільки якщо немає прив'язаних операцій) |
+| `reconcileAccount(req, ctx)` | Звірка залишку — створює коригуючу операцію за дельтою |
+| `listExchangeRates(req)` | Список курсів валют + поточні діючі |
+| `upsertExchangeRate(req)` | Створити/оновити курс (UNIQUE на пару + дата) |
+| `deleteExchangeRate(req, ctx)` | Видалити курс |
 
 ## Залежності
 

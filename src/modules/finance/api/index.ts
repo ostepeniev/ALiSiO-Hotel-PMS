@@ -10,7 +10,13 @@ export { listAccruals, createAccrual } from './accruals.handlers';
 export { getAccrual, updateAccrual, deleteAccrual } from './accrual.handlers';
 export { listBankStatements, listBankTransactions, updateBankTransaction, importBankStatement } from './bank.handlers';
 export { listInvoices, getInvoiceHtml, generateInvoiceForReservation } from './invoices.handlers';
-export { listAccounts, createAccount, updateAccount } from './accounts.handlers';
+export {
+  listAccounts, createAccount, updateAccount,
+  archiveAccount, deleteAccount, reconcileAccount,
+} from './accounts.handlers';
+export {
+  listExchangeRates, upsertExchangeRate, deleteExchangeRate,
+} from './exchange-rates.handlers';
 export { listIncome, createIncome, updateIncome, deleteIncome } from './income.handlers';
 export { listTransfers, createTransfer, deleteTransfer } from './transfers.handlers';
 export { getFinanceLog } from './log.handlers';
