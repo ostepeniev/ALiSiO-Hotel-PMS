@@ -23,7 +23,7 @@ export async function getWidgetSiteConfig(req: NextRequest) {
 
     const db = getDb();
     const site = db.prepare(`
-      SELECT id, name, slug, design_config, widget_config, currency, site_url
+      SELECT id, name, slug, design_config, widget_config, payment_config, currency, site_url
       FROM booking_sites
       WHERE slug = ?
     `).get(slug) as any;
@@ -31,6 +31,10 @@ export async function getWidgetSiteConfig(req: NextRequest) {
     if (!site) {
       return NextResponse.json({ error: 'Site not found' }, { status: 404, headers: CORS_HEADERS });
     }
+
+    const payCfg = JSON.parse(site.payment_config || '{}');
+    const hasPayment = !!(payCfg.enabled && payCfg.provider === 'teya' && payCfg.teya?.client_id)
+      || !!process.env.TEYA_CLIENT_ID;
 
     return NextResponse.json({
       id: site.id,
@@ -41,6 +45,7 @@ export async function getWidgetSiteConfig(req: NextRequest) {
       config: JSON.parse(site.widget_config || '{}'),
       currency: site.currency || 'CZK',
       siteUrl: site.site_url,
+      hasPayment,
     }, { headers: CORS_HEADERS });
   } catch (error: any) {
     console.error('GET /api/booking/site-config error:', error?.message || error);

@@ -13,7 +13,9 @@
   }
   
   const unitId = script.getAttribute('data-unit') || '';
-  const lang = script.getAttribute('data-lang') || 'uk';
+  const lang = script.getAttribute('data-lang')
+    || (typeof window !== 'undefined' && window.__BOOKING_LANG__)
+    || 'uk';
   const baseUrl = script.src.split('/widget/embed.v2.js')[0];
 
   // 3. Create a unique container for the widget

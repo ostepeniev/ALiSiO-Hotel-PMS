@@ -115,6 +115,7 @@ export interface BookingTranslations {
   bookingNumber: string;
   accommodation: string;
   supportContactNote: string;
+  finishBooking: string;
   // CTA
   guestsShort: string;
   // Additional (for V3 and others)
@@ -218,6 +219,7 @@ const translations: Record<BookingLang, any> = {
     bookingNumber: 'Номер бронювання',
     accommodation: 'Будинок',
     supportContactNote: "Якщо щось — пиши на hello@qa-glamping.eu або +420 773 708 849",
+    finishBooking: 'Завершити',
     guestsShort: 'гостей',
     youSelected: 'Ти обрав',
     checkDetailsBelow: 'Перевір деталі нижче.',
@@ -317,6 +319,7 @@ const translations: Record<BookingLang, any> = {
     bookingNumber: 'Booking Number',
     accommodation: 'House',
     supportContactNote: "If any questions — contact hello@qa-glamping.eu or +420 773 708 849",
+    finishBooking: 'Finish',
     guestsShort: 'guests',
     youSelected: 'You selected',
     checkDetailsBelow: 'Check details below.',
@@ -416,6 +419,7 @@ const translations: Record<BookingLang, any> = {
     bookingNumber: 'Číslo rezervace',
     accommodation: 'Dům',
     supportContactNote: "V případě dotazů pište na hello@qa-glamping.eu nebo volejte +420 773 708 849",
+    finishBooking: 'Dokončit',
     guestsShort: 'hostů',
     youSelected: 'Vybrali jste',
     checkDetailsBelow: 'Zkontrolujte podrobnosti níže.',
@@ -515,6 +519,7 @@ const translations: Record<BookingLang, any> = {
     bookingNumber: 'Buchungsnummer',
     accommodation: 'Haus',
     supportContactNote: "Bei Fragen — schreiben Sie an hello@qa-glamping.eu oder +420 773 708 849",
+    finishBooking: 'Abschließen',
     guestsShort: 'Gäste',
     youSelected: 'Ausgewählt',
     checkDetailsBelow: 'Details unten prüfen.',

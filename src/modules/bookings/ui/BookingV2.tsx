@@ -2,7 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import './booking-v3.css';
+import './booking-v2.css';
 import { BookingLang, BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from './translations';
 
 // API base URL
@@ -93,7 +93,7 @@ interface DesignConfig {
   show_shadow?: boolean;
 }
 
-export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPreview }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean }) {
+export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean }) {
   // ─── State ───
   const [isMounted, setIsMounted] = useState(false);
   const [lang, setLang] = useState<BookingLang>('uk');
@@ -171,7 +171,9 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
       const uId = params.get('unitId');
       if (uId) setSelectedUnitId(uId);
 
-      const l = params.get('lang');
+      const l = params.get('lang')
+        || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
+        || null;
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
         setLang(l as BookingLang);
       }
@@ -1287,9 +1289,10 @@ export default function BookingV3({ siteId, siteSlug, thankYouUrl, design, isPre
                 }}
               >
                 <span>
-                  {step === 5 ? t.payNow :
-                    (step === 1 ? t.selectDates :
-                      (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
+                  {step === 5
+                    ? (siteConfig?.hasPayment ? t.payNow : (t.finishBooking || 'Завершити'))
+                    : (step === 1 ? t.selectDates
+                      : (step === 3 ? (submitting ? t.processing : t.next) : t.next))}
                 </span>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                   <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
