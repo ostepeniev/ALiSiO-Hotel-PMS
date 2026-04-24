@@ -96,12 +96,20 @@ function isRefund(eventType: string): boolean { return eventType === 'refund.suc
 
 function extractPaymentRef(event: any): { sessionId: string; transactionId: string; amount: number; currency: string } {
   const data = event.data || event;
-  return {
-    sessionId: data.checkout_session_id || data.session_id || event.checkout_session_id || event.session_id || '',
-    transactionId: data.id || data.transaction_id || event.id || '',
-    amount: data.amount?.value || data.amount || event.amount?.value || event.amount || 0,
-    currency: data.amount?.currency || data.currency || event.amount?.currency || 'CZK',
-  };
+  // Try all known field names for session/checkout ID
+  const sessionId =
+    data.checkout_session_id ||
+    data.session_id ||
+    data.checkout_session?.id ||
+    event.checkout_session_id ||
+    event.session_id ||
+    event.data?.checkout_session?.id ||
+    '';
+  const transactionId = data.id || data.transaction_id || event.id || '';
+  const amount = data.amount?.value || data.amount || event.amount?.value || event.amount || 0;
+  const currency = data.amount?.currency || data.currency || event.amount?.currency || 'CZK';
+  console.log('[Teya Webhook] Extracted refs:', { sessionId, transactionId, amount, currency });
+  return { sessionId, transactionId, amount, currency };
 }
 
 function handlePaymentSuccess(db: any, event: any, eventType: string) {
@@ -116,7 +124,14 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
   const result4 = db.prepare("UPDATE reservations SET status = 'confirmed', payment_status = 'paid', updated_at = datetime('now') WHERE payment_id = ? AND status = 'tentative'").run(paymentRef);
   db.prepare("UPDATE service_time_slots SET booking_session_id = NULL, notes = 'paid' WHERE booking_session_id = ?").run(paymentRef);
 
-  console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: result3.changes });
+  console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: result3.changes + result4.changes });
+
+  if (result2.changes === 0 && !result1.changes) {
+    // Try again with transactionId as fallback (some Teya versions use tx ID in webhook)
+    const txFallback = db.prepare("UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
+    const txFallback2 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
+    console.log('[Teya Webhook] Fallback by transactionId:', { transactionId, so: txFallback.changes, bso: txFallback2.changes });
+  }
 
   if (result2.changes > 0) {
     try {

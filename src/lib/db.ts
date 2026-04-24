@@ -1642,6 +1642,26 @@ function runMigrations(database: any) {
   database.exec('CREATE INDEX IF NOT EXISTS idx_fx_org ON finance_exchange_rates(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_fx_pair ON finance_exchange_rates(from_currency, to_currency, effective_from)');
 
+  // --- Finance PR #4: counterparties with hierarchy and aliases for auto-matching ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_counterparties (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      parent_id TEXT REFERENCES finance_counterparties(id),
+      kind TEXT,
+      note TEXT,
+      aliases_json TEXT NOT NULL DEFAULT '[]',
+      icon TEXT,
+      color TEXT DEFAULT '#6b7280',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_cp_org ON finance_counterparties(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_cp_parent ON finance_counterparties(parent_id)');
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS income (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

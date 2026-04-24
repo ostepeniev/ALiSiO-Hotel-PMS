@@ -166,9 +166,10 @@ export async function createCheckoutSession(opts: CheckoutSessionOptions): Promi
   }
 
   const data = await res.json();
-  console.log('[Teya] Checkout session created:', data.session_id);
+  const sessionId = data.session_id || data.id || data.checkout_session_id;
+  console.log('[Teya] Checkout session created:', sessionId, '| raw keys:', Object.keys(data).join(','));
   return {
-    id: data.session_id,
+    id: sessionId,
     session_token: data.session_token,
     session_url: data.session_url,
     status: data.status || 'OPEN',

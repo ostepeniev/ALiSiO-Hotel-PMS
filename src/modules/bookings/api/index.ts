@@ -19,3 +19,4 @@ export { listAvailabilityBlocks, deleteAvailabilityBlock } from './availability-
 export { listServiceOrders, updateServiceOrder } from './service-orders.handlers';
 export { getWidgetCalendar, getWidgetCalendarOptions } from './widget-calendar-public.handlers';
 export { createBookingDraft, getBookingDraft, deleteBookingDraft, createBookingDraftOptions } from './booking-drafts.handlers';
+export { fixServiceOrderPayment, getPendingOrders } from './fix-payment.handlers';
