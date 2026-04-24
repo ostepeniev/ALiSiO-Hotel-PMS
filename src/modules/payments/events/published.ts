@@ -1,32 +1,32 @@
-import type { PaymentIntent } from '../domain/types';
+import type { PaymentIntentKind, PaymentProvider } from '../domain/types';
 
 export type PaymentSessionCreatedEvent = {
   sessionId: string;
-  provider: 'teya';
-  intent: PaymentIntent;
+  provider: PaymentProvider;
+  intentKind: PaymentIntentKind;
   amount: number;
   currency: string;
 };
 
 export type PaymentCompletedEvent = {
   sessionId: string;
-  provider: 'teya';
+  provider: PaymentProvider;
+  intentKind: PaymentIntentKind;
   paymentId: string;
-  intent: PaymentIntent;
   amount: number;
   currency: string;
 };
 
 export type PaymentFailedEvent = {
   sessionId: string;
-  provider: 'teya';
-  intent: PaymentIntent;
+  provider: PaymentProvider;
+  intentKind: PaymentIntentKind;
   reason?: string;
 };
 
 export type PaymentRefundedEvent = {
   sessionId: string;
-  provider: 'teya';
+  provider: PaymentProvider;
   paymentId: string;
   amount: number;
   currency: string;
