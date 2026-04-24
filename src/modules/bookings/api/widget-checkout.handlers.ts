@@ -65,20 +65,52 @@ export async function createWidgetCheckoutSession(req: Request) {
     let description = 'ALiSiO Booking';
 
     if (service_id && service_date) {
-      // Service-only order (e.g. Sauna from Guest Page)
-      const svc = db.prepare('SELECT name, price, currency FROM additional_services WHERE id = ?').get(service_id) as any;
+      // Service-only order (e.g. Sauna/Tub from Guest Page widget)
+      const svc = db.prepare('SELECT name, name_en, price, currency FROM additional_services WHERE id = ?').get(service_id) as any;
       if (!svc) return NextResponse.json({ error: 'Service not found' }, { status: 404, headers: CORS_HEADERS });
       
       const h = hours || 1;
-      amount = svc.price * h;
+      let basePrice = svc.price;
+      
+      // Apply promo code discount if provided
+      if (body.promoCode) {
+        try {
+          const promo = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND active = 1").get(body.promoCode) as any;
+          if (promo) {
+            if (promo.discount_type === 'fixed_price') {
+              basePrice = promo.discount_value;
+            } else if (promo.discount_type === 'percentage') {
+              basePrice = Math.round(svc.price * (1 - promo.discount_value / 100));
+            }
+          }
+        } catch { /* promo lookup failed — use full price */ }
+      }
+
+      amount = basePrice * h;
       currency = svc.currency || 'CZK';
-      description = svc.name;
+      const svcName = svc.name_en || svc.name;
+      const sHour = start_hour || 14;
+      description = `${svcName} — ${h} hodin, ${service_date}`;
 
       // Handle addons
       if (addons && Array.isArray(addons)) {
         for (const addon of addons) {
-          amount += (addon.price || 0) * (addon.quantity || 1);
+          const addonPrice = addon.price || 0;
+          const addonQty = addon.quantity || 1;
+          amount += addonPrice * addonQty;
+          // If addon price not sent from client, look up in DB
+          if (!addon.price && addon.id) {
+            try {
+              const dbAddon = db.prepare("SELECT price FROM service_addons WHERE id = ?").get(addon.id) as any;
+              if (dbAddon) amount += (dbAddon.price || 0) * addonQty;
+            } catch { /* */ }
+          }
         }
+      }
+
+      // If client sent amount and it differs (promo applied on client), trust client if lower
+      if (clientAmount && typeof clientAmount === 'number' && clientAmount > 0 && clientAmount < amount) {
+        amount = clientAmount;
       }
     } else if (reservation_id) {
       // Main Reservation payment
@@ -110,7 +142,6 @@ export async function createWidgetCheckoutSession(req: Request) {
       if (clientDescription) description = clientDescription;
     }
 
-
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
     // Step 1: Create preliminary order for services if needed
@@ -131,22 +162,49 @@ export async function createWidgetCheckoutSession(req: Request) {
           amount / h, amount,
           'pending_teya'
         );
-        // ... slots logic omitted for brevity as it was already there ...
       } catch (dbErr: any) {
         console.error('[Checkout Session] DB error:', dbErr.message);
       }
     }
 
-    // Step 2: TG Notification
+    // Step 2: TG Notification (enriched with guest details)
     try {
-      const text = [
-        `📦 <b>Запит на оплату: ${esc(description)}</b>`,
-        `💰 ${amount} ${currency}`,
-        `🌍 Сайт: ${site_slug || site?.id || 'default'}`,
-        `💳 Очікує сесії...`,
-      ].join('\n');
-      sendTelegramMessage(text).catch(() => {});
+      let guestName = '';
+      let unitName = '';
+      if (reservation_id) {
+        try {
+          const resInfo = db.prepare(`
+            SELECT r.id, rg.first_name, rg.last_name, u.name as unit_name
+            FROM reservations r
+            LEFT JOIN reservation_guests rg ON rg.reservation_id = r.id
+            LEFT JOIN units u ON u.id = r.unit_id
+            WHERE r.id = ?
+          `).get(reservation_id) as any;
+          if (resInfo) {
+            guestName = [resInfo.first_name, resInfo.last_name].filter(Boolean).join(' ');
+            unitName = resInfo.unit_name || '';
+          }
+        } catch { /* guest lookup failed */ }
+      }
+
+      const sHour = start_hour || 14;
+      const h = hours || 2;
+      const timeRange = service_id ? `${String(sHour).padStart(2,'0')}:00–${String(sHour + h).padStart(2,'0')}:00` : '';
+      
+      const lines = [
+        `📦 <b>Нове замовлення: ${esc(description)}</b>`,
+        '',
+      ];
+      if (guestName) lines.push(`👤 ${esc(guestName)}`);
+      if (unitName) lines.push(`🏠 ${esc(unitName)}`);
+      if (service_date && timeRange) lines.push(`📅 ${service_date}, ${timeRange}`);
+      lines.push(`💰 ${amount} ${currency}`);
+      if (body.promoCode) lines.push(`🏷️ Промокод: ${esc(body.promoCode)}`);
+      lines.push(`💳 Очікує оплати`);
+
+      sendTelegramMessage(lines.join('\n')).catch(() => {});
     } catch { /* */ }
+
 
     // Step 3: Call Teya with dynamic credentials
     const origin = new URL(req.url).origin;

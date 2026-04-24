@@ -300,7 +300,8 @@
           service_date: state.date,
           start_hour: state.startHour,
           hours: state.hours,
-          addons: (SERVICE_TYPE === 'sauna' && state.brooms > 0) ? [{ id: 'addon_broom', quantity: state.brooms }] : undefined,
+          addons: (SERVICE_TYPE === 'sauna' && state.brooms > 0) ? [{ id: 'addon_broom', quantity: state.brooms, price: state.broomPrice }] : undefined,
+          promoCode: (state.promoApplied && state.promoCode) ? state.promoCode : undefined,
         })
       });
       if (!res.ok) { var err = await res.json(); throw new Error(err.error || 'Payment init failed'); }
