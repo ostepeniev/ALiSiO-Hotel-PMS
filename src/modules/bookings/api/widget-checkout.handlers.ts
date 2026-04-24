@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
-import { createCheckoutSession } from '@/lib/teya'; // TODO: replace with eventBus
+import { createPaymentSession } from '@payments';
 import { getDb } from '@core/db';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot'; // TODO: replace with eventBus
 
@@ -209,7 +209,6 @@ export async function createWidgetCheckoutSession(req: Request) {
     // Step 3: Call Teya with dynamic credentials
     const origin = new URL(req.url).origin;
     const isProduction = !origin.includes('localhost') && !origin.includes('127.0.0.1');
-    const amountMinor = Math.round(amount * 100);
 
     // Validate returnTo for security (prevent open redirects)
     let returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
@@ -224,8 +223,9 @@ export async function createWidgetCheckoutSession(req: Request) {
     }
 
     try {
-      const session = await createCheckoutSession({
-        amount: amountMinor,
+      const session = await createPaymentSession({
+        kind: service_id && service_date ? (reservation_id ? 'reservation_services' : 'service_standalone') : 'booking_full',
+        amount,
         currency: currency || 'CZK',
         description,
         metadata: reservation_id ? { reservation_id, ...(site?.id && { site_id: site.id }) } : (site?.id ? { site_id: site.id } : {}),
@@ -235,27 +235,27 @@ export async function createWidgetCheckoutSession(req: Request) {
           store_id: payCfg.teya.store_id
         } : undefined,
         ...(isProduction ? {
-          success_url: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(returnTo)}`,
-          cancel_url: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=cancel&return=${encodeURIComponent(returnTo)}`,
+          successUrl: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(returnTo)}`,
+          cancelUrl: `${origin}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=cancel&return=${encodeURIComponent(returnTo)}`,
         } : {}),
       });
 
       if (reservation_id) {
         try {
-          db.prepare('UPDATE reservations SET payment_id = ? WHERE id = ?').run(session.id, reservation_id);
+          db.prepare('UPDATE reservations SET payment_id = ? WHERE id = ?').run(session.sessionId, reservation_id);
         } catch (e: any) { console.error('[Checkout Session] Update res payment_id error:', e.message); }
       }
 
       if (orderId) {
         try {
-          db.prepare('UPDATE booking_service_orders SET payment_id = ? WHERE id = ?').run(session.id, orderId);
+          db.prepare('UPDATE booking_service_orders SET payment_id = ? WHERE id = ?').run(session.sessionId, orderId);
         } catch { /* */ }
       }
 
       return NextResponse.json({
-        session_token: session.session_token,
-        session_id: session.id,
-        session_url: session.session_url,
+        session_token: session.sessionToken,
+        session_id: session.sessionId,
+        session_url: session.sessionUrl,
       }, { headers: CORS_HEADERS });
 
     } catch (teyaErr: any) {
