@@ -8,12 +8,16 @@ export {
   updateCategory, archiveCategory, deleteCategory, moveCategory,
 } from './categories.handlers';
 export { listBusinessUnits } from './business-units.handlers';
+export {
+  listProjects, getProjectTree, createProject,
+  updateProject, archiveProject, deleteProject, moveProject,
+} from './projects.handlers';
 export { listCapex, createCapex } from './capex.handlers';
 export { getCapexItem, updateCapexItem, deleteCapexItem } from './capex-item.handlers';
 export { listAccruals, createAccrual } from './accruals.handlers';
 export { getAccrual, updateAccrual, deleteAccrual } from './accrual.handlers';
 export { listBankStatements, listBankTransactions, updateBankTransaction, importBankStatement } from './bank.handlers';
-export { listInvoices, getInvoiceHtml, generateInvoiceForReservation } from './invoices.handlers';
+export { listInvoices, getInvoiceHtml, generateInvoiceForReservation, reissueInvoiceForReservation, getInvoiceByReservation, reissueInvoiceHandler } from './invoices.handlers';
 export {
   listAccounts, createAccount, updateAccount,
   archiveAccount, deleteAccount, reconcileAccount,

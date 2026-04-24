@@ -1299,6 +1299,19 @@ function runMigrations(database: any) {
     }
   }
 
+  // --- Migration: add parent_id to business_units for hierarchy (Finmap PR #3) ---
+  try {
+    const buCols = database.prepare("PRAGMA table_info(business_units)").all() as { name: string }[];
+    const hasParent = buCols.some((c) => c.name === 'parent_id');
+    if (!hasParent) {
+      database.exec("ALTER TABLE business_units ADD COLUMN parent_id TEXT REFERENCES business_units(id)");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_bu_parent ON business_units(parent_id)");
+      console.log('[DB] Added parent_id column to business_units for hierarchy');
+    }
+  } catch (e: any) {
+    console.log('[DB] business_units hierarchy migration note:', e.message);
+  }
+
   // --- Migration: create expense_categories table ---
   const ecExists = database.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='expense_categories'"

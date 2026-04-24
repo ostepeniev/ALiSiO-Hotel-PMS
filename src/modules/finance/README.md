@@ -31,7 +31,14 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 | `archiveCategory(req, ctx)` | Архівація (каскадом на дітей) |
 | `deleteCategory(req, ctx)` | Видалення (тільки якщо немає дітей і немає зв'язаних операцій) |
 | `moveCategory(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop) |
-| `listBusinessUnits()` | Бізнес-одиниці |
+| `listBusinessUnits()` | Бізнес-одиниці (legacy — використовується старим UI) |
+| `listProjects(req)` | Проєкти (нова Finmap-термінологія, читає ту саму `business_units`) |
+| `getProjectTree(req)` | Дерево проєктів з `children` |
+| `createProject(req)` | Новий проєкт / підпроєкт (успадковує `is_shared` від батька) |
+| `updateProject(req, ctx)` | Оновлення. `is_shared` доступний тільки для кореня |
+| `archiveProject(req, ctx)` | Архівація (каскадом на дітей) |
+| `deleteProject(req, ctx)` | Видалення (тільки якщо немає дітей і немає зв'язків у 6 таблицях) |
+| `moveProject(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop) |
 | `listCapex()` | Список CapEx |
 | `createCapex(req)` | Додати CapEx |
 | `getCapexItem(req, ctx)` | Отримати CapEx-запис |
