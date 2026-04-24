@@ -4,17 +4,16 @@
 
 ## Статус міграції
 
-Модуль у процесі поетапної міграції. Поточний стан (крок 1):
-
 - ✅ Низькорівневий клієнт Teia (`domain/teya-client.ts`) перенесено з `src/lib/teya.ts`
-- ✅ Визначено типи `PaymentIntent`, `PaymentSession`, події
+- ✅ `src/lib/teya.ts` лишено як shim (re-export) для зворотної сумісності
 - ✅ Зареєстровано TypeScript path `@payments`
-- ✅ `src/lib/teya.ts` залишено як shim, щоб існуючі 5 місць імпорту не ламались
-- ⬜ `createPaymentSession(intent)` — універсальна фабрика сесій (наступний крок)
-- ⬜ Перенос `widget-checkout.handlers.ts`, `pay.handlers.ts`, `pay-booking.handlers.ts`, `create-booking.handlers.ts` на виклик універсальної фабрики
-- ⬜ Перенос вебхуків `teyaWebhook` і `teyaBotWebhook` у `api/` цього модуля
-- ⬜ Публікація подій `payment.completed` / `payment.failed` / `payment.refunded` через `@core/event-bus`
-- ⬜ Підписка `@bookings`, `@guests`, `@crm` на ці події замість прямих SQL-оновлень
+- ✅ `createPaymentSession(intent)` — універсальна фабрика
+- ✅ `resolveSiteCredentials({ slug, id })` — читання per-site Teia-кредів
+- ✅ Усі 4 call-sites (widget checkout, guest pay, guest pay-booking, CRM deposit) переписано на `createPaymentSession`
+- ✅ Вебхуки `teyaWebhook` і `teyaBotWebhook` перенесено з `@channels` у `@payments`
+- ✅ Роути `/api/webhooks/teya` і `/api/webhooks/teya-bot` імпортують з `@payments`
+- ✅ Публікація подій `payment.session_created` / `payment.completed` / `payment.failed` через `@core/event-bus`
+- ⬜ Підписка `@bookings`, `@guests`, `@crm` на `payment.completed` — зараз SQL-оновлення лишаються в самому вебхуку (legacy). Майбутній крок: перенести SQL у subscribers, щоб вебхук тільки емітив події.
 
 ## Публічне API
 
