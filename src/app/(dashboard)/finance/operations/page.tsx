@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3 } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 
 type OpType = 'income' | 'expense' | 'transfer';
@@ -110,6 +110,9 @@ export default function OperationsPage() {
           <ArrowLeftRight size={16} /> Переказ
         </button>
 
+        <Link href="/finance/reports" style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)', textDecoration: 'none' }}>
+          <BarChart3 size={16} /> Звіти
+        </Link>
         <Link href="/finance/calendar" style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)', textDecoration: 'none' }}>
           <Calendar size={16} /> Календар
         </Link>

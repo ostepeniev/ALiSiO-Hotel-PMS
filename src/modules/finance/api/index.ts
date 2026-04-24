@@ -1,4 +1,7 @@
-export { getFinanceOverview, getPnl, getCashflow, getExpectedPayments } from './reports.handlers';
+export {
+  getFinanceOverview, getPnl, getCashflow, getExpectedPayments,
+  getCashflowMatrix, getPnlMatrix, getFinancialIndicators, getOperationsForDrillDown,
+} from './reports.handlers';
 export { listExpenseCategories, createExpenseCategory } from './expense-categories.handlers';
 export {
   listCategories, getCategoryTree, createCategory,

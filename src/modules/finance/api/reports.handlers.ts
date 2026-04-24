@@ -465,6 +465,386 @@ export async function getCashflow(request: NextRequest): Promise<NextResponse> {
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// PR #9: Matrix reports (category × month) with drill-down
+// ═══════════════════════════════════════════════════════
+
+interface MatrixRow {
+  category_id: string | null;
+  category_name: string;
+  category_icon: string | null;
+  classifier: string | null;
+  parent_id: string | null;
+  op_type: string;
+  months: Record<string, number>;  // YYYY-MM → amount
+  total: number;
+  children?: MatrixRow[];
+}
+
+function generateMonthList(from: string, to: string): string[] {
+  const [fy, fm] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  const result: string[] = [];
+  let y = fy, m = fm;
+  while (y < ty || (y === ty && m <= tm)) {
+    result.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return result;
+}
+
+function orgId(db: any): string {
+  const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
+  if (!row) throw new Error('No organization found');
+  return row.id;
+}
+
+export async function getCashflowMatrix(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const org = orgId(db);
+    const { searchParams } = new URL(request.url);
+    const today = new Date();
+    const defaultTo = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const defaultFromDate = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    const defaultFrom = `${defaultFromDate.getFullYear()}-${String(defaultFromDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const from = searchParams.get('from') || defaultFrom;
+    const to = searchParams.get('to') || defaultTo;
+    const basis = searchParams.get('basis') === 'accrued' ? 'accrued_at' : 'paid_at';
+    const accountId = searchParams.get('account_id');
+    const projectId = searchParams.get('project_id');
+
+    const months = generateMonthList(from, to);
+    const fromDate = `${from}-01`;
+    const toDate = `${to}-31`;
+
+    const where: string[] = ["o.status = 'completed'", `strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?`, 'o.organization_id = ?'];
+    const params: any[] = [from, to, org];
+    if (accountId) { where.push('(o.account_from_id = ? OR o.account_to_id = ?)'); params.push(accountId, accountId); }
+    if (projectId) { where.push('o.project_id = ?'); params.push(projectId); }
+
+    const rows = db.prepare(`
+      SELECT
+        ec.id AS cat_id, ec.name AS cat_name, ec.icon AS cat_icon,
+        ec.classifier, ec.op_type AS cat_op_type, ec.parent_id,
+        o.op_type, strftime('%Y-%m', o.${basis}) AS month,
+        SUM(o.amount) AS total
+      FROM fin_operations o
+      LEFT JOIN expense_categories ec ON ec.id = o.category_id
+      WHERE ${where.join(' AND ')}
+        AND o.op_type != 'transfer'
+      GROUP BY COALESCE(ec.id, ''), o.op_type, month
+    `).all(...params) as any[];
+
+    // Build category tree + month data
+    const categoryMap = new Map<string, MatrixRow>();
+    for (const r of rows) {
+      const key = r.cat_id || `_uncategorized_${r.op_type}`;
+      if (!categoryMap.has(key)) {
+        categoryMap.set(key, {
+          category_id: r.cat_id,
+          category_name: r.cat_name || 'Без категорії',
+          category_icon: r.cat_icon,
+          classifier: r.classifier,
+          parent_id: r.parent_id,
+          op_type: r.op_type,
+          months: {},
+          total: 0,
+        });
+      }
+      const row = categoryMap.get(key)!;
+      row.months[r.month] = (row.months[r.month] || 0) + r.total;
+      row.total += r.total;
+    }
+
+    // Group into tree (root + children)
+    const categories = [...categoryMap.values()];
+    const roots = categories.filter((c) => !c.parent_id);
+    const children = categories.filter((c) => c.parent_id);
+    for (const root of roots) {
+      root.children = children.filter((c) => c.parent_id === root.category_id).sort((a, b) => b.total - a.total);
+    }
+
+    // Split by op_type
+    const incomeRoots = roots.filter((c) => c.op_type === 'income').sort((a, b) => b.total - a.total);
+    const expenseRoots = roots.filter((c) => c.op_type === 'expense').sort((a, b) => b.total - a.total);
+
+    // Compute monthly totals
+    const incomeByMonth: Record<string, number> = {};
+    const expenseByMonth: Record<string, number> = {};
+    let totalIncome = 0;
+    let totalExpense = 0;
+    for (const m of months) { incomeByMonth[m] = 0; expenseByMonth[m] = 0; }
+    for (const r of incomeRoots) { for (const m of months) incomeByMonth[m] += r.months[m] || 0; totalIncome += r.total; }
+    for (const r of expenseRoots) { for (const m of months) expenseByMonth[m] += r.months[m] || 0; totalExpense += r.total; }
+
+    const netByMonth: Record<string, number> = {};
+    for (const m of months) netByMonth[m] = incomeByMonth[m] - expenseByMonth[m];
+
+    // Opening/ending balances (sum across all accounts) per month
+    const accountsRows = db.prepare(`
+      SELECT id, initial_balance FROM finance_accounts WHERE organization_id = ? AND is_active = 1
+    `).all(org) as { id: string; initial_balance: number }[];
+    const accountIds = accountsRows.map((a) => a.id);
+    const initialBalSum = accountsRows.reduce((s, a) => s + (a.initial_balance || 0), 0);
+
+    const monthBalances: Record<string, { opening: number; ending: number }> = {};
+    let runningBalance = initialBalSum;
+    if (accountIds.length > 0) {
+      const plh = accountIds.map(() => '?').join(',');
+      const prior = db.prepare(`
+        SELECT
+          COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_to_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
+          - COALESCE((SELECT SUM(amount) FROM fin_operations WHERE account_from_id IN (${plh}) AND status='completed' AND paid_at < ?), 0)
+          AS delta
+      `).get(...accountIds, fromDate, ...accountIds, fromDate) as { delta: number };
+      runningBalance += prior.delta;
+    }
+    for (const m of months) {
+      monthBalances[m] = { opening: runningBalance, ending: runningBalance + netByMonth[m] };
+      runningBalance = monthBalances[m].ending;
+    }
+
+    return NextResponse.json({
+      months,
+      basis,
+      income: { roots: incomeRoots, byMonth: incomeByMonth, total: totalIncome },
+      expense: { roots: expenseRoots, byMonth: expenseByMonth, total: totalExpense },
+      netByMonth, netTotal: totalIncome - totalExpense,
+      monthBalances,
+      summary: { totalIncome, totalExpense, netFlow: totalIncome - totalExpense },
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function getPnlMatrix(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const org = orgId(db);
+    const { searchParams } = new URL(request.url);
+    const today = new Date();
+    const defaultTo = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const defaultFromDate = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    const defaultFrom = `${defaultFromDate.getFullYear()}-${String(defaultFromDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const from = searchParams.get('from') || defaultFrom;
+    const to = searchParams.get('to') || defaultTo;
+    const basis = searchParams.get('basis') === 'paid' ? 'paid_at' : 'accrued_at';
+
+    const months = generateMonthList(from, to);
+
+    const rows = db.prepare(`
+      SELECT
+        ec.id AS cat_id, ec.name AS cat_name, ec.icon AS cat_icon,
+        COALESCE(ec.classifier, 'other') AS classifier,
+        ec.op_type AS cat_op_type, ec.parent_id,
+        o.op_type, strftime('%Y-%m', o.${basis}) AS month,
+        SUM(o.amount) AS total
+      FROM fin_operations o
+      LEFT JOIN expense_categories ec ON ec.id = o.category_id
+      WHERE o.status = 'completed'
+        AND strftime('%Y-%m', o.${basis}) BETWEEN ? AND ?
+        AND o.organization_id = ?
+        AND o.op_type != 'transfer'
+      GROUP BY COALESCE(ec.id, ''), o.op_type, month
+    `).all(from, to, org) as any[];
+
+    // Classify
+    const byClassifier: Record<string, MatrixRow[]> = {
+      revenue: [], cogs: [], variable: [], operational: [],
+      tax: [], capex: [], financing: [], other: [],
+    };
+
+    const catMap = new Map<string, MatrixRow>();
+    for (const r of rows) {
+      const key = r.cat_id || `_uncat_${r.op_type}`;
+      if (!catMap.has(key)) {
+        catMap.set(key, {
+          category_id: r.cat_id,
+          category_name: r.cat_name || 'Без категорії',
+          category_icon: r.cat_icon,
+          classifier: r.classifier,
+          parent_id: r.parent_id,
+          op_type: r.op_type,
+          months: {},
+          total: 0,
+        });
+      }
+      const row = catMap.get(key)!;
+      row.months[r.month] = (row.months[r.month] || 0) + r.total;
+      row.total += r.total;
+    }
+
+    const categories = [...catMap.values()];
+    const roots = categories.filter((c) => !c.parent_id);
+    const children = categories.filter((c) => c.parent_id);
+    for (const root of roots) {
+      root.children = children.filter((c) => c.parent_id === root.category_id).sort((a, b) => b.total - a.total);
+    }
+
+    // Bucket into classifier sections
+    for (const r of roots) {
+      if (r.op_type === 'income') byClassifier.revenue.push(r);
+      else {
+        const cls = r.classifier || 'other';
+        if (byClassifier[cls]) byClassifier[cls].push(r);
+        else byClassifier.other.push(r);
+      }
+    }
+
+    for (const arr of Object.values(byClassifier)) arr.sort((a, b) => b.total - a.total);
+
+    function sumByMonth(rs: MatrixRow[]): { byMonth: Record<string, number>; total: number } {
+      const byMonth: Record<string, number> = {};
+      for (const m of months) byMonth[m] = 0;
+      let total = 0;
+      for (const r of rs) {
+        for (const m of months) byMonth[m] += r.months[m] || 0;
+        total += r.total;
+      }
+      return { byMonth, total };
+    }
+
+    const revSum = sumByMonth(byClassifier.revenue);
+    const cogsSum = sumByMonth(byClassifier.cogs);
+    const variableSum = sumByMonth(byClassifier.variable);
+    const opSum = sumByMonth(byClassifier.operational);
+    const taxSum = sumByMonth(byClassifier.tax);
+    const capexSum = sumByMonth(byClassifier.capex);
+    const finSum = sumByMonth(byClassifier.financing);
+    const otherSum = sumByMonth(byClassifier.other);
+
+    function subtract(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+      const out: Record<string, number> = {};
+      for (const m of months) out[m] = (a[m] || 0) - (b[m] || 0);
+      return out;
+    }
+
+    const gpByMonth = subtract(revSum.byMonth, cogsSum.byMonth);
+    const gpTotal = revSum.total - cogsSum.total;
+    const miByMonth = subtract(gpByMonth, variableSum.byMonth);
+    const miTotal = gpTotal - variableSum.total;
+    const ebitdaByMonth = subtract(miByMonth, opSum.byMonth);
+    const ebitdaTotal = miTotal - opSum.total;
+    const netByMonth = subtract(subtract(subtract(ebitdaByMonth, taxSum.byMonth), capexSum.byMonth), otherSum.byMonth);
+    const netTotal = ebitdaTotal - taxSum.total - capexSum.total - otherSum.total;
+
+    const pct = (v: number, base: number) => base > 0 ? Math.round((v / base) * 1000) / 10 : null;
+
+    return NextResponse.json({
+      months, basis,
+      sections: [
+        { key: 'revenue',     name: 'Виручка',              rows: byClassifier.revenue,     byMonth: revSum.byMonth,     total: revSum.total,     isTotal: true },
+        { key: 'cogs',        name: 'COGS',                 rows: byClassifier.cogs,        byMonth: cogsSum.byMonth,    total: cogsSum.total,    sign: -1 },
+        { key: 'gross',       name: 'Валовий прибуток',     byMonth: gpByMonth,             total: gpTotal,              margin_pct: pct(gpTotal, revSum.total), isDerived: true },
+        { key: 'variable',    name: 'Змінні',               rows: byClassifier.variable,    byMonth: variableSum.byMonth,total: variableSum.total,sign: -1 },
+        { key: 'marginal',    name: 'Маржинальний дохід',   byMonth: miByMonth,             total: miTotal,              margin_pct: pct(miTotal, revSum.total), isDerived: true },
+        { key: 'operational', name: 'Операційні',           rows: byClassifier.operational, byMonth: opSum.byMonth,      total: opSum.total,      sign: -1 },
+        { key: 'ebitda',      name: 'EBITDA',               byMonth: ebitdaByMonth,         total: ebitdaTotal,          margin_pct: pct(ebitdaTotal, revSum.total), isDerived: true, highlight: true },
+        { key: 'tax',         name: 'Податки',              rows: byClassifier.tax,         byMonth: taxSum.byMonth,     total: taxSum.total,     sign: -1 },
+        { key: 'capex',       name: 'CapEx',                rows: byClassifier.capex,       byMonth: capexSum.byMonth,   total: capexSum.total,   sign: -1 },
+        { key: 'financing',   name: 'Фінансові',            rows: byClassifier.financing,   byMonth: finSum.byMonth,     total: finSum.total,     sign: -1 },
+        { key: 'other',       name: 'Інше',                 rows: byClassifier.other,       byMonth: otherSum.byMonth,   total: otherSum.total,   sign: -1 },
+        { key: 'net',         name: 'Чистий результат',     byMonth: netByMonth,            total: netTotal,             margin_pct: pct(netTotal, revSum.total), isDerived: true, highlight: true },
+      ],
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function getFinancialIndicators(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { searchParams } = new URL(request.url);
+    const month = searchParams.get('month') || new Date().toISOString().substring(0, 7);
+
+    const sumClassifier = (cls: string, opType?: string): number => {
+      const where = opType
+        ? `o.op_type = ? AND ec.classifier = ?`
+        : `ec.classifier = ?`;
+      const params = opType ? [opType, cls] : [cls];
+      const row = db.prepare(`
+        SELECT COALESCE(SUM(o.amount), 0) AS total FROM fin_operations o
+        LEFT JOIN expense_categories ec ON ec.id = o.category_id
+        WHERE o.status = 'completed'
+          AND strftime('%Y-%m', o.paid_at) = ?
+          AND ${where}
+      `).get(month, ...params) as { total: number };
+      return row.total;
+    };
+
+    const revRow = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) AS total FROM fin_operations
+      WHERE status = 'completed' AND op_type = 'income' AND strftime('%Y-%m', paid_at) = ?
+    `).get(month) as { total: number };
+    const revenue = revRow.total;
+
+    const cogs = sumClassifier('cogs', 'expense');
+    const variable = sumClassifier('variable', 'expense');
+    const operational = sumClassifier('operational', 'expense');
+
+    const grossProfit = revenue - cogs;
+    const marginalIncome = grossProfit - variable;
+    const ebitda = marginalIncome - operational;
+    const marginPct = revenue > 0 ? Math.round((ebitda / revenue) * 1000) / 10 : null;
+    const grossMarginPct = revenue > 0 ? Math.round((grossProfit / revenue) * 1000) / 10 : null;
+
+    return NextResponse.json({
+      month, revenue, cogs, variable, operational,
+      gross_profit: grossProfit, marginal_income: marginalIncome, ebitda,
+      margin_pct: marginPct, gross_margin_pct: grossMarginPct,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function getOperationsForDrillDown(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const org = orgId(db);
+    const { searchParams } = new URL(request.url);
+    const month = searchParams.get('month');
+    const categoryId = searchParams.get('category_id');
+    const opType = searchParams.get('op_type');
+    const basis = searchParams.get('basis') === 'paid' ? 'paid_at' : 'accrued_at';
+
+    const where: string[] = ["o.status = 'completed'", 'o.organization_id = ?'];
+    const params: any[] = [org];
+    if (month) { where.push(`strftime('%Y-%m', o.${basis}) = ?`); params.push(month); }
+    if (categoryId === 'null' || categoryId === '_uncategorized') {
+      where.push('o.category_id IS NULL');
+    } else if (categoryId) {
+      where.push('(o.category_id = ? OR o.category_id IN (SELECT id FROM expense_categories WHERE parent_id = ?))');
+      params.push(categoryId, categoryId);
+    }
+    if (opType) { where.push('o.op_type = ?'); params.push(opType); }
+
+    const rows = db.prepare(`
+      SELECT o.*, ec.name AS category_name, ec.icon AS category_icon,
+             bu.name AS project_name, cp.name AS counterparty_name,
+             afr.name AS account_from_name, ato.name AS account_to_name
+      FROM fin_operations o
+      LEFT JOIN expense_categories ec ON ec.id = o.category_id
+      LEFT JOIN business_units bu ON bu.id = o.project_id
+      LEFT JOIN finance_counterparties cp ON cp.id = o.counterparty_id
+      LEFT JOIN finance_accounts afr ON afr.id = o.account_from_id
+      LEFT JOIN finance_accounts ato ON ato.id = o.account_to_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY o.${basis} DESC
+      LIMIT 500
+    `).all(...params);
+    return NextResponse.json({ operations: rows });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function getExpectedPayments(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
