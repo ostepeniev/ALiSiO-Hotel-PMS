@@ -564,10 +564,8 @@ export default function BookingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: totalAmount,
-          currency: 'CZK',
-          description: `Booking ${resId} — ${reservation?.unitName}`,
           reservation_id: resId,
+          site_slug: currentSlug || undefined,
           site_id: currentSiteId || undefined,
           return_path: returnPath,
         }),

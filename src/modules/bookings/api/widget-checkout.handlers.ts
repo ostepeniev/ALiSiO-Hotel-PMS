@@ -52,6 +52,9 @@ export async function createWidgetCheckoutSession(req: Request) {
     let amount = 0;
     let currency = 'CZK';
     let description = 'ALiSiO Booking';
+    let servicesBreakdown: { name: string; total: number; details?: string }[] = [];
+    let guestInfo = '';
+    let unitName = '';
 
     if (service_id && service_date) {
       // Service-only order (e.g. Sauna from Guest Page)
@@ -69,14 +72,77 @@ export async function createWidgetCheckoutSession(req: Request) {
           amount += (addon.price || 0) * (addon.quantity || 1);
         }
       }
+
+      servicesBreakdown.push({
+        name: svc.name,
+        total: amount,
+        details: `${h} hod, ${service_date}${start_hour != null ? `, ${start_hour}:00–${start_hour + h}:00` : ''}`,
+      });
+
+      // Try to get guest info from reservation if provided
+      if (reservation_id) {
+        const guest = db.prepare(`
+          SELECT g.first_name, g.last_name, u.name as unit_name
+          FROM reservations r
+          JOIN guests g ON r.guest_id = g.id
+          LEFT JOIN units u ON r.unit_id = u.id
+          WHERE r.id = ?
+        `).get(reservation_id) as any;
+        if (guest) {
+          guestInfo = `${guest.first_name} ${guest.last_name}`;
+          unitName = guest.unit_name || '';
+        }
+      }
     } else if (reservation_id) {
-      // Main Reservation payment
+      // Main Reservation payment — include booked services
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
       if (!res) return NextResponse.json({ error: 'Reservation not found' }, { status: 404, headers: CORS_HEADERS });
       
       amount = res.total_price;
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
+
+      // Add services from booking_service_orders that haven't been paid yet
+      try {
+        const pendingSvcOrders = db.prepare(`
+          SELECT bso.total_price, bso.service_id, bso.quantity, bso.service_date, bso.options_json,
+                 s.name as svc_name, s.name_en as svc_name_en
+          FROM booking_service_orders bso
+          LEFT JOIN additional_services s ON bso.service_id = s.id
+          WHERE bso.reservation_id = ? AND (bso.payment_status = 'none' OR bso.payment_status = 'pending' OR bso.payment_status IS NULL)
+        `).all(reservation_id) as any[];
+
+        for (const svcOrd of pendingSvcOrders) {
+          amount += svcOrd.total_price || 0;
+          let details = '';
+          try {
+            const opts = JSON.parse(svcOrd.options_json || '{}');
+            if (opts.startHour != null && opts.hours) {
+              details = `${svcOrd.service_date || ''}, ${opts.startHour}:00–${opts.startHour + opts.hours}:00`;
+            }
+          } catch { /* */ }
+          servicesBreakdown.push({
+            name: svcOrd.svc_name_en || svcOrd.svc_name || svcOrd.service_id,
+            total: svcOrd.total_price || 0,
+            details,
+          });
+        }
+      } catch (e: any) { console.error('[Checkout] Service orders query error:', e.message); }
+
+      // Get guest info
+      try {
+        const guest = db.prepare(`
+          SELECT g.first_name, g.last_name, u.name as unit_name
+          FROM reservations r
+          JOIN guests g ON r.guest_id = g.id
+          LEFT JOIN units u ON r.unit_id = u.id
+          WHERE r.id = ?
+        `).get(reservation_id) as any;
+        if (guest) {
+          guestInfo = `${guest.first_name} ${guest.last_name}`;
+          unitName = guest.unit_name || '';
+        }
+      } catch { /* */ }
     } else {
       return NextResponse.json({ error: 'reservation_id or service_id is required' }, { status: 400, headers: CORS_HEADERS });
     }
@@ -107,14 +173,23 @@ export async function createWidgetCheckoutSession(req: Request) {
       }
     }
 
-    // Step 2: TG Notification
+    // Step 2: TG Notification (detailed format)
     try {
-      const text = [
+      const lines = [
         `📦 <b>Запит на оплату: ${esc(description)}</b>`,
-        `💰 ${amount} ${currency}`,
-        `🌍 Сайт: ${site_slug || 'kemp-widget'}`,
-        `💳 Очікує сесії...`,
-      ].join('\n');
+        ``,
+      ];
+      if (guestInfo) lines.push(`👤 ${esc(guestInfo)}`);
+      if (unitName) lines.push(`🏠 ${esc(unitName)}`);
+      if (servicesBreakdown.length > 0) {
+        for (const svc of servicesBreakdown) {
+          lines.push(`🔹 ${esc(svc.name)}${svc.details ? ` — ${esc(svc.details)}` : ''}: ${svc.total} ${currency}`);
+        }
+      }
+      lines.push(`💰 ${amount} ${currency}`);
+      lines.push(`🌍 Сайт: ${site_slug || 'kemp-widget'}`);
+      lines.push(`💳 Створюється сесія оплати...`);
+      const text = lines.join('\n');
       sendTelegramMessage(text).catch(() => {});
     } catch { /* */ }
 
