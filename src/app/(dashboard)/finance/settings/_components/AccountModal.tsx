@@ -10,6 +10,7 @@ export interface AccountFormValues {
   currency: string;
   initial_balance: number;
   credit_limit: number | null;
+  iban: string | null;
   color: string;
   sort_order: number;
 }
@@ -37,6 +38,7 @@ export default function AccountModal({ initial, onClose, onSave }: Props) {
   const [currency, setCurrency] = useState(initial?.currency || 'CZK');
   const [initialBalance, setInitialBalance] = useState(initial?.initial_balance ?? 0);
   const [creditLimit, setCreditLimit] = useState<number | ''>(initial?.credit_limit ?? '');
+  const [iban, setIban] = useState((initial as any)?.iban || '');
   const [color, setColor] = useState(initial?.color || '#6366f1');
   const [sortOrder, setSortOrder] = useState(initial?.sort_order ?? 0);
   const [saving, setSaving] = useState(false);
@@ -65,6 +67,7 @@ export default function AccountModal({ initial, onClose, onSave }: Props) {
         currency,
         initial_balance: Number(initialBalance) || 0,
         credit_limit: type === 'card' ? Number(creditLimit) : null,
+        iban: iban.trim() ? iban.trim().replace(/[\s\-/]/g, '').toUpperCase() : null,
         color,
         sort_order: Number(sortOrder) || 0,
       });
@@ -124,6 +127,22 @@ export default function AccountModal({ initial, onClose, onSave }: Props) {
               style={inputStyle}
               placeholder="Напр. 50000"
             />
+          </Field>
+        )}
+
+        {(type === 'bank' || type === 'card') && (
+          <Field label="IBAN (для авто-роутингу банк-виписок)">
+            <input
+              type="text"
+              value={iban}
+              onChange={(e) => setIban(e.target.value)}
+              style={inputStyle}
+              placeholder="CZ12 0100 0000 0123 4567 8901"
+              autoComplete="off"
+            />
+            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+              IBAN використовується щоб автоматично прив'язувати XML-виписки KB до цього рахунку. Можна писати з пробілами — нормалізується автоматично.
+            </div>
           </Field>
         )}
 

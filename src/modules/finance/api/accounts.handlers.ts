@@ -58,6 +58,7 @@ export async function createAccount(request: NextRequest): Promise<NextResponse>
       currency = 'CZK',
       initial_balance = 0,
       credit_limit = null,
+      iban = null,
       color = '#6366f1',
       sort_order = 0,
     } = body;
@@ -79,9 +80,9 @@ export async function createAccount(request: NextRequest): Promise<NextResponse>
     const id = `acct_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     db.prepare(`
       INSERT INTO finance_accounts
-        (id, organization_id, name, type, currency, initial_balance, credit_limit, color, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, orgId, name, type, currency, initial_balance, credit_limit, color, sort_order);
+        (id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, orgId, name, type, currency, initial_balance, credit_limit, iban, color, sort_order);
 
     const account = db.prepare("SELECT * FROM finance_accounts WHERE id = ?").get(id);
     return NextResponse.json(account, { status: 201 });
@@ -94,7 +95,7 @@ export async function updateAccount(request: NextRequest): Promise<NextResponse>
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, name, type, currency, initial_balance, credit_limit, color, sort_order, is_active } = body;
+    const { id, name, type, currency, initial_balance, credit_limit, iban, color, sort_order, is_active } = body;
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
     if (type !== undefined && !ALLOWED_TYPES.includes(type)) {
@@ -108,6 +109,7 @@ export async function updateAccount(request: NextRequest): Promise<NextResponse>
     if (currency !== undefined) { fields.push('currency = ?'); params.push(currency); }
     if (initial_balance !== undefined) { fields.push('initial_balance = ?'); params.push(initial_balance); }
     if (credit_limit !== undefined) { fields.push('credit_limit = ?'); params.push(credit_limit); }
+    if (iban !== undefined) { fields.push('iban = ?'); params.push(iban || null); }
     if (color !== undefined) { fields.push('color = ?'); params.push(color); }
     if (sort_order !== undefined) { fields.push('sort_order = ?'); params.push(sort_order); }
     if (is_active !== undefined) { fields.push('is_active = ?'); params.push(is_active ? 1 : 0); }

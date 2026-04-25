@@ -52,6 +52,15 @@ export function getDb(): any {
     console.log('[Recurring] tick-if-due error:', e.message);
   }
 
+  // PR #11: poll bank inboxes if 15min elapsed (async, fire-and-forget)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runBankInboxTickIfDue } = require('@/modules/finance/data/bank-inbox-engine');
+    runBankInboxTickIfDue(db);
+  } catch (e: any) {
+    console.log('[BankInbox] tick-if-due error:', e.message);
+  }
+
   return db;
 }
 
@@ -1678,6 +1687,44 @@ function runMigrations(database: any) {
   `);
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_org ON finance_counterparties(organization_id)');
   database.exec('CREATE INDEX IF NOT EXISTS idx_cp_parent ON finance_counterparties(parent_id)');
+
+  // --- Finance PR #11: bank inbox (IMAP poller for KB statements) ---
+  // Add iban column to finance_accounts so XML statements auto-route to correct account
+  try {
+    const acctCols = database.prepare("PRAGMA table_info(finance_accounts)").all() as { name: string }[];
+    if (!acctCols.some((c) => c.name === 'iban')) {
+      database.exec("ALTER TABLE finance_accounts ADD COLUMN iban TEXT");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_fin_acct_iban ON finance_accounts(iban)");
+    }
+  } catch (e: any) { console.log('[DB] finance_accounts iban migration note:', e.message); }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_bank_inboxes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      imap_host TEXT NOT NULL,
+      imap_port INTEGER NOT NULL DEFAULT 993,
+      imap_user TEXT NOT NULL,
+      imap_password_encrypted TEXT NOT NULL,
+      imap_folder TEXT NOT NULL DEFAULT 'INBOX',
+      use_tls INTEGER NOT NULL DEFAULT 1,
+      sender_filter TEXT,
+      subject_filter TEXT,
+      attachment_format TEXT NOT NULL DEFAULT 'auto',
+      last_uid INTEGER,
+      last_synced_at TEXT,
+      last_error TEXT,
+      last_email_at TEXT,
+      emails_processed INTEGER NOT NULL DEFAULT 0,
+      operations_imported INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inbox_org ON fin_bank_inboxes(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inbox_active ON fin_bank_inboxes(is_active, last_synced_at)');
 
   // --- Finance PR #10: budgets (plan/fact) ---
   database.exec(`

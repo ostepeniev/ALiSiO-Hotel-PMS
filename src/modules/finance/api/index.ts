@@ -58,3 +58,9 @@ export {
   deleteRecurringTemplate, toggleRecurringTemplate, runRecurringNow, runAllDue,
 } from './recurring.handlers';
 export { getCalendarMonth } from './calendar.handlers';
+
+// PR #11: bank inbox (IMAP poller for KB statements)
+export {
+  listBankInboxes, createBankInbox, updateBankInbox, deleteBankInbox,
+  toggleBankInbox, testBankInbox, runBankInboxNow, runAllInboxes,
+} from './bank-inbox.handlers';
