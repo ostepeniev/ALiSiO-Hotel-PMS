@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import DrillDownModal from '../_components/DrillDownModal';
 import ExportButton from '../../_components/ExportButton';
+import Sparkline from '../../_components/Sparkline';
 
 interface MatrixRow {
   category_id: string | null;
@@ -112,6 +113,7 @@ export default function PnlMatrixPage() {
                 {data.months.map((m) => <th key={m} style={th}>{monthLabel(m)}</th>)}
                 <th style={{ ...th, background: 'var(--bg-secondary)' }}>Σ</th>
                 <th style={th}>%</th>
+                <th style={{ ...th, textAlign: 'center', minWidth: 120 }}>Тренд</th>
               </tr>
             </thead>
             <tbody>
@@ -152,6 +154,12 @@ export default function PnlMatrixPage() {
                       <td style={{ ...td, color: 'var(--text-secondary)', fontSize: 11 }}>
                         {s.margin_pct !== undefined && s.margin_pct !== null ? `${s.margin_pct}%` : ''}
                       </td>
+                      <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+                        <Sparkline
+                          values={data.months.map((m) => (s.byMonth[m] || 0) * sign)}
+                          color={highlight ? '#6366f1' : isDerived ? undefined : (sign < 0 ? '#ef4444' : '#22c55e')}
+                        />
+                      </td>
                     </tr>
                     {expanded.has(s.key) && s.rows?.map((r) => {
                       const key = r.category_id || `un_${r.category_name}`;
@@ -181,6 +189,14 @@ export default function PnlMatrixPage() {
                             })}
                             <td style={{ ...td, fontSize: 13, fontWeight: 600, background: 'var(--bg-secondary)' }}>{formatK(r.total * sign)}</td>
                             <td style={{ ...td, fontSize: 13, color: 'var(--text-secondary)' }}></td>
+                            <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+                              <Sparkline
+                                values={data.months.map((m) => (r.months[m] || 0) * sign)}
+                                color={sign < 0 ? '#ef4444' : '#22c55e'}
+                                height={22}
+                                width={100}
+                              />
+                            </td>
                           </tr>
                           {rowExpanded && r.children?.map((c) => (
                             <tr key={c.category_id}>
@@ -199,6 +215,14 @@ export default function PnlMatrixPage() {
                               })}
                               <td style={{ ...td, fontSize: 12, background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>{formatK(c.total * sign)}</td>
                               <td style={td}></td>
+                              <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+                                <Sparkline
+                                  values={data.months.map((m) => (c.months[m] || 0) * sign)}
+                                  color={sign < 0 ? '#ef4444' : '#22c55e'}
+                                  height={18}
+                                  width={80}
+                                />
+                              </td>
                             </tr>
                           ))}
                         </>

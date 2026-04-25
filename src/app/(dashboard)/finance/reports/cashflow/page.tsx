@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import DrillDownModal from '../_components/DrillDownModal';
 import ExportButton from '../../_components/ExportButton';
+import Sparkline from '../../_components/Sparkline';
 
 interface MatrixRow {
   category_id: string | null;
@@ -106,6 +107,7 @@ export default function CashflowMatrixPage() {
                 {data.months.map((m) => <th key={m} style={th}>{monthLabel(m)}</th>)}
                 <th style={{ ...th, background: 'var(--bg-secondary)' }}>Σ</th>
                 <th style={th}>Середнє</th>
+                <th style={{ ...th, textAlign: 'center', minWidth: 120 }}>Тренд</th>
               </tr>
             </thead>
             <tbody>
@@ -115,7 +117,7 @@ export default function CashflowMatrixPage() {
                 <CategoryRows key={r.category_id || `un_${r.category_name}`} row={r} months={data.months} expanded={expanded} onToggle={toggleExpand} onDrillDown={(m) => setDrillDown({ month: m, categoryId: r.category_id, categoryName: r.category_name, opType: 'income' })} />
               ))}
 
-              <tr><td colSpan={data.months.length + 3} style={{ height: 8, background: 'var(--bg-secondary)' }}></td></tr>
+              <tr><td colSpan={data.months.length + 4} style={{ height: 8, background: 'var(--bg-secondary)' }}></td></tr>
 
               {/* Expense section */}
               <SectionRow label="− Видатки" color="#ef4444" months={data.months} byMonth={data.expense.byMonth} total={data.expense.total} />
@@ -123,7 +125,7 @@ export default function CashflowMatrixPage() {
                 <CategoryRows key={r.category_id || `un_${r.category_name}`} row={r} months={data.months} expanded={expanded} onToggle={toggleExpand} onDrillDown={(m) => setDrillDown({ month: m, categoryId: r.category_id, categoryName: r.category_name, opType: 'expense' })} />
               ))}
 
-              <tr><td colSpan={data.months.length + 3} style={{ height: 8, background: 'var(--bg-secondary)' }}></td></tr>
+              <tr><td colSpan={data.months.length + 4} style={{ height: 8, background: 'var(--bg-secondary)' }}></td></tr>
 
               {/* Net flow */}
               <tr style={netRowStyle}>
@@ -137,6 +139,9 @@ export default function CashflowMatrixPage() {
                   {formatK(data.netTotal)}
                 </td>
                 <td style={{ ...td, color: 'var(--text-secondary)' }}>{formatK(data.netTotal / data.months.length)}</td>
+                <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+                  <Sparkline values={data.months.map((m) => data.netByMonth[m] || 0)} color="#6366f1" />
+                </td>
               </tr>
 
               {/* Balances */}
@@ -146,6 +151,7 @@ export default function CashflowMatrixPage() {
                   <td key={m} style={{ ...td, color: 'var(--text-secondary)' }}>{formatK(data.monthBalances[m].opening)}</td>
                 ))}
                 <td style={{ ...td, background: 'var(--bg-secondary)' }}></td>
+                <td style={td}></td>
                 <td style={td}></td>
               </tr>
               <tr style={balanceRowStyle}>
@@ -157,6 +163,13 @@ export default function CashflowMatrixPage() {
                 ))}
                 <td style={{ ...td, background: 'var(--bg-secondary)' }}></td>
                 <td style={td}></td>
+                <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+                  <Sparkline
+                    values={data.months.map((m) => data.monthBalances[m].ending)}
+                    color="#0ea5e9"
+                    showZeroLine={true}
+                  />
+                </td>
               </tr>
             </tbody>
           </table>
@@ -184,6 +197,9 @@ function SectionRow({ label, color, months, byMonth, total }: { label: string; c
       {months.map((m) => <td key={m} style={{ ...td, fontWeight: 600, color }}>{formatK(byMonth[m] || 0)}</td>)}
       <td style={{ ...td, fontWeight: 700, color, background: 'var(--bg-secondary)' }}>{formatK(total)}</td>
       <td style={{ ...td, color: 'var(--text-secondary)' }}>{formatK(total / months.length)}</td>
+      <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+        <Sparkline values={months.map((m) => byMonth[m] || 0)} color={color} />
+      </td>
     </tr>
   );
 }
@@ -221,6 +237,9 @@ function CategoryRows({ row, months, expanded, onToggle, onDrillDown }: {
         })}
         <td style={{ ...td, fontWeight: 600, background: 'var(--bg-secondary)' }}>{formatK(row.total)}</td>
         <td style={{ ...td, color: 'var(--text-secondary)' }}>{formatK(row.total / months.length)}</td>
+        <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+          <Sparkline values={months.map((m) => row.months[m] || 0)} height={22} width={100} />
+        </td>
       </tr>
       {isExpanded && row.children?.map((child) => (
         <tr key={child.category_id}>
@@ -239,6 +258,9 @@ function CategoryRows({ row, months, expanded, onToggle, onDrillDown }: {
           })}
           <td style={{ ...td, fontSize: 13, background: 'var(--bg-secondary)' }}>{formatK(child.total)}</td>
           <td style={{ ...td, fontSize: 13, color: 'var(--text-secondary)' }}>{formatK(child.total / months.length)}</td>
+          <td style={{ ...td, textAlign: 'center', padding: '4px 8px' }}>
+            <Sparkline values={months.map((m) => child.months[m] || 0)} height={18} width={80} />
+          </td>
         </tr>
       ))}
     </>
