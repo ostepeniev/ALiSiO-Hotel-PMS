@@ -127,7 +127,7 @@ export async function createReservation(request: NextRequest) {
       const existing = db.prepare('SELECT id FROM guests WHERE email = ? AND organization_id = ?').get(email, org.id) as { id: string } | undefined;
       if (existing) {
         guestId = existing.id;
-        db.prepare('UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime("now") WHERE id = ?')
+        db.prepare('UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime(\'now\') WHERE id = ?')
           .run(firstName, lastName, phone || null, guestId);
       } else {
         guestId = `g_${Date.now()}`;

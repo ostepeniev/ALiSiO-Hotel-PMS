@@ -165,7 +165,7 @@ export async function createWidgetReservation(request: NextRequest) {
       if (existing) {
         guestId = existing.id;
         db.prepare(
-          'UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime("now") WHERE id = ?'
+          'UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime(\'now\') WHERE id = ?'
         ).run(firstName, lastName, phone || null, guestId);
       } else {
         guestId = `g_${Date.now()}`;
