@@ -157,7 +157,7 @@ export async function getInvoiceHtml(
         COALESCE(NULLIF(g.address,''), rg.address) as guest_address,
         COALESCE(NULLIF(g.city,''),    rg.city)    as guest_city,
         COALESCE(NULLIF(g.country,''),rg.country)  as guest_country,
-        p.method as payment_method, p.notes as payment_notes
+        p.method as payment_method, p.comment as payment_notes
       FROM invoices i
       JOIN reservations r ON i.reservation_id = r.id
       JOIN units u ON r.unit_id = u.id
@@ -173,8 +173,11 @@ export async function getInvoiceHtml(
         ORDER BY gr.registered_at ASC
         LIMIT 1
       ) rg ON rg.reservation_id = r.id
-      LEFT JOIN payments p
-        ON p.reservation_id = r.id AND p.status = 'completed'
+      -- fin_operations replaces the old payments table (PR #6)
+      LEFT JOIN fin_operations p
+        ON p.reservation_id = r.id
+        AND p.op_type = 'income'
+        AND p.status = 'completed'
       WHERE i.id = ?
       ORDER BY p.paid_at DESC
       LIMIT 1
