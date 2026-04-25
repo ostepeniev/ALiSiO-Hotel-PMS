@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript syntax check (TS1xxx parser errors)
+        run: |
+          set +e
+          OUTPUT=$(npx tsc --noEmit 2>&1)
+          STATUS=$?
+          SYNTAX=$(echo "$OUTPUT" | grep -E "error TS1[0-9]{3}:" || true)
+          if [ -n "$SYNTAX" ]; then
+            echo "::error::TypeScript syntax errors found:"
+            echo "$SYNTAX"
+            exit 1
+          fi
+          echo "✓ No syntax errors"
+          # Print legacy TS2xxx count for visibility, but don't fail the job
+          LEGACY_COUNT=$(echo "$OUTPUT" | grep -cE "error TS[0-9]+:" || true)
+          echo "::notice::Legacy semantic errors (not blocking): $LEGACY_COUNT"
+
+      - name: Next.js build
+        run: npm run build
+        env:
+          # Build doesn't need real secrets, just needs to compile.
+          # If the build reads any required env, mock here.
+          NEXT_TELEMETRY_DISABLED: '1'
