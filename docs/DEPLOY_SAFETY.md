@@ -70,10 +70,17 @@ git config --unset core.hooksPath
    - ✅ **Require status checks to pass before merging**
      - Search and add: **`build`** (це job із ci.yml)
      - ✅ Require branches to be up to date before merging
-   - ✅ **Do not allow bypassing the above settings** — навіть admin не може push'нути напряму
+   - ✅ **Do not allow bypassing the above settings** — це КРИТИЧНО. Без цієї галочки навіть admin (тобто ти і всі AI-агенти, що пушать від твого імені — AntiGravity, Claude) можуть обходити правила. У термінах API це поле називається `enforce_admins: true`.
    - ❌ Дозволити force push — НЕ вмикати
    - ❌ Дозволити deletion — НЕ вмикати
 4. Save.
+
+**Перевірка** через GitHub CLI:
+```bash
+"/c/Program Files/GitHub CLI/gh.exe" api repos/ostepeniev/ALiSiO-Hotel-PMS/branches/main/protection \
+  --jq '{enforce_admins: .enforce_admins.enabled, status_checks: .required_status_checks.contexts}'
+```
+Має повернути `{"enforce_admins": true, "status_checks": ["build"]}`.
 
 ### Як виглядає робочий процес після цього
 
