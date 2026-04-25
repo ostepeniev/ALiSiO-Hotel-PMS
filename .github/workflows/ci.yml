@@ -42,6 +42,12 @@ jobs:
       - name: Next.js build
         run: npm run build
         env:
-          # Build doesn't need real secrets, just needs to compile.
-          # If the build reads any required env, mock here.
           NEXT_TELEMETRY_DISABLED: '1'
+          # Some routes instantiate API clients at module-evaluation time, which
+          # next build runs during "Collecting page data". Pass dummy values so
+          # the build succeeds; real keys live in the VPS systemd unit at runtime.
+          OPENAI_API_KEY: 'sk-build-dummy-not-used'
+          ANTHROPIC_API_KEY: 'sk-ant-build-dummy-not-used'
+          TEYA_CLIENT_ID: 'build-dummy'
+          TEYA_CLIENT_SECRET: 'build-dummy'
+          TEYA_STORE_ID: 'build-dummy'
