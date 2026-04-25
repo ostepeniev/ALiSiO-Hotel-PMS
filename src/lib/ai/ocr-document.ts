@@ -11,7 +11,16 @@ export interface OcrResult {
   confidence: number; // 0-100
 }
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Lazy singleton — instantiated on first call so `next build` (which loads
+// every server module during "Collecting page data") does not crash when
+// OPENAI_API_KEY is absent in the build environment.
+let _client: OpenAI | null = null;
+function getClient(): OpenAI {
+  if (!_client) {
+    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _client;
+}
 
 const SYSTEM_PROMPT = `You are an OCR assistant that extracts personal data from ID cards and passports.
 Return ONLY valid JSON (no markdown, no extra text) with this exact structure:
@@ -33,7 +42,7 @@ Rules:
 - If the image is not a document, return confidence: 0 with empty strings`;
 
 export async function ocrDocument(imageUrl: string): Promise<OcrResult> {
-  const response = await client.chat.completions.create({
+  const response = await getClient().chat.completions.create({
     model: 'gpt-4o',
     max_tokens: 300,
     messages: [
