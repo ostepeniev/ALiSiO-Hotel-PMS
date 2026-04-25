@@ -44,6 +44,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
     return NextResponse.json({ id: operationId, ok: true }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('[POST /api/payments] Error:', e?.message, e?.stack?.split('\n')[1]);
+    return NextResponse.json({ error: e?.message || 'Failed to create payment' }, { status: 500 });
   }
 }

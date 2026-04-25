@@ -51,10 +51,23 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
   const isRefund = paymentSubtype === 'refund';
   const opType = isRefund ? 'expense' : 'income';
 
+  // Resolve account — income requires account_to_id, expense requires account_from_id.
+  // If not explicitly provided, fall back to the organization's default account
+  // (first active CZK account, or simply the first account).
+  let resolvedAccountId = accountId;
+  if (!resolvedAccountId) {
+    const defaultAccount = db.prepare(`
+      SELECT id FROM finance_accounts
+      WHERE organization_id = ? AND currency = 'CZK'
+      ORDER BY sort_order ASC, created_at ASC LIMIT 1
+    `).get(row.org_id) as { id: string } | undefined;
+    resolvedAccountId = defaultAccount?.id || undefined;
+  }
+
   const operationId = createOperationInTx(db, row.org_id, {
     op_type: opType,
-    account_from_id: isRefund ? (accountId || null) : null,
-    account_to_id: isRefund ? null : (accountId || null),
+    account_from_id: isRefund ? (resolvedAccountId || null) : null,
+    account_to_id: isRefund ? null : (resolvedAccountId || null),
     amount: Math.abs(amount),
     currency,
     paid_at: paidAt,

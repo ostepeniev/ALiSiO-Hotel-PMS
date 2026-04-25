@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { formatPrice } from '../lib/pricing';
 
 interface Props {
@@ -19,13 +19,178 @@ interface Props {
   onAdminConfirm?: () => void;
 }
 
+// ─── QR Code Popup ────────────────────────────────────────────────────────────
+function QrPopup({ url, onClose }: { url: string; onClose: () => void }) {
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=16&data=${encodeURIComponent(url)}`;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#fff', borderRadius: 20, padding: 28,
+          maxWidth: 340, width: '100%', textAlign: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        }}
+      >
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#111', marginBottom: 4 }}>
+          🏕️ Guest Page
+        </div>
+        <div style={{ fontSize: 13, color: '#666', marginBottom: 20, wordBreak: 'break-all' }}>
+          {url}
+        </div>
+
+        <div style={{
+          background: '#f8fafb', borderRadius: 16, padding: 12,
+          display: 'inline-block', marginBottom: 20,
+          border: '2px solid #e2e8f0',
+        }}>
+          <img
+            src={qrSrc}
+            alt="QR code for guest page"
+            width={220}
+            height={220}
+            style={{ display: 'block', borderRadius: 8 }}
+          />
+        </div>
+
+        <div style={{ fontSize: 13, color: '#555', marginBottom: 20, lineHeight: 1.5 }}>
+          Відскануй камерою телефону для переходу на гостьову сторінку
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <a
+            href={qrSrc}
+            download="guest-page-qr.png"
+            style={{
+              flex: 1, padding: '10px 0', background: '#2e6b4f', color: '#fff',
+              borderRadius: 12, textDecoration: 'none', fontWeight: 600, fontSize: 14,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            ⬇️ Download
+          </a>
+          <button
+            onClick={onClose}
+            type="button"
+            style={{
+              flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#334155',
+              border: 'none', borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Guest Page Link Row ──────────────────────────────────────────────────────
+function GuestPageLink({ token }: { token: string }) {
+  const [showQr, setShowQr] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const guestUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/guest/${token}`
+    : `/guest/${token}`;
+
+  const copyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(guestUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  }, [guestUrl]);
+
+  return (
+    <>
+      {showQr && <QrPopup url={guestUrl} onClose={() => setShowQr(false)} />}
+
+      <div style={{
+        background: 'var(--kc-green-light, #f0f9f4)',
+        border: '1.5px solid var(--kc-green, #2e6b4f)',
+        borderRadius: 14,
+        padding: '14px 16px',
+        marginTop: 20,
+        textAlign: 'left',
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--kc-green, #2e6b4f)', marginBottom: 8 }}>
+          🏠 Your Guest Page
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--kc-text-muted, #888)', marginBottom: 10, wordBreak: 'break-all' }}>
+          {guestUrl}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {/* Open */}
+          <a
+            href={`/guest/${token}`}
+            style={{
+              flex: '1 1 auto', minWidth: 100,
+              padding: '9px 14px',
+              background: 'var(--kc-green, #2e6b4f)', color: '#fff',
+              borderRadius: 10, textDecoration: 'none', fontWeight: 600, fontSize: 13,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            }}
+          >
+            Open →
+          </a>
+
+          {/* Copy */}
+          <button
+            type="button"
+            onClick={copyLink}
+            style={{
+              flex: '1 1 auto', minWidth: 90,
+              padding: '9px 14px',
+              background: copied ? '#d1fae5' : 'var(--kc-bg-card, #f8fafb)',
+              color: copied ? '#065f46' : 'var(--kc-text, #334155)',
+              border: '1.5px solid var(--kc-border, #e2e8f0)',
+              borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              transition: 'all .2s',
+            }}
+          >
+            {copied ? '✓ Copied' : '📋 Copy link'}
+          </button>
+
+          {/* QR */}
+          <button
+            type="button"
+            onClick={() => setShowQr(true)}
+            style={{
+              flex: '1 1 auto', minWidth: 90,
+              padding: '9px 14px',
+              background: 'var(--kc-bg-card, #f8fafb)',
+              color: 'var(--kc-text, #334155)',
+              border: '1.5px solid var(--kc-border, #e2e8f0)',
+              borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            }}
+          >
+            📱 QR code
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function StepSuccess({
   status, reservationId, accommodationLabel, checkIn, checkOut,
   nights, total, adults = 1, guestPageToken, paymentUrl, qrCodeUrl,
   onReset, onAdminConfirm,
 }: Props) {
   const [regStep, setRegStep] = useState<'none' | 'photo' | 'done'>('none');
-  // Track registration per guest slot (0-indexed)
   const [currentGuest, setCurrentGuest] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -51,7 +216,6 @@ export default function StepSuccess({
     setUploading(true);
     setError(null);
     try {
-      // 1. Upload each photo to /api/file-upload
       const uploadedUrls: string[] = [];
       for (const photo of photos) {
         const blob = await fetch(photo).then(r => r.blob());
@@ -63,7 +227,6 @@ export default function StepSuccess({
         if (uploadData.url) uploadedUrls.push(uploadData.url);
       }
 
-      // 2. OCR + register guest
       if (uploadedUrls.length > 0) {
         const regRes = await fetch('/api/booking/register-guest', {
           method: 'POST',
@@ -78,7 +241,6 @@ export default function StepSuccess({
         }
       }
 
-      // Move to next guest or finish
       const nextGuest = currentGuest + 1;
       if (nextGuest < adults) {
         setCurrentGuest(nextGuest);
@@ -144,6 +306,9 @@ export default function StepSuccess({
           <div className="kc-summary-row"><span>Total to pay</span><strong style={{ color: 'var(--kc-green)' }}>{formatPrice(total)} Kč</strong></div>
         </div>
 
+        {/* Guest page QR — available even before payment confirmed */}
+        {guestPageToken && <GuestPageLink token={guestPageToken} />}
+
         {onAdminConfirm && (
           <button className="kc-btn kc-btn-primary" onClick={onAdminConfirm} type="button" style={{ marginTop: 16 }}>
             ✅ Administrator: Confirm payment received
@@ -176,6 +341,9 @@ export default function StepSuccess({
         <div className="kc-summary-divider" />
         <div className="kc-summary-row" style={{ color: 'var(--kc-green)' }}><span>Paid</span><strong>{formatPrice(total)} Kč</strong></div>
       </div>
+
+      {/* Guest Page link + QR */}
+      {guestPageToken && <GuestPageLink token={guestPageToken} />}
 
       {/* ─── Guest Registration ─────────────────────── */}
       {regStep === 'none' && (
@@ -261,13 +429,7 @@ export default function StepSuccess({
         </div>
       )}
 
-      {guestPageToken && (
-        <a href={`/guest/${guestPageToken}`} className="kc-btn kc-btn-primary" style={{ textDecoration: 'none', marginTop: 16, display: 'flex' }}>
-          Open My Guest Page →
-        </a>
-      )}
-
-      <button className="kc-btn kc-btn-secondary" onClick={onReset} style={{ marginTop: 8 }} type="button">
+      <button className="kc-btn kc-btn-secondary" onClick={onReset} style={{ marginTop: 16 }} type="button">
         Book another stay
       </button>
 
