@@ -107,7 +107,7 @@ export default function BookingViewModal({
   const remaining = Math.max(0, total - paid);
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
-  const isPaid = b.payment_status === 'paid';
+  const isPaid = b.payment_status === 'paid' || b.payment_status === 'prepaid';
   const isRegistered = b.registration_status === 'registered';
   const canCheckIn = isPaid && isRegistered;
   const regNeeded = b.adults || 1;
@@ -283,6 +283,36 @@ export default function BookingViewModal({
                       </button>
                     </div>
                   ))}
+                </div>
+              )}
+              {/* Zero-price confirmation block */}
+              {total === 0 && !isPaid && (
+                <div style={{ padding: '14px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#f59e0b' }}>
+                    <span style={{ fontSize: 18 }}>⚠️</span>
+                    Безоплатне бронювання
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Ціна = 0 CZK. Це може бути промокод, бартер або помилка. Підтвердіть свідомо або встановіть реальну ціну.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn btn-sm btn-primary"
+                      onClick={async () => {
+                        if (!confirm('Підтвердити безоплатне бронювання? Гість зможе заселитись без оплати.')) return;
+                        await fetch(`/api/bookings/${b.id}`, {
+                          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ payment_status: 'paid' }),
+                        });
+                        setBooking({ ...b, payment_status: 'paid' });
+                        onFetchBookings();
+                        showToast('✅ Безоплатне бронювання підтверджено');
+                      }}>
+                      ✅ Підтвердити — це свідоме рішення
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={onEdit}>
+                      ✏️ Встановити ціну
+                    </button>
+                  </div>
                 </div>
               )}
               {!showPayForm ? (

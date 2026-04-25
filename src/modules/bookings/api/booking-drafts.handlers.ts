@@ -92,33 +92,42 @@ export async function createBookingDraft(req: Request) {
     let unitId: string | null = null;
 
     if (accommodationType === 'camping') {
-      // First available camping unit (category = camping or type contains camping)
       const campingUnit = db.prepare(`
         SELECT u.id FROM units u
         JOIN unit_types ut ON u.unit_type_id = ut.id
         WHERE u.property_id = ? AND u.is_active = 1
           AND (LOWER(ut.code) LIKE '%camp%' OR LOWER(ut.name) LIKE '%camp%'
-               OR LOWER(u.name) LIKE '%camp%')
+               OR LOWER(u.name) LIKE '%camp%' OR LOWER(ut.code) = 'bb'
+               OR LOWER(ut.code) = 'fr' OR LOWER(ut.code) = 'br')
         ORDER BY u.sort_order, u.name
         LIMIT 1
       `).get(property.id) as any;
       unitId = campingUnit?.id || null;
-
-      // Fallback: any unit in property if no camping-specific found
-      if (!unitId) {
-        const anyUnit = db.prepare(`SELECT id FROM units WHERE property_id = ? AND is_active = 1 ORDER BY sort_order LIMIT 1`).get(property.id) as any;
-        unitId = anyUnit?.id || null;
-      }
     } else if (accommodationType === 'glamping') {
+      const unitCode = (body.accommodation_data?.unit === 'barn') ? 'barn' : 'tiny';
       const glamUnit = db.prepare(`
         SELECT u.id FROM units u
         JOIN unit_types ut ON u.unit_type_id = ut.id
         WHERE u.property_id = ? AND u.is_active = 1
           AND (LOWER(ut.code) LIKE '%glamp%' OR LOWER(ut.name) LIKE '%glamp%'
-               OR LOWER(u.name) LIKE '%glamp%' OR LOWER(u.name) LIKE '%tiny%' OR LOWER(u.name) LIKE '%barn%')
+               OR LOWER(u.name) LIKE ? OR LOWER(ut.code) LIKE ?)
         ORDER BY u.sort_order LIMIT 1
-      `).get(property.id) as any;
+      `).get(property.id, `%${unitCode}%`, `%${unitCode}%`) as any;
       unitId = glamUnit?.id || null;
+    }
+
+    // Ultimate fallback: any unit at all (so we never fail with NOT NULL constraint)
+    if (!unitId) {
+      const anyUnit = db.prepare(`SELECT id FROM units WHERE property_id = ? AND is_active = 1 ORDER BY sort_order LIMIT 1`).get(property.id) as any;
+      unitId = anyUnit?.id || null;
+    }
+
+    // If still no unit — abort gracefully (return draft without PMS reservation)
+    if (!unitId) {
+      console.warn('[BookingDraft] No units found — returning draft only');
+      db.prepare(`UPDATE booking_drafts SET guest_page_token = ? WHERE id = ?`).run(genToken(32), draftId);
+      const d = db.prepare('SELECT * FROM booking_drafts WHERE id = ?').get(draftId) as any;
+      return NextResponse.json({ id: draftId, session_id: sessionId, reservation_id: null, guest_page_token: d?.guest_page_token }, { headers: CORS_HEADERS });
     }
 
     // 4. Calculate nights
@@ -166,8 +175,8 @@ export async function createBookingDraft(req: Request) {
       body.accommodation_data ? `Type: ${accommodationType}, Options: ${JSON.stringify(body.accommodation_data)}` : null,
     );
 
-    // Link draft → reservation
-    db.prepare(`UPDATE booking_drafts SET reservation_id = ? WHERE id = ?`).run(reservationId, draftId);
+    // Link draft → reservation + save token in draft
+    db.prepare(`UPDATE booking_drafts SET reservation_id = ?, guest_page_token = ? WHERE id = ?`).run(reservationId, guestPageToken, draftId);
 
     // 6. Create service_orders for extras
     const extras: any[] = body.extras || [];
@@ -215,27 +224,36 @@ export async function updateBookingDraft(req: Request) {
   try {
     const body = await req.json();
     const db = getDb();
-    const { id, status } = body;
-    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400, headers: CORS_HEADERS });
+    const { id, status, reservation_id: directResId } = body;
+    if (!id && !directResId) return NextResponse.json({ error: 'Missing id or reservation_id' }, { status: 400, headers: CORS_HEADERS });
 
-    // Get associated reservation_id from the draft
-    const draft = db.prepare('SELECT reservation_id FROM booking_drafts WHERE id = ?').get(id) as any;
+    let rid: string | null = directResId || null;
 
-    if (status === 'paid' && draft?.reservation_id) {
-      const rid = draft.reservation_id;
-      db.prepare(`UPDATE reservations SET payment_status = 'paid', status = 'confirmed', updated_at = datetime('now') WHERE id = ?`).run(rid);
-      // Confirm service orders
-      try {
-        db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid);
-      } catch { /* */ }
-      try {
-        db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid);
-      } catch { /* */ }
+    if (!rid && id) {
+      // id could be a draft ID or a reservation ID
+      // Try draft first
+      const draft = db.prepare('SELECT reservation_id FROM booking_drafts WHERE id = ?').get(id) as any;
+      rid = draft?.reservation_id || null;
+
+      // If not found as draft, check if it IS a reservation_id directly
+      if (!rid) {
+        const res = db.prepare('SELECT id FROM reservations WHERE id = ?').get(id) as any;
+        rid = res?.id || null;
+      }
     }
 
-    db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id);
+    if (status === 'paid' && rid) {
+      db.prepare(`UPDATE reservations SET payment_status = 'paid', status = 'confirmed', updated_at = datetime('now') WHERE id = ?`).run(rid);
+      try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid); } catch { /* */ }
+      try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid); } catch { /* */ }
+    }
 
-    return NextResponse.json({ ok: true }, { headers: CORS_HEADERS });
+    // Update draft status if we have a draft id
+    if (id) {
+      try { db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id); } catch { /* */ }
+    }
+
+    return NextResponse.json({ ok: true, reservation_id: rid }, { headers: CORS_HEADERS });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
   }

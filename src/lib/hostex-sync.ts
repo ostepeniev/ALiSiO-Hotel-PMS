@@ -239,7 +239,7 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
   const paymentInfo = detectPaymentInfo(res);
   const financialNote = buildFinancialNote(res, result.eurCzkRate, totalEur, commissionEur, netEur, totalCzk);
   const status = mapStatus(res);
-  const paymentStatus = paymentInfo.isPrepaid ? 'prepaid' : 'unpaid';
+  const paymentStatus = paymentInfo.isPrepaid ? 'paid' : 'unpaid';
 
   // Find or create guest
   const guestId = findOrCreateGuest(db, res);

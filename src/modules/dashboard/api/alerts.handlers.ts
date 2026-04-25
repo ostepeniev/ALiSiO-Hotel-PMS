@@ -40,7 +40,7 @@ export async function getAlerts() {
 
     // Today's arrivals — unpaid or unregistered
     const todayArrivals = db.prepare(`
-      SELECT r.id, r.payment_status, r.registration_status, g.first_name, g.last_name, u.name as unit_name
+      SELECT r.id, r.payment_status, r.registration_status, r.total_price, g.first_name, g.last_name, u.name as unit_name
       FROM reservations r
       JOIN guests g ON r.guest_id = g.id
       JOIN units u ON r.unit_id = u.id
@@ -48,12 +48,23 @@ export async function getAlerts() {
     `).all(today) as any[];
 
     for (const r of todayArrivals) {
-      if (r.payment_status !== 'paid') {
-        alerts.push({
-          type: 'unpaid_arrival', severity: 'warning',
-          message: `Сьогодні заїзд, оплата не завершена — ${r.unit_name}`,
-          bookingId: r.id, guestName: `${r.first_name} ${r.last_name}`,
-        });
+      const isFullyPaid = r.payment_status === 'paid' || r.payment_status === 'prepaid';
+      if (!isFullyPaid) {
+        if ((r.total_price || 0) === 0) {
+          // Zero-price booking — requires admin confirmation (promo/barter/error)
+          alerts.push({
+            type: 'zero_price_arrival', severity: 'warning',
+            message: `Сьогодні заїзд, ціна = 0 — потрібне підтвердження — ${r.unit_name}`,
+            bookingId: r.id, guestName: `${r.first_name} ${r.last_name}`,
+          });
+        } else {
+          // Regular unpaid booking
+          alerts.push({
+            type: 'unpaid_arrival', severity: 'warning',
+            message: `Сьогодні заїзд, оплата не завершена — ${r.unit_name}`,
+            bookingId: r.id, guestName: `${r.first_name} ${r.last_name}`,
+          });
+        }
       }
       if (r.registration_status !== 'registered') {
         alerts.push({

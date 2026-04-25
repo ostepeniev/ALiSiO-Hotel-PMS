@@ -50,7 +50,7 @@ export async function updateReservation(request: NextRequest, { params }: { para
       const payStatus = body.payment_status || current?.payment_status;
       const regStatus = current?.registration_status;
 
-      if (payStatus !== 'paid') {
+      if (!['paid', 'prepaid'].includes(payStatus)) {
         return NextResponse.json({ error: 'Неможливо заселити без повної оплати. Спочатку завершіть оплату.' }, { status: 422 });
       }
       if (regStatus !== 'registered') {

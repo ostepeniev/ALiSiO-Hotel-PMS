@@ -21,6 +21,7 @@ interface BookingState {
   total: number;
   checkIn: string;
   checkOut: string;
+  priceBreakdown: { label: string; amount: number; isDiscount?: boolean }[];
 }
 
 const STEP_LABELS: Record<Step, string> = {
@@ -55,7 +56,7 @@ function getGuestsLabel(state: BookingState): string {
 export default function BookingWizard() {
   const [step, setStep] = useState<Step>('landing');
   const [state, setState] = useState<BookingState>({
-    accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '',
+    accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [],
   });
   const [submitting, setSubmitting] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | 'pending' | 'admin_pending'>('pending');
@@ -110,7 +111,7 @@ export default function BookingWizard() {
   }, []);
 
   const resetAll = useCallback(() => {
-    setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '' });
+    setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [] });
     setStep('landing'); setSubmitting(false); setPaymentStatus('pending');
     setReservationId(undefined); setGuestPageToken(undefined); setPaymentUrl(undefined); setQrCodeUrl(undefined);
     sessionStorage.removeItem(STORAGE_KEY);
@@ -195,7 +196,8 @@ export default function BookingWizard() {
     try {
       await fetch('/api/booking/drafts', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: reservationId, status: 'paid' }),
+        // Send reservation_id directly — handler resolves draft → reservation
+        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid' }),
       });
       setPaymentStatus('success');
     } catch { /* */ }
@@ -253,13 +255,22 @@ export default function BookingWizard() {
 
         {step === 'accommodation' && state.accommodationType === 'glamping' && (
           <StepGlamping prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
+            const bd = [
+              ...data.breakdown.map((n: {date: string; type: string; price: number}) => ({ label: `🏠 ${n.date} (${n.type === 'holiday' ? '⭐ Holiday' : 'Standard'})`, amount: n.price })),
+              ...(data.touristTax > 0 ? [{ label: `🏛️ Tourist tax (${data.adults} × ${data.taxRate} Kč × ${data.nights} nights)`, amount: data.touristTax }] : []),
+            ];
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut, priceBreakdown: bd }));
             setStep('extras');
           }} />
         )}
         {step === 'accommodation' && state.accommodationType === 'buildings' && (
           <StepBuildings prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
+            const bd: { label: string; amount: number; isDiscount?: boolean }[] = [];
+            if (data.accommodationSubtotal != null) bd.push({ label: `🏠 Accommodation`, amount: (data.accommodationSubtotal || 0) + (data.sleepingBagDiscount || 0) });
+            if (data.sleepingBagDiscount != null && data.sleepingBagDiscount > 0) bd.push({ label: `🛌 Own sleeping bags`, amount: -data.sleepingBagDiscount, isDiscount: true });
+            if (data.touristTax != null && data.touristTax > 0) bd.push({ label: `🏛️ Tourist tax (${data.adults} × ${data.taxRate} Kč × ${data.nights} nights)`, amount: data.touristTax });
+            if (data.kauce != null && data.kauce > 0) bd.push({ label: `🔑 Security deposit (returnable)`, amount: data.kauce });
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut, priceBreakdown: bd }));
             setStep('extras');
           }} />
         )}
@@ -286,6 +297,7 @@ export default function BookingWizard() {
             checkIn={state.checkIn} checkOut={state.checkOut}
             nights={nights} guests={getGuestsLabel(state)}
             total={state.total} extras={state.extras}
+            priceBreakdown={state.priceBreakdown}
             onPayOnline={handlePayOnline} onPayAdmin={handlePayAdmin}
             submitting={submitting}
           />

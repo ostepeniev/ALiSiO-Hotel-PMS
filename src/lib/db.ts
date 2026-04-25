@@ -3056,6 +3056,24 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.error('[DB] widget_price_list seed error:', e.message); }
 
+  // --- Migration: add source column to guests (for analytics) ---
+  try {
+    const gCols = database.prepare('PRAGMA table_info(guests)').all().map((c: any) => c.name);
+    if (!gCols.includes('source')) {
+      database.exec("ALTER TABLE guests ADD COLUMN source TEXT DEFAULT 'direct'");
+      console.log('[DB] Added source column to guests');
+    }
+  } catch { /* */ }
+
+  // --- Migration: add guest_page_token to booking_drafts ---
+  try {
+    const bdCols = database.prepare('PRAGMA table_info(booking_drafts)').all().map((c: any) => c.name);
+    if (!bdCols.includes('guest_page_token')) {
+      database.exec('ALTER TABLE booking_drafts ADD COLUMN guest_page_token TEXT');
+      console.log('[DB] Added guest_page_token to booking_drafts');
+    }
+  } catch { /* */ }
+
 }
 
 
