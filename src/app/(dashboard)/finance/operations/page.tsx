@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3 } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
+import ExportButton from '../_components/ExportButton';
 
 type OpType = 'income' | 'expense' | 'transfer';
 
@@ -109,6 +110,11 @@ export default function OperationsPage() {
         <button onClick={() => { setEditOp(null); setModalType('transfer'); }} style={{ ...btn, background: '#6366f1' }}>
           <ArrowLeftRight size={16} /> Переказ
         </button>
+
+        <ExportButton
+          endpoint="/api/finance/export/operations"
+          params={{ from, to, op_type: filterType, search: search.trim() }}
+        />
 
         <Link href="/finance/reports" style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)', textDecoration: 'none' }}>
           <BarChart3 size={16} /> Звіти

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import DrillDownModal from '../_components/DrillDownModal';
+import ExportButton from '../../_components/ExportButton';
 
 interface MatrixRow {
   category_id: string | null;
@@ -94,6 +95,10 @@ export default function PnlMatrixPage() {
         <input type="month" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} style={input} />
         <span style={{ color: 'var(--text-secondary)' }}>—</span>
         <input type="month" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} style={input} />
+        <ExportButton
+          endpoint="/api/finance/export/pnl"
+          params={{ from: range.from, to: range.to, basis }}
+        />
       </div>
 
       {loading || !data ? (
