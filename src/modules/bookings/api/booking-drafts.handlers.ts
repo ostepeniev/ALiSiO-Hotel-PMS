@@ -220,40 +220,84 @@ export async function createBookingDraft(req: Request) {
 }
 
 // ─── PUT — admin confirm payment ─────────────────────────────────────────────
+// Admin PINs — server-side only, never sent to client
+const ADMIN_PINS: Record<string, string> = {
+  '1315': 'Андрей',
+  '2099': 'т. Наташа',
+  '0309': 'Олег',
+  '0912': 'Антон',
+};
+
 export async function updateBookingDraft(req: Request) {
   try {
     const body = await req.json();
     const db = getDb();
-    const { id, status, reservation_id: directResId } = body;
+    const { id, status, reservation_id: directResId, admin_pin } = body;
     if (!id && !directResId) return NextResponse.json({ error: 'Missing id or reservation_id' }, { status: 400, headers: CORS_HEADERS });
 
-    let rid: string | null = directResId || null;
+    // ─── PIN validation (required for status = 'paid') ────────────────────
+    let adminName: string | null = null;
+    if (status === 'paid') {
+      if (!admin_pin) {
+        return NextResponse.json({ error: 'PIN required', code: 'PIN_REQUIRED' }, { status: 401, headers: CORS_HEADERS });
+      }
+      adminName = ADMIN_PINS[String(admin_pin).trim()] || null;
+      if (!adminName) {
+        console.warn(`[AdminConfirm] Invalid PIN attempt: ${String(admin_pin).substring(0, 2)}**`);
+        return NextResponse.json({ error: 'Невірний PIN-код. Зверніться до адміністратора.', code: 'WRONG_PIN' }, { status: 401, headers: CORS_HEADERS });
+      }
+    }
 
+    // ─── Resolve reservation ID ────────────────────────────────────────────
+    let rid: string | null = directResId || null;
     if (!rid && id) {
-      // id could be a draft ID or a reservation ID
-      // Try draft first
       const draft = db.prepare('SELECT reservation_id FROM booking_drafts WHERE id = ?').get(id) as any;
       rid = draft?.reservation_id || null;
-
-      // If not found as draft, check if it IS a reservation_id directly
       if (!rid) {
         const res = db.prepare('SELECT id FROM reservations WHERE id = ?').get(id) as any;
         rid = res?.id || null;
       }
     }
 
+    // ─── Confirm payment ───────────────────────────────────────────────────
     if (status === 'paid' && rid) {
-      db.prepare(`UPDATE reservations SET payment_status = 'paid', status = 'confirmed', updated_at = datetime('now') WHERE id = ?`).run(rid);
+      const now = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Prague' });
+      const note = `✅ Оплату прийняв: ${adminName} · ${now}`;
+
+      db.prepare(`
+        UPDATE reservations
+        SET payment_status = 'paid',
+            status = 'confirmed',
+            internal_notes = CASE
+              WHEN internal_notes IS NULL OR internal_notes = '' THEN ?
+              ELSE internal_notes || char(10) || ?
+            END,
+            updated_at = datetime('now')
+        WHERE id = ?
+      `).run(note, note, rid);
+
       try { db.prepare(`UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid); } catch { /* */ }
       try { db.prepare(`UPDATE booking_service_orders SET payment_status = 'paid', status = 'confirmed' WHERE reservation_id = ?`).run(rid); } catch { /* */ }
+
+      // ─── Audit log ──────────────────────────────────────────────────────
+      try {
+        const orgRow = db.prepare('SELECT organization_id FROM properties LIMIT 1').get() as any;
+        const orgId = orgRow?.organization_id || 'org_alisio_001';
+        db.prepare(`
+          INSERT INTO audit_log (organization_id, action, entity_type, entity_id, new_values, created_at)
+          VALUES (?, 'payment_confirmed', 'reservation', ?, ?, datetime('now'))
+        `).run(orgId, rid, JSON.stringify({ confirmed_by: adminName, reservation_id: rid, status: 'paid' }));
+      } catch { /* audit_log might not exist */ }
+
+      console.log(`[AdminConfirm] Reservation ${rid} confirmed by ${adminName}`);
     }
 
-    // Update draft status if we have a draft id
+    // ─── Update draft status ───────────────────────────────────────────────
     if (id) {
       try { db.prepare(`UPDATE booking_drafts SET status = ? WHERE id = ?`).run(status, id); } catch { /* */ }
     }
 
-    return NextResponse.json({ ok: true, reservation_id: rid }, { headers: CORS_HEADERS });
+    return NextResponse.json({ ok: true, reservation_id: rid, admin_name: adminName }, { headers: CORS_HEADERS });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500, headers: CORS_HEADERS });
   }
