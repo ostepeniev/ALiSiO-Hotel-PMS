@@ -64,3 +64,8 @@ export {
   listBankInboxes, createBankInbox, updateBankInbox, deleteBankInbox,
   toggleBankInbox, testBankInbox, runBankInboxNow, runAllInboxes,
 } from './bank-inbox.handlers';
+
+// PR #12: XLSX/PDF exports
+export {
+  exportOperations, exportCashflow, exportPnl, exportStatement,
+} from './export.handlers';

@@ -191,16 +191,20 @@ export default function BookingWizard() {
   };
 
   // ─── Admin Confirm ────────────────────────────────
-  const handleAdminConfirm = async () => {
-    if (!reservationId) return;
+  const handleAdminConfirm = async (pin: string): Promise<{ ok: boolean; adminName?: string; error?: string }> => {
+    if (!reservationId) return { ok: false, error: 'No reservation' };
     try {
-      await fetch('/api/booking/drafts', {
+      const res = await fetch('/api/booking/drafts', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        // Send reservation_id directly — handler resolves draft → reservation
-        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid' }),
+        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid', admin_pin: pin }),
       });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Error' };
       setPaymentStatus('success');
-    } catch { /* */ }
+      return { ok: true, adminName: data.admin_name };
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Network error' };
+    }
   };
 
   const nights = state.checkIn && state.checkOut ? getNightDates(state.checkIn, state.checkOut).length : 0;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, FileText } from 'lucide-react';
+import ExportButton from '../../../_components/ExportButton';
 
 interface StatementItem {
   id: string;
@@ -70,6 +71,10 @@ export default function StatementDetailPage() {
         <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} style={input} />
         <span style={{ color: 'var(--text-secondary)' }}>—</span>
         <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} style={input} />
+        <ExportButton
+          endpoint="/api/finance/export/statement"
+          params={{ account_id: params.accountId, from: range.from, to: range.to }}
+        />
       </div>
 
       {loading || !data ? (

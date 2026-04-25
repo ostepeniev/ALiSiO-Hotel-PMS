@@ -16,21 +16,146 @@ interface Props {
   paymentUrl?: string;
   qrCodeUrl?: string;
   onReset: () => void;
-  onAdminConfirm?: () => void;
+  onAdminConfirm?: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
+}
+
+// ─── Admin PIN Popup ──────────────────────────────────────────────────────────
+function AdminPinPopup({
+  onConfirm,
+  onClose,
+}: {
+  onConfirm: (pin: string) => Promise<{ ok: boolean; adminName?: string; error?: string }>;
+  onClose: () => void;
+}) {
+  const [pin, setPin] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (pin.length < 4) { setError('Введіть PIN-код'); return; }
+    setLoading(true);
+    setError(null);
+    const result = await onConfirm(pin);
+    setLoading(false);
+    if (result.ok) {
+      setSuccess(`✅ Оплату підтверджено · ${result.adminName}`);
+      setTimeout(() => onClose(), 2200);
+    } else {
+      setError(result.error || 'Помилка');
+      setPin('');
+    }
+  };
+
+  return (
+    <div
+      onClick={() => { if (!loading && !success) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#fff', borderRadius: 20, padding: '28px 24px',
+          maxWidth: 320, width: '100%', textAlign: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        }}
+      >
+        {success ? (
+          <>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#065f46' }}>{success}</div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🔐</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#111', marginBottom: 4 }}>
+              Підтвердження оплати
+            </div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 20 }}>
+              Введіть PIN-код адміністратора
+            </div>
+
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              value={pin}
+              onChange={e => { setPin(e.target.value.replace(/\D/g, '')); setError(null); }}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              placeholder="••••"
+              style={{
+                width: '100%', padding: '14px 16px',
+                fontSize: 24, letterSpacing: 8, textAlign: 'center',
+                border: error ? '2px solid #ef4444' : '2px solid #e2e8f0',
+                borderRadius: 12, outline: 'none', boxSizing: 'border-box',
+                marginBottom: error ? 8 : 20,
+                background: '#f8fafc',
+                fontFamily: 'monospace',
+              }}
+            />
+
+            {error && (
+              <div style={{
+                background: '#fef2f2', color: '#dc2626', fontSize: 13,
+                padding: '8px 12px', borderRadius: 8, marginBottom: 16,
+                border: '1px solid #fecaca',
+              }}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={loading}
+                style={{
+                  flex: 1, padding: '11px 0',
+                  background: '#f1f5f9', color: '#475569',
+                  border: 'none', borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: 'pointer',
+                }}
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading || pin.length < 4}
+                style={{
+                  flex: 2, padding: '11px 0',
+                  background: loading || pin.length < 4 ? '#94a3b8' : '#2e6b4f',
+                  color: '#fff', border: 'none', borderRadius: 12,
+                  fontWeight: 700, fontSize: 14, cursor: loading || pin.length < 4 ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  transition: 'background .2s',
+                }}
+              >
+                {loading ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} /> Перевірка...</> : '✅ Підтвердити'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── QR Code Popup ────────────────────────────────────────────────────────────
 function QrPopup({ url, onClose }: { url: string; onClose: () => void }) {
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=16&data=${encodeURIComponent(url)}`;
-
   return (
     <div
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
+        position: 'fixed', inset: 0, zIndex: 9998,
         background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
       }}
     >
       <div
@@ -41,53 +166,33 @@ function QrPopup({ url, onClose }: { url: string; onClose: () => void }) {
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
         }}
       >
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#111', marginBottom: 4 }}>
-          🏕️ Guest Page
-        </div>
-        <div style={{ fontSize: 13, color: '#666', marginBottom: 20, wordBreak: 'break-all' }}>
-          {url}
-        </div>
-
+        <div style={{ fontSize: 22, fontWeight: 800, color: '#111', marginBottom: 4 }}>🏕️ Guest Page</div>
+        <div style={{ fontSize: 12, color: '#666', marginBottom: 20, wordBreak: 'break-all' }}>{url}</div>
         <div style={{
           background: '#f8fafb', borderRadius: 16, padding: 12,
-          display: 'inline-block', marginBottom: 20,
-          border: '2px solid #e2e8f0',
+          display: 'inline-block', marginBottom: 20, border: '2px solid #e2e8f0',
         }}>
-          <img
-            src={qrSrc}
-            alt="QR code for guest page"
-            width={220}
-            height={220}
-            style={{ display: 'block', borderRadius: 8 }}
-          />
+          <img src={qrSrc} alt="QR code" width={220} height={220} style={{ display: 'block', borderRadius: 8 }} />
         </div>
-
         <div style={{ fontSize: 13, color: '#555', marginBottom: 20, lineHeight: 1.5 }}>
           Відскануй камерою телефону для переходу на гостьову сторінку
         </div>
-
         <div style={{ display: 'flex', gap: 8 }}>
           <a
-            href={qrSrc}
-            download="guest-page-qr.png"
+            href={qrSrc} download="guest-page-qr.png"
             style={{
               flex: 1, padding: '10px 0', background: '#2e6b4f', color: '#fff',
               borderRadius: 12, textDecoration: 'none', fontWeight: 600, fontSize: 14,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}
-          >
-            ⬇️ Download
-          </a>
+          >⬇️ Download</a>
           <button
-            onClick={onClose}
-            type="button"
+            onClick={onClose} type="button"
             style={{
               flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#334155',
               border: 'none', borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: 'pointer',
             }}
-          >
-            Close
-          </button>
+          >Close</button>
         </div>
       </div>
     </div>
@@ -114,14 +219,10 @@ function GuestPageLink({ token }: { token: string }) {
   return (
     <>
       {showQr && <QrPopup url={guestUrl} onClose={() => setShowQr(false)} />}
-
       <div style={{
         background: 'var(--kc-green-light, #f0f9f4)',
         border: '1.5px solid var(--kc-green, #2e6b4f)',
-        borderRadius: 14,
-        padding: '14px 16px',
-        marginTop: 20,
-        textAlign: 'left',
+        borderRadius: 14, padding: '14px 16px', marginTop: 20, textAlign: 'left',
       }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--kc-green, #2e6b4f)', marginBottom: 8 }}>
           🏠 Your Guest Page
@@ -129,55 +230,29 @@ function GuestPageLink({ token }: { token: string }) {
         <div style={{ fontSize: 12, color: 'var(--kc-text-muted, #888)', marginBottom: 10, wordBreak: 'break-all' }}>
           {guestUrl}
         </div>
-
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {/* Open */}
-          <a
-            href={`/guest/${token}`}
-            style={{
-              flex: '1 1 auto', minWidth: 100,
-              padding: '9px 14px',
-              background: 'var(--kc-green, #2e6b4f)', color: '#fff',
-              borderRadius: 10, textDecoration: 'none', fontWeight: 600, fontSize: 13,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            }}
-          >
-            Open →
-          </a>
-
-          {/* Copy */}
-          <button
-            type="button"
-            onClick={copyLink}
-            style={{
-              flex: '1 1 auto', minWidth: 90,
-              padding: '9px 14px',
-              background: copied ? '#d1fae5' : 'var(--kc-bg-card, #f8fafb)',
-              color: copied ? '#065f46' : 'var(--kc-text, #334155)',
-              border: '1.5px solid var(--kc-border, #e2e8f0)',
-              borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer',
-              transition: 'all .2s',
-            }}
-          >
+          <a href={`/guest/${token}`} style={{
+            flex: '1 1 auto', minWidth: 90, padding: '9px 14px',
+            background: 'var(--kc-green, #2e6b4f)', color: '#fff',
+            borderRadius: 10, textDecoration: 'none', fontWeight: 600, fontSize: 13,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>Open →</a>
+          <button type="button" onClick={copyLink} style={{
+            flex: '1 1 auto', minWidth: 90, padding: '9px 14px',
+            background: copied ? '#d1fae5' : 'var(--kc-bg-card, #f8fafb)',
+            color: copied ? '#065f46' : 'var(--kc-text, #334155)',
+            border: '1.5px solid var(--kc-border, #e2e8f0)',
+            borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer', transition: 'all .2s',
+          }}>
             {copied ? '✓ Copied' : '📋 Copy link'}
           </button>
-
-          {/* QR */}
-          <button
-            type="button"
-            onClick={() => setShowQr(true)}
-            style={{
-              flex: '1 1 auto', minWidth: 90,
-              padding: '9px 14px',
-              background: 'var(--kc-bg-card, #f8fafb)',
-              color: 'var(--kc-text, #334155)',
-              border: '1.5px solid var(--kc-border, #e2e8f0)',
-              borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            }}
-          >
-            📱 QR code
-          </button>
+          <button type="button" onClick={() => setShowQr(true)} style={{
+            flex: '1 1 auto', minWidth: 90, padding: '9px 14px',
+            background: 'var(--kc-bg-card, #f8fafb)', color: 'var(--kc-text, #334155)',
+            border: '1.5px solid var(--kc-border, #e2e8f0)',
+            borderRadius: 10, fontWeight: 600, fontSize: 13, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+          }}>📱 QR code</button>
         </div>
       </div>
     </>
@@ -196,6 +271,7 @@ export default function StepSuccess({
   const [uploading, setUploading] = useState(false);
   const [registeredNames, setRegisteredNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showPinPopup, setShowPinPopup] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -226,11 +302,9 @@ export default function StepSuccess({
         const uploadData = await uploadRes.json();
         if (uploadData.url) uploadedUrls.push(uploadData.url);
       }
-
       if (uploadedUrls.length > 0) {
         const regRes = await fetch('/api/booking/register-guest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reservation_id: reservationId, document_urls: uploadedUrls }),
         });
         const regData = await regRes.json();
@@ -240,20 +314,13 @@ export default function StepSuccess({
           setRegisteredNames(prev => [...prev, ...names]);
         }
       }
-
       const nextGuest = currentGuest + 1;
-      if (nextGuest < adults) {
-        setCurrentGuest(nextGuest);
-        setPhotos([]);
-      } else {
-        setRegStep('done');
-      }
+      if (nextGuest < adults) { setCurrentGuest(nextGuest); setPhotos([]); }
+      else setRegStep('done');
     } catch (err) {
       console.error('[Registration]', err);
       setError('Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
-    }
+    } finally { setUploading(false); }
   };
 
   // ─── Failed ────────────────────────────────────────
@@ -277,7 +344,6 @@ export default function StepSuccess({
         <h2>Processing payment...</h2>
         <p>Please wait while we confirm your payment.</p>
         <div className="kc-spinner" style={{ margin: '16px auto', borderColor: 'rgba(46,107,79,0.2)', borderTopColor: 'var(--kc-green)' }} />
-
         {qrCodeUrl && (
           <div style={{ margin: '20px auto', textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Scan to pay</div>
@@ -297,6 +363,14 @@ export default function StepSuccess({
   if (status === 'admin_pending') {
     return (
       <div className="kc-fade-in kc-success">
+        {/* PIN popup */}
+        {showPinPopup && onAdminConfirm && (
+          <AdminPinPopup
+            onConfirm={onAdminConfirm}
+            onClose={() => setShowPinPopup(false)}
+          />
+        )}
+
         <div className="kc-success-icon" style={{ background: '#fff8e1', color: '#8b6914' }}>🏢</div>
         <h2>Waiting for administrator</h2>
         <p>Please pay at the reception. The administrator will confirm your payment.</p>
@@ -306,14 +380,21 @@ export default function StepSuccess({
           <div className="kc-summary-row"><span>Total to pay</span><strong style={{ color: 'var(--kc-green)' }}>{formatPrice(total)} Kč</strong></div>
         </div>
 
-        {/* Guest page QR — available even before payment confirmed */}
+        {/* Guest page QR */}
         {guestPageToken && <GuestPageLink token={guestPageToken} />}
 
+        {/* Admin confirm — protected by PIN popup */}
         {onAdminConfirm && (
-          <button className="kc-btn kc-btn-primary" onClick={onAdminConfirm} type="button" style={{ marginTop: 16 }}>
-            ✅ Administrator: Confirm payment received
+          <button
+            className="kc-btn kc-btn-primary"
+            onClick={() => setShowPinPopup(true)}
+            type="button"
+            style={{ marginTop: 20 }}
+          >
+            ✅ Адміністратор: Підтвердити оплату
           </button>
         )}
+
         <a href="https://wa.me/420723565616" target="_blank" rel="noopener noreferrer" className="kc-help-link">💬 Contact administrator</a>
       </div>
     );
@@ -368,25 +449,20 @@ export default function StepSuccess({
               {currentGuest + 1 < adults ? `After this, ${adults - currentGuest - 1} more guest(s) to register` : 'Last guest'}
             </div>
           )}
-
-          <input ref={fileRef} type="file" accept="image/*" multiple
-            onChange={handleFileSelect} style={{ display: 'none' }} />
-
+          <input ref={fileRef} type="file" accept="image/*" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
           {photos.length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
               {photos.map((src, i) => (
                 <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 10, overflow: 'hidden', border: '2px solid var(--kc-green)' }}>
                   <img src={src} alt={`Doc ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   <button
-                    onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))}
-                    type="button"
+                    onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))} type="button"
                     style={{ position: 'absolute', top: 2, right: 2, width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >×</button>
                 </div>
               ))}
             </div>
           )}
-
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <button className="kc-btn kc-btn-secondary" style={{ flex: 1 }}
               onClick={() => { if (fileRef.current) { fileRef.current.removeAttribute('capture'); fileRef.current.click(); } }} type="button">
@@ -397,21 +473,13 @@ export default function StepSuccess({
               📸 Camera
             </button>
           </div>
-
           {error && <div className="kc-alert" style={{ color: 'var(--kc-error)', marginBottom: 8 }}>⚠️ {error}</div>}
-
           {photos.length > 0 && (
             <button className="kc-btn kc-btn-primary" onClick={submitPhotos} disabled={uploading} type="button">
-              {uploading
-                ? <><div className="kc-spinner" /> Processing...</>
-                : currentGuest + 1 < adults
-                  ? `Upload & continue to guest ${currentGuest + 2}`
-                  : `Upload & complete registration`}
+              {uploading ? <><div className="kc-spinner" /> Processing...</> : currentGuest + 1 < adults ? `Upload & continue to guest ${currentGuest + 2}` : `Upload & complete registration`}
             </button>
           )}
-          <button className="kc-btn kc-btn-ghost" onClick={() => setRegStep('none')} type="button">
-            Skip registration
-          </button>
+          <button className="kc-btn kc-btn-ghost" onClick={() => setRegStep('none')} type="button">Skip registration</button>
         </div>
       )}
 
@@ -421,9 +489,7 @@ export default function StepSuccess({
           <div>
             Registration complete!
             {registeredNames.length > 0 && (
-              <div style={{ marginTop: 4, fontSize: 13 }}>
-                Registered: <strong>{registeredNames.join(', ')}</strong>
-              </div>
+              <div style={{ marginTop: 4, fontSize: 13 }}>Registered: <strong>{registeredNames.join(', ')}</strong></div>
             )}
           </div>
         </div>
