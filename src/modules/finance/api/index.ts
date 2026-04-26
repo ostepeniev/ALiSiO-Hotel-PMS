@@ -233,3 +233,8 @@ export {
 export { listClearingAccounts, listReceivables } from './clearing.handlers';
 import { backfillReceivablesHandler as _backfillReceivablesHandler } from './clearing.handlers';
 export const backfillReceivablesHandler = withPermission('manage_finance_settings', _backfillReceivablesHandler);
+
+// ─── Statement uploads (PR #16) — import_bank_data ─────────────
+export { listStatementUploads } from './statement-upload.handlers';
+import { uploadStatement as _uploadStatement } from './statement-upload.handlers';
+export const uploadStatement = withPermission('import_bank_data', _uploadStatement);

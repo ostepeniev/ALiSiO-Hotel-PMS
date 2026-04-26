@@ -5,6 +5,7 @@ import { simpleParser, type Attachment } from 'mailparser';
 import { parseStringPromise } from 'xml2js';
 import { loadActiveRules, applyRulesToOperation } from './auto-rules-engine';
 import { createOperationInTx } from '../api/operations.handlers';
+import { tryMatchBankOpToReceivables } from './clearing-engine';
 
 // ─────────────────────────────────────────────────────────────────
 // Encryption (AES-256-GCM)
@@ -370,6 +371,14 @@ function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedStatement,
       if (activeRules.length > 0) {
         const newOp = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(opId) as any;
         if (newOp) applyRulesToOperation(db, newOp, activeRules, inbox.organization_id);
+      }
+
+      // PR #16: try to settle any matching channel receivables (Booking
+      // payout group, VRBO single-row). Income operations only.
+      if (isIncome) {
+        try {
+          tryMatchBankOpToReceivables(db, inbox.organization_id, opId, Math.abs(t.amount), t.currency, t.date);
+        } catch (e: any) { console.log('[BankInbox] receivable match error:', e.message); }
       }
 
       insTx.run(

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
-import { Wallet, RefreshCw, Search, ArrowLeft } from 'lucide-react';
+import { Wallet, RefreshCw, Search, ArrowLeft, FileSpreadsheet, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 
 interface ClearingAccount {
   id: string;
@@ -50,6 +50,35 @@ function fmtMoney(n: number | null | undefined, currency: string): string {
   return `${n.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
+interface UploadResult {
+  channel: string;
+  file_name: string;
+  total_rows: number;
+  applied: number;
+  cancelled: number;
+  unmatched: number;
+  outcomes: Array<{
+    external_reservation_id: string;
+    guest_name: string | null;
+    check_in: string;
+    outcome: string;
+    amount?: number;
+    currency?: string;
+    message?: string;
+  }>;
+}
+
+interface UploadHistoryRow {
+  id: string;
+  channel: string;
+  file_name: string;
+  row_count: number;
+  applied_count: number;
+  cancelled_count: number;
+  unmatched_count: number;
+  created_at: string;
+}
+
 export default function ClearingPage() {
   const [accounts, setAccounts] = useState<ClearingAccount[]>([]);
   const [totals, setTotals] = useState<{ outstanding: Record<string, number>; paid_total: Record<string, number>; receivable_count: number } | null>(null);
@@ -59,6 +88,11 @@ export default function ClearingPage() {
   const [statusFilter, setStatusFilter] = useState<string>('expected');
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [uploadHistory, setUploadHistory] = useState<UploadHistoryRow[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadChannel, setUploadChannel] = useState<'auto' | 'booking' | 'vrbo' | 'airbnb'>('auto');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -83,8 +117,39 @@ export default function ClearingPage() {
     setLoading(false);
   }, [activeAccountId, statusFilter, search]);
 
+  const fetchUploadHistory = useCallback(async () => {
+    try {
+      const res = await fetch('/api/finance/clearing/statements');
+      const json = await res.json();
+      setUploadHistory(json.items || []);
+    } catch (e) { console.error(e); }
+  }, []);
+
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
   useEffect(() => { fetchReceivables(); }, [fetchReceivables]);
+  useEffect(() => { fetchUploadHistory(); }, [fetchUploadHistory]);
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('channel', uploadChannel);
+      const res = await fetch('/api/finance/clearing/statements', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok) {
+        alert(`Помилка: ${json.error || 'upload failed'}`);
+        return;
+      }
+      setUploadResult(json);
+      fetchAccounts();
+      fetchReceivables();
+      fetchUploadHistory();
+    } catch (e: any) { alert(`Помилка: ${e.message}`); }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
 
   async function handleBackfill() {
     if (!confirm('Перерахувати receivables по всіх існуючих бронюваннях? (безпечно, idempotent)')) return;
@@ -152,6 +217,105 @@ export default function ClearingPage() {
           </button>
         ))}
       </div>
+
+      {/* Statement upload */}
+      <div style={{ marginTop: 24, padding: 16, border: '1px solid var(--border-primary)', borderRadius: 10, background: 'var(--bg-secondary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <FileSpreadsheet size={20} color="#16a34a" />
+          <h2 style={{ margin: 0, fontSize: 16 }}>Завантажити виписку платформи</h2>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <select value={uploadChannel} onChange={(e) => setUploadChannel(e.target.value as any)} style={input}>
+            <option value="auto">Авто-визначення</option>
+            <option value="booking">Booking.com (CSV)</option>
+            <option value="vrbo">VRBO (CSV)</option>
+            <option value="airbnb" disabled>Airbnb (TBD)</option>
+          </select>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.tsv,.txt"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+            disabled={uploading}
+            style={{ ...input, padding: 6 }}
+          />
+          {uploading && <span style={{ color: 'var(--text-secondary)' }}>Обробка…</span>}
+        </div>
+        <p style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)', marginBottom: 0 }}>
+          Завантаж CSV з тижневої (Booking) або місячної (VRBO) виписки. Receivables які матчаться → переходять у статус «У виписці».
+        </p>
+      </div>
+
+      {/* Upload result */}
+      {uploadResult && (
+        <div style={{ marginTop: 12, padding: 16, border: '1px solid var(--border-primary)', borderRadius: 10, background: 'var(--bg-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <strong>{uploadResult.file_name}</strong>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>({uploadResult.channel}, {uploadResult.total_rows} рядків)</span>
+            <button onClick={() => setUploadResult(null)} style={{ marginLeft: 'auto', ...btn, background: 'transparent' }}>×</button>
+          </div>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 13 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#22c55e' }}>
+              <CheckCircle2 size={14} /> <b>{uploadResult.applied}</b> matched
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#ef4444' }}>
+              <XCircle size={14} /> <b>{uploadResult.cancelled}</b> cancelled
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f59e0b' }}>
+              <AlertCircle size={14} /> <b>{uploadResult.unmatched}</b> unmatched
+            </span>
+          </div>
+          {uploadResult.unmatched > 0 && (
+            <details>
+              <summary style={{ cursor: 'pointer', fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
+                Показати unmatched ({uploadResult.unmatched})
+              </summary>
+              <table style={{ width: '100%', marginTop: 8, fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr><th style={th}>Reservation #</th><th style={th}>Гість</th><th style={th}>Заїзд</th><th style={th}>Сума</th><th style={th}>Причина</th></tr>
+                </thead>
+                <tbody>
+                  {uploadResult.outcomes.filter((o) => o.outcome === 'unmatched').map((o, i) => (
+                    <tr key={i} style={{ borderTop: '1px solid var(--border-primary)' }}>
+                      <td style={{ ...td, fontFamily: 'monospace' }}>{o.external_reservation_id}</td>
+                      <td style={td}>{o.guest_name || '—'}</td>
+                      <td style={td}>{o.check_in}</td>
+                      <td style={td}>{o.amount ? fmtMoney(o.amount, o.currency || '') : '—'}</td>
+                      <td style={{ ...td, color: '#f59e0b' }}>{o.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* Upload history */}
+      {uploadHistory.length > 0 && (
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--text-secondary)' }}>
+            Останні завантаження ({uploadHistory.length})
+          </summary>
+          <table style={{ width: '100%', marginTop: 8, fontSize: 12, borderCollapse: 'collapse' }}>
+            <thead>
+              <tr><th style={th}>Дата</th><th style={th}>Канал</th><th style={th}>Файл</th><th style={th}>Рядків</th><th style={th}>Matched</th><th style={th}>Unmatched</th></tr>
+            </thead>
+            <tbody>
+              {uploadHistory.map((u) => (
+                <tr key={u.id} style={{ borderTop: '1px solid var(--border-primary)' }}>
+                  <td style={td}>{u.created_at?.substring(0, 16)}</td>
+                  <td style={td}>{u.channel}</td>
+                  <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{u.file_name}</td>
+                  <td style={td}>{u.row_count}</td>
+                  <td style={{ ...td, color: '#22c55e' }}>{u.applied_count}</td>
+                  <td style={{ ...td, color: u.unmatched_count > 0 ? '#f59e0b' : 'var(--text-secondary)' }}>{u.unmatched_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginTop: 24, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>

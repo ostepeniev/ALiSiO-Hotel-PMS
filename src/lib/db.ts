@@ -3183,6 +3183,22 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
+  // PR #16: track manual statement uploads (Booking/Airbnb/VRBO XLSX/CSV)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_statement_uploads (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      row_count INTEGER NOT NULL DEFAULT 0,
+      applied_count INTEGER NOT NULL DEFAULT 0,
+      cancelled_count INTEGER NOT NULL DEFAULT 0,
+      unmatched_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_stmt_upl_org ON fin_statement_uploads(organization_id)');
+
   // Backfill receivables for existing channel-sourced reservations (one-time)
   try {
     const flagRow = database.prepare(
