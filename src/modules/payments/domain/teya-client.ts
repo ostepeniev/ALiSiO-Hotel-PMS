@@ -223,6 +223,127 @@ export async function refundPayment(transactionId: string, amount: number): Prom
   return { id: data.id, status: data.status };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Transaction listing (PR #24) — for periodic reconciliation against
+// fin_operations to catch payments that bypassed PMS (POS terminal,
+// in-app, restaurant). Webhook coverage is event-driven and can miss
+// payments initiated outside our checkout flow; API listing closes
+// that gap.
+//
+// IMPORTANT: requires the Teya app to grant the `transactions/list`
+// OAuth scope. If you get 401/403 errors here, log into the Teya
+// developer portal and add that scope to the app's grants.
+// ─────────────────────────────────────────────────────────────────
+
+export interface TeyaTransaction {
+  id: string;
+  status: string;
+  type: string;
+  amount: number;
+  currency: string;
+  created_at: string;
+  store_id?: string;
+  reference?: string | null;
+  description?: string | null;
+  customer_email?: string | null;
+  metadata?: Record<string, string>;
+  raw: Record<string, unknown>;
+}
+
+export interface ListTransactionsOptions {
+  from: string;       // YYYY-MM-DD
+  to: string;         // YYYY-MM-DD
+  storeId?: string;   // defaults to TEYA_STORE_ID env
+  status?: string;    // optional filter, e.g. 'SUCCEEDED'
+  limit?: number;
+  cursor?: string;
+}
+
+/**
+ * List transactions from Teya for a date range. Tries GET /v2/transactions
+ * first (REST convention), falls back to POST /v2/transactions/search if
+ * that 404s. The response shape varies between staging/production and Teya's
+ * various API versions; we normalise into TeyaTransaction.
+ *
+ * Returns up to opts.limit (default 200) per call. Subsequent pages can be
+ * fetched by passing the returned `next_cursor` as `cursor`.
+ */
+export async function listTeyaTransactions(opts: ListTransactionsOptions): Promise<{
+  transactions: TeyaTransaction[];
+  next_cursor: string | null;
+  total: number | null;
+}> {
+  const token = await getTeyaAccessToken('transactions/list');
+  const storeId = opts.storeId || TEYA_STORE_ID;
+  const limit = Math.min(500, opts.limit || 200);
+
+  const qs = new URLSearchParams();
+  if (storeId) qs.set('store_id', storeId);
+  qs.set('from', opts.from);
+  qs.set('to', opts.to);
+  qs.set('limit', String(limit));
+  if (opts.cursor) qs.set('cursor', opts.cursor);
+  if (opts.status) qs.set('status', opts.status);
+
+  // Try GET first (most common REST pattern)
+  let res = await fetch(`${TEYA_API_URL}/v2/transactions?${qs}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  // Fallback to POST /search if GET returns 404 (some Teya tenants use that)
+  if (res.status === 404) {
+    res = await fetch(`${TEYA_API_URL}/v2/transactions/search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        store_id: storeId,
+        from: opts.from,
+        to: opts.to,
+        limit,
+        cursor: opts.cursor,
+        status: opts.status,
+      }),
+    });
+  }
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error('[Teya List] Error:', res.status, errorText);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`Teya transactions API rejected: ${res.status}. Add the 'transactions/list' OAuth scope to your Teya app, then retry.`);
+    }
+    throw new Error(`Teya transactions list failed: ${res.status} ${errorText}`);
+  }
+
+  const data: any = await res.json();
+
+  // Normalise response shapes — Teya returns either { items, next_cursor }
+  // or { transactions, page_token } depending on API version.
+  const rawList: any[] = data.items || data.transactions || data.data || [];
+  const nextCursor: string | null = data.next_cursor || data.page_token || null;
+  const total: number | null = data.total ?? data.total_count ?? null;
+
+  const transactions: TeyaTransaction[] = rawList.map((r: any) => ({
+    id: r.id || r.transaction_id || r.transactionId || '',
+    status: r.status || 'UNKNOWN',
+    type: r.type || r.transaction_type || 'SALE',
+    amount: typeof r.amount === 'object' ? Number(r.amount.value) : Number(r.amount || 0),
+    currency: typeof r.amount === 'object' ? r.amount.currency : (r.currency || 'CZK'),
+    created_at: r.created_at || r.createdAt || r.timestamp || r.completed_at || '',
+    store_id: r.store_id || r.storeId,
+    reference: r.reference || r.session_id || null,
+    description: r.description || (r.line_items?.[0]?.description) || null,
+    customer_email: r.customer_email || r.customer?.email || null,
+    metadata: r.metadata || {},
+    raw: r,
+  }));
+
+  return { transactions, next_cursor: nextCursor, total };
+}
+
 export async function sendReceipt(transactionId: string, email: string): Promise<void> {
   const token = await getTeyaAccessToken('transactions/id/receipts/create');
 

@@ -254,3 +254,8 @@ import {
 } from './attachments.handlers';
 export const uploadAttachment = withPermission('manage_payments', _uploadAttachment);
 export const deleteAttachment = withPermission('manage_payments', _deleteAttachment);
+
+// ─── Teya transaction sync (PR #24) — import_bank_data ─────────
+export { getTeyaSyncStatus, getTeyaCoverage } from './teya-sync.handlers';
+import { syncTeyaTransactions as _syncTeyaTransactions } from './teya-sync.handlers';
+export const syncTeyaTransactions = withPermission('import_bank_data', _syncTeyaTransactions);
