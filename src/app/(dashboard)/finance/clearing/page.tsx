@@ -25,6 +25,7 @@ interface Receivable {
   external_reservation_id: string | null;
   channel_source: string;
   gross_amount: number;
+  actual_gross: number | null;
   expected_commission: number;
   expected_net: number;
   actual_commission: number | null;
@@ -42,6 +43,7 @@ interface Receivable {
   reservation_total_czk: number | null;
   fx_rate_to_czk: number | null;
   expected_net_czk: number | null;
+  gross_diff_source_currency: number | null;
   reservation_vs_receivable_diff_czk: number | null;
 }
 
@@ -93,6 +95,7 @@ export default function ClearingPage() {
   const [loading, setLoading] = useState(true);
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('expected');
+  const [showCzkDetails, setShowCzkDetails] = useState(false);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
@@ -352,6 +355,10 @@ export default function ClearingPage() {
         <span style={{ color: 'var(--text-secondary)', fontSize: 13, marginLeft: 'auto' }}>
           Записів: {receivables.length}
         </span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <input type="checkbox" checked={showCzkDetails} onChange={(e) => setShowCzkDetails(e.target.checked)} />
+          Деталі CZK (інформ.)
+        </label>
       </div>
 
       {/* Receivables table */}
@@ -370,14 +377,18 @@ export default function ClearingPage() {
                 <th style={th}>External ID</th>
                 <th style={th}>Гість / Юніт</th>
                 <th style={th}>Заїзд</th>
-                <th style={th}>Виїзд</th>
-                <th style={{ ...th, textAlign: 'right' }}>Брутто</th>
-                <th style={{ ...th, textAlign: 'right' }}>Очік. комісія</th>
-                <th style={{ ...th, textAlign: 'right' }}>Очік. нетто</th>
-                <th style={{ ...th, textAlign: 'right' }}>≈ CZK</th>
-                <th style={{ ...th, textAlign: 'right' }}>PMS (CZK)</th>
-                <th style={{ ...th, textAlign: 'right' }}>Δ CZK</th>
-                <th style={{ ...th, textAlign: 'right' }}>Факт. нетто</th>
+                <th style={{ ...th, textAlign: 'right' }} title="Брутто з Hostex (те що очікується)">Hostex</th>
+                <th style={{ ...th, textAlign: 'right' }} title="Брутто з виписки платформи (фактичне)">Statement</th>
+                <th style={{ ...th, textAlign: 'right', background: 'rgba(99,102,241,0.06)' }} title="РЕАЛЬНА розбіжність: Hostex vs Statement в EUR. Має бути 0 коли все ок.">Δ {receivables[0]?.currency || ''}</th>
+                <th style={{ ...th, textAlign: 'right' }}>Комісія</th>
+                <th style={{ ...th, textAlign: 'right' }}>Нетто</th>
+                {showCzkDetails && (
+                  <>
+                    <th style={{ ...th, textAlign: 'right', opacity: 0.7 }}>≈ CZK</th>
+                    <th style={{ ...th, textAlign: 'right', opacity: 0.7 }}>PMS (CZK)</th>
+                    <th style={{ ...th, textAlign: 'right', opacity: 0.7 }} title="FX volatility (не помилка) — різниця курсу між sync і поточним">Δ CZK*</th>
+                  </>
+                )}
                 <th style={th}>Статус</th>
                 <th style={th}>Payout</th>
               </tr>
@@ -396,29 +407,45 @@ export default function ClearingPage() {
                       <div>{r.guest_name}</div>
                       {r.unit_name && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{r.unit_name}</div>}
                     </td>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.check_in}</td>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.check_out}</td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.check_in} → {r.check_out}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {fmtMoney(r.gross_amount, r.currency)}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.actual_gross != null ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                      {r.actual_gross != null ? fmtMoney(r.actual_gross, r.currency) : '—'}
+                    </td>
+                    <td style={{
+                      ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                      background: 'rgba(99,102,241,0.04)', fontWeight: 600,
+                      color: r.gross_diff_source_currency == null
+                        ? 'var(--text-secondary)'
+                        : Math.abs(r.gross_diff_source_currency) < 0.01 ? '#22c55e' : '#ef4444',
+                    }}>
+                      {r.gross_diff_source_currency == null
+                        ? '—'
+                        : Math.abs(r.gross_diff_source_currency) < 0.01
+                          ? '✓'
+                          : `${r.gross_diff_source_currency >= 0 ? '+' : ''}${r.gross_diff_source_currency.toFixed(2)}`}
                     </td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#ef4444' }}>
                       −{fmtMoney(r.actual_commission ?? r.expected_commission, r.currency)}
                     </td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#22c55e', fontWeight: 600 }}>
-                      {fmtMoney(r.expected_net, r.currency)}
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.actual_net != null ? '#22c55e' : 'var(--text-secondary)', fontWeight: 600 }}>
+                      {fmtMoney(r.actual_net ?? r.expected_net, r.currency)}
                     </td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 11 }}>
-                      {r.expected_net_czk != null ? fmtMoney(r.expected_net_czk, 'CZK') : '—'}
-                    </td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 11 }}>
-                      {r.reservation_total_czk != null ? fmtMoney(r.reservation_total_czk, 'CZK') : '—'}
-                    </td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 11, color: r.reservation_vs_receivable_diff_czk == null ? 'var(--text-secondary)' : Math.abs(r.reservation_vs_receivable_diff_czk) > 100 ? '#ef4444' : '#22c55e' }}>
-                      {r.reservation_vs_receivable_diff_czk != null ? `${r.reservation_vs_receivable_diff_czk >= 0 ? '+' : ''}${fmtMoney(r.reservation_vs_receivable_diff_czk, 'CZK')}` : '—'}
-                    </td>
-                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.actual_net != null ? '#22c55e' : 'var(--text-secondary)' }}>
-                      {fmtMoney(r.actual_net, r.currency)}
-                    </td>
+                    {showCzkDetails && (
+                      <>
+                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 11, opacity: 0.7 }}>
+                          {r.expected_net_czk != null ? fmtMoney(r.expected_net_czk, 'CZK') : '—'}
+                        </td>
+                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 11, opacity: 0.7 }}>
+                          {r.reservation_total_czk != null ? fmtMoney(r.reservation_total_czk, 'CZK') : '—'}
+                        </td>
+                        <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 11, color: 'var(--text-secondary)', opacity: 0.7 }}>
+                          {r.reservation_vs_receivable_diff_czk != null ? `${r.reservation_vs_receivable_diff_czk >= 0 ? '+' : ''}${fmtMoney(r.reservation_vs_receivable_diff_czk, 'CZK')}` : '—'}
+                        </td>
+                      </>
+                    )}
                     <td style={td}>
                       <span style={{
                         fontSize: 11, padding: '3px 8px', borderRadius: 4,
