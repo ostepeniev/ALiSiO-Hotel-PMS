@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Settings, Wallet, ArrowLeftRight, FolderTree, FolderKanban, Users, Tag, Zap, UserCog, Repeat, Mail } from 'lucide-react';
+import { Settings, Wallet, ArrowLeftRight, FolderTree, FolderKanban, Users, Tag, Zap, UserCog, Repeat, Mail, CreditCard } from 'lucide-react';
 import AccountsTab from './_components/AccountsTab';
 import ExchangeRatesTab from './_components/ExchangeRatesTab';
 import CategoriesTab from './_components/CategoriesTab';
@@ -11,6 +11,7 @@ import TagsTab from './_components/TagsTab';
 import AutoRulesTab from './_components/AutoRulesTab';
 import RecurringTemplatesTab from './_components/RecurringTemplatesTab';
 import BankInboxesTab from './_components/BankInboxesTab';
+import TeyaSyncTab from './_components/TeyaSyncTab';
 
 type TabId =
   | 'accounts'
@@ -22,6 +23,7 @@ type TabId =
   | 'auto-rules'
   | 'recurring'
   | 'bank-inboxes'
+  | 'teya-sync'
   | 'users';
 
 interface TabDef {
@@ -41,6 +43,7 @@ const TABS: TabDef[] = [
   { id: 'auto-rules', label: 'Автоправила', icon: <Zap size={16} />, enabled: true },
   { id: 'recurring', label: 'Регулярки', icon: <Repeat size={16} />, enabled: true },
   { id: 'bank-inboxes', label: 'Банк-приймач', icon: <Mail size={16} />, enabled: true },
+  { id: 'teya-sync', label: 'Teya sync', icon: <CreditCard size={16} />, enabled: true },
   { id: 'users', label: 'Користувачі', icon: <UserCog size={16} />, enabled: false },
 ];
 
@@ -122,6 +125,7 @@ export default function FinanceSettingsPage() {
           {activeTab === 'auto-rules' && <AutoRulesTab />}
           {activeTab === 'recurring' && <RecurringTemplatesTab />}
           {activeTab === 'bank-inboxes' && <BankInboxesTab />}
+          {activeTab === 'teya-sync' && <TeyaSyncTab />}
         </main>
       </div>
     </div>
