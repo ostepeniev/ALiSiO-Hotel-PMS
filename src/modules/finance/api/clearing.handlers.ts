@@ -10,8 +10,24 @@ function orgId(db: any): string {
 }
 
 /**
+ * Look up the most recent FX rate for currency → CZK from
+ * finance_exchange_rates. Falls back to null if no rate is recorded
+ * (caller should display source currency only in that case).
+ */
+function getRateToCzk(db: any, orgId: string, fromCurrency: string): number | null {
+  if (fromCurrency === 'CZK') return 1;
+  const row = db.prepare(`
+    SELECT rate FROM finance_exchange_rates
+    WHERE organization_id = ? AND from_currency = ? AND to_currency = 'CZK'
+    ORDER BY effective_from DESC LIMIT 1
+  `).get(orgId, fromCurrency) as { rate: number } | undefined;
+  return row?.rate ?? null;
+}
+
+/**
  * GET /api/finance/clearing
  * Returns all clearing accounts with computed balances + receivable counts.
+ * Also returns CZK equivalents per account using the latest FX rate.
  */
 export async function listClearingAccounts(_request: NextRequest): Promise<NextResponse> {
   try {
@@ -26,17 +42,28 @@ export async function listClearingAccounts(_request: NextRequest): Promise<NextR
 
     const enriched = accounts.map((a) => {
       const bal = getClearingBalance(db, a.id);
-      return { ...a, ...bal };
+      const rate = getRateToCzk(db, org, a.currency);
+      const outstanding_czk = rate != null ? +(bal.outstanding * rate).toFixed(2) : null;
+      const paid_total_czk = rate != null ? +(bal.paid_total * rate).toFixed(2) : null;
+      return { ...a, ...bal, fx_rate_to_czk: rate, outstanding_czk, paid_total_czk };
     });
 
     const totals = enriched.reduce(
       (acc, a) => {
         acc.outstanding[a.currency] = (acc.outstanding[a.currency] || 0) + a.outstanding;
         acc.paid_total[a.currency] = (acc.paid_total[a.currency] || 0) + a.paid_total;
+        if (a.outstanding_czk != null) acc.outstanding_czk_sum += a.outstanding_czk;
+        if (a.paid_total_czk != null) acc.paid_total_czk_sum += a.paid_total_czk;
         acc.receivable_count += a.receivable_count;
         return acc;
       },
-      { outstanding: {} as Record<string, number>, paid_total: {} as Record<string, number>, receivable_count: 0 },
+      {
+        outstanding: {} as Record<string, number>,
+        paid_total: {} as Record<string, number>,
+        outstanding_czk_sum: 0,
+        paid_total_czk_sum: 0,
+        receivable_count: 0,
+      },
     );
 
     return NextResponse.json({ accounts: enriched, totals });
@@ -77,7 +104,11 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
       SELECT
         rcv.*,
         fa.name AS clearing_account_name, fa.color AS clearing_account_color,
-        r.guest_id, r.total_price, r.payment_status,
+        r.guest_id, r.total_price AS reservation_total_czk,
+        r.total_rate_eur AS reservation_total_eur,
+        r.commission_eur AS reservation_commission_eur,
+        r.net_rate_eur AS reservation_net_eur,
+        r.payment_status,
         g.first_name, g.last_name,
         u.name AS unit_name
       FROM fin_channel_receivables rcv
@@ -90,10 +121,25 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
       LIMIT ${limit}
     `).all(...params) as any[];
 
-    const items = rows.map((r) => ({
-      ...r,
-      guest_name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || '—',
-    }));
+    // Pre-compute FX rates per currency present in result set
+    const currencies = new Set<string>(rows.map((r) => r.currency));
+    const rates: Record<string, number | null> = {};
+    for (const cur of currencies) rates[cur] = getRateToCzk(db, org, cur);
+
+    const items = rows.map((r) => {
+      const rate = rates[r.currency];
+      const expected_net_czk = rate != null ? +(r.expected_net * rate).toFixed(2) : null;
+      const reservation_vs_receivable_diff_czk = (rate != null && r.reservation_total_czk)
+        ? +(r.reservation_total_czk - (r.gross_amount * rate)).toFixed(2)
+        : null;
+      return {
+        ...r,
+        guest_name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || '—',
+        fx_rate_to_czk: rate,
+        expected_net_czk,
+        reservation_vs_receivable_diff_czk,
+      };
+    });
 
     return NextResponse.json({ items, count: items.length });
   } catch (error: any) {

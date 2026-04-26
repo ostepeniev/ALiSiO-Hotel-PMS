@@ -14,6 +14,9 @@ interface ClearingAccount {
   paid_total: number;
   outstanding: number;
   receivable_count: number;
+  fx_rate_to_czk: number | null;
+  outstanding_czk: number | null;
+  paid_total_czk: number | null;
 }
 
 interface Receivable {
@@ -36,6 +39,10 @@ interface Receivable {
   unit_name: string | null;
   clearing_account_name: string;
   clearing_account_color: string | null;
+  reservation_total_czk: number | null;
+  fx_rate_to_czk: number | null;
+  expected_net_czk: number | null;
+  reservation_vs_receivable_diff_czk: number | null;
 }
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -209,6 +216,12 @@ export default function ClearingPage() {
             <div style={{ fontSize: 22, fontWeight: 700, color: a.outstanding > 0 ? a.color || 'inherit' : 'var(--text-secondary)' }}>
               {fmtMoney(a.outstanding, a.currency)}
             </div>
+            {a.outstanding_czk != null && a.currency !== 'CZK' && (
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                ≈ {fmtMoney(a.outstanding_czk, 'CZK')}
+                {a.fx_rate_to_czk && <span style={{ opacity: 0.7 }}> @ {a.fx_rate_to_czk.toFixed(3)}</span>}
+              </div>
+            )}
             <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               <div>Очікується: <b>{fmtMoney(a.expected, a.currency)}</b> ({a.receivable_count})</div>
               {a.in_statement > 0 && <div style={{ color: '#3b82f6' }}>У виписці: <b>{fmtMoney(a.in_statement, a.currency)}</b></div>}
@@ -229,7 +242,7 @@ export default function ClearingPage() {
             <option value="auto">Авто-визначення</option>
             <option value="booking">Booking.com (CSV)</option>
             <option value="vrbo">VRBO (CSV)</option>
-            <option value="airbnb" disabled>Airbnb (TBD)</option>
+            <option value="airbnb">Airbnb (CSV)</option>
           </select>
           <input
             ref={fileInputRef}
@@ -361,6 +374,9 @@ export default function ClearingPage() {
                 <th style={{ ...th, textAlign: 'right' }}>Брутто</th>
                 <th style={{ ...th, textAlign: 'right' }}>Очік. комісія</th>
                 <th style={{ ...th, textAlign: 'right' }}>Очік. нетто</th>
+                <th style={{ ...th, textAlign: 'right' }}>≈ CZK</th>
+                <th style={{ ...th, textAlign: 'right' }}>PMS (CZK)</th>
+                <th style={{ ...th, textAlign: 'right' }}>Δ CZK</th>
                 <th style={{ ...th, textAlign: 'right' }}>Факт. нетто</th>
                 <th style={th}>Статус</th>
                 <th style={th}>Payout</th>
@@ -390,6 +406,15 @@ export default function ClearingPage() {
                     </td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#22c55e', fontWeight: 600 }}>
                       {fmtMoney(r.expected_net, r.currency)}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 11 }}>
+                      {r.expected_net_czk != null ? fmtMoney(r.expected_net_czk, 'CZK') : '—'}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)', fontSize: 11 }}>
+                      {r.reservation_total_czk != null ? fmtMoney(r.reservation_total_czk, 'CZK') : '—'}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 11, color: r.reservation_vs_receivable_diff_czk == null ? 'var(--text-secondary)' : Math.abs(r.reservation_vs_receivable_diff_czk) > 100 ? '#ef4444' : '#22c55e' }}>
+                      {r.reservation_vs_receivable_diff_czk != null ? `${r.reservation_vs_receivable_diff_czk >= 0 ? '+' : ''}${fmtMoney(r.reservation_vs_receivable_diff_czk, 'CZK')}` : '—'}
                     </td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: r.actual_net != null ? '#22c55e' : 'var(--text-secondary)' }}>
                       {fmtMoney(r.actual_net, r.currency)}
