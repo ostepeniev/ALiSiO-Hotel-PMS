@@ -129,14 +129,27 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
     const items = rows.map((r) => {
       const rate = rates[r.currency];
       const expected_net_czk = rate != null ? +(r.expected_net * rate).toFixed(2) : null;
+
+      // Δ EUR — the real reconciliation diff: Hostex's stored gross vs the
+      // statement's reported gross. Both in source currency (EUR for most),
+      // so no FX involved. Non-null only when statement was uploaded.
+      const gross_diff_source_currency = r.actual_gross != null
+        ? +(r.actual_gross - r.gross_amount).toFixed(2)
+        : null;
+
+      // Δ CZK — informational only. Reservation total stored at sync time
+      // converted at THAT day's rate; statement gross converted at TODAY's
+      // rate. Differences here are FX volatility, not data errors.
       const reservation_vs_receivable_diff_czk = (rate != null && r.reservation_total_czk)
         ? +(r.reservation_total_czk - (r.gross_amount * rate)).toFixed(2)
         : null;
+
       return {
         ...r,
         guest_name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || '—',
         fx_rate_to_czk: rate,
         expected_net_czk,
+        gross_diff_source_currency,
         reservation_vs_receivable_diff_czk,
       };
     });

@@ -310,6 +310,7 @@ export function applyStatementToReceivables(
   const updateMatched = db.prepare(`
     UPDATE fin_channel_receivables
     SET status = CASE WHEN status = 'paid' THEN status ELSE 'in_statement' END,
+        actual_gross = ?,
         actual_commission = ?,
         actual_net = ?,
         statement_payout_id = ?,
@@ -360,6 +361,7 @@ export function applyStatementToReceivables(
       }
 
       updateMatched.run(
+        row.gross_amount,
         row.commission_amount,
         row.net_amount,
         row.payout_id,

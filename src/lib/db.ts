@@ -3198,6 +3198,17 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
+  // PR #20: add actual_gross to fin_channel_receivables for EUR-level reconciliation.
+  // Statement-uploaded gross can differ from Hostex-stored gross (post-stay refunds,
+  // partial cancellations, tariff changes). Comparing both reveals real discrepancies.
+  try {
+    const recvCols = database.prepare("PRAGMA table_info(fin_channel_receivables)").all() as { name: string }[];
+    if (recvCols.length > 0 && !recvCols.some((c) => c.name === 'actual_gross')) {
+      database.exec("ALTER TABLE fin_channel_receivables ADD COLUMN actual_gross REAL");
+      console.log('[DB] PR #20: added actual_gross column to fin_channel_receivables');
+    }
+  } catch (e: any) { console.log('[DB] PR #20 actual_gross migration:', e.message); }
+
   // PR #16: track manual statement uploads (Booking/Airbnb/VRBO XLSX/CSV)
   database.exec(`
     CREATE TABLE IF NOT EXISTS fin_statement_uploads (
