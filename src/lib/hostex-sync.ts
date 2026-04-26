@@ -11,6 +11,7 @@ import {
   updateReservationCustomField,
   type HostexReservation,
 } from './hostex';
+import { upsertReceivableForReservation } from '@/modules/finance/data/clearing-engine';
 
 // Public URL of the PMS (used to build guest page links sent to Hostex)
 const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
@@ -305,6 +306,24 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       if (!hasPay) createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
     }
 
+    // PR #15: upsert clearing receivable for channel-sourced bookings
+    try {
+      const isEurChannel = ['airbnb', 'vrbo'].includes(mapChannelToSource(res.channel_type));
+      const recvCurrency = isEurChannel || (totalEur && totalEur > 0) ? 'EUR' : 'CZK';
+      const recvAmount = recvCurrency === 'EUR' && totalEur ? totalEur : totalCzk;
+      upsertReceivableForReservation(db, {
+        reservationId: existing.id,
+        organizationId: ORG_ID,
+        hostexChannelType: res.channel_type,
+        externalReservationId: res.channel_id,
+        grossAmount: recvAmount,
+        currency: recvCurrency,
+        checkIn, checkOut,
+        status: finalStatus as any,
+        commissionAmount: commissionEur && commissionEur > 0 ? commissionEur : null,
+      });
+    } catch (e: any) { console.log('[Hostex] receivable upsert error:', e.message); }
+
     // Push guest page URL to Hostex as custom field → use {{cf.guest_page_url}} in message templates
     const activeToken = newToken || existingToken;
     if (activeToken) {
@@ -356,6 +375,24 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
     if (paymentInfo.isPrepaid && totalCzk > 0) {
       createAutoPayment(db, newId, totalCzk, res.channel_type, res.booked_at);
     }
+
+    // PR #15: upsert clearing receivable for channel-sourced bookings
+    try {
+      const isEurChannel = ['airbnb', 'vrbo'].includes(mapChannelToSource(res.channel_type));
+      const recvCurrency = isEurChannel || (totalEur && totalEur > 0) ? 'EUR' : 'CZK';
+      const recvAmount = recvCurrency === 'EUR' && totalEur ? totalEur : totalCzk;
+      upsertReceivableForReservation(db, {
+        reservationId: newId,
+        organizationId: ORG_ID,
+        hostexChannelType: res.channel_type,
+        externalReservationId: res.channel_id,
+        grossAmount: recvAmount,
+        currency: recvCurrency,
+        checkIn, checkOut,
+        status: status as any,
+        commissionAmount: commissionEur && commissionEur > 0 ? commissionEur : null,
+      });
+    } catch (e: any) { console.log('[Hostex] receivable upsert error:', e.message); }
 
     if (guestPageToken) {
       const guestPageUrl = `${PMS_BASE_URL}/guest/${guestPageToken}`;

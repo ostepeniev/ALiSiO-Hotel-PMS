@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 
-const ALLOWED_TYPES = ['cash', 'bank', 'card', 'investment', 'other'];
+const ALLOWED_TYPES = ['cash', 'bank', 'card', 'investment', 'clearing', 'other'];
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;

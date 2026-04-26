@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3 } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 import ExportButton from '../_components/ExportButton';
 
@@ -116,6 +116,9 @@ export default function OperationsPage() {
           params={{ from, to, op_type: filterType, search: search.trim() }}
         />
 
+        <Link href="/finance/clearing" style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)', textDecoration: 'none' }}>
+          <Wallet size={16} /> Clearing
+        </Link>
         <Link href="/finance/reports" style={{ ...btn, background: 'var(--bg-secondary)', color: 'var(--text-primary)', textDecoration: 'none' }}>
           <BarChart3 size={16} /> Звіти
         </Link>
