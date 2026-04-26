@@ -6,6 +6,8 @@ import { eventBus } from '@core/event-bus';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 // TODO: replace with eventBus.emit('crm.payment_received') when crm module is migrated
 import { onPaymentReceived } from '@/lib/crm/stage-transitions';
+// TODO: replace with eventBus subscription in @finance once subscriber bootstrap exists
+import { generateInvoiceForReservation } from '@finance';
 
 function resolveIntentKind(metadata: Record<string, string> | undefined): string {
   const source = metadata?.source || '';
@@ -147,6 +149,27 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
   if (result1.changes > 0 || result2.changes > 0) recordPayment(db, paymentRef, amount, currency);
   if (result1.changes > 0) sendWidgetOrderTG(db, paymentRef, currency);
   if (result2.changes > 0) sendGuestOrderTG(db, paymentRef, currency);
+
+  // Auto-generate invoice when a reservation transitions to fully paid via webhook.
+  // Until now this only happened on manual PATCH (admin marking paid). Public Teya
+  // payments would mark payment_status='paid' but never call generateInvoiceForReservation,
+  // leaving recently-paid bookings without an invoice (PAVEL MICHALEK, Ann-Kathrin Rechner).
+  if (result3.changes > 0 || result4.changes > 0) {
+    try {
+      const paid = db.prepare(`
+        SELECT DISTINCT r.id FROM reservations r
+        WHERE r.payment_status = 'paid'
+          AND (r.payment_id = ?
+               OR r.id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ? AND reservation_id IS NOT NULL))
+      `).all(paymentRef, paymentRef) as Array<{ id: string }>;
+      for (const row of paid) {
+        const invId = generateInvoiceForReservation(row.id);
+        console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
+      }
+    } catch (e: any) {
+      console.error('[Teya Webhook] Auto-invoice error:', e.message);
+    }
+  }
 
   try {
     const leadByPayment = db.prepare(`

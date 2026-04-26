@@ -86,17 +86,22 @@ export default function BookingViewModal({
   }, [b?.id, b?.payment_status]);
 
   const handleReissue = async () => {
-    if (!invoice) return;
-    if (!confirm(`Перевиставити фактуру ${invoice.invoice_number}? Стара буде скасована.`)) return;
+    const isFresh = !invoice;
+    const confirmMsg = isFresh
+      ? 'Згенерувати фактуру для цього бронювання?'
+      : `Перевиставити фактуру ${invoice!.invoice_number}? Стара буде скасована.`;
+    if (!confirm(confirmMsg)) return;
     setReissuing(true);
     try {
       const res = await fetch(`/api/bookings/${b.id}/invoice/reissue`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         setInvoice(data.invoice);
-        showToast(`✅ Фактуру ${data.invoice.invoice_number} перевиставлено`);
+        showToast(isFresh
+          ? `✅ Фактуру ${data.invoice.invoice_number} створено`
+          : `✅ Фактуру ${data.invoice.invoice_number} перевиставлено`);
       } else {
-        showToast('❌ Помилка перевиставлення');
+        showToast(isFresh ? '❌ Помилка створення' : '❌ Помилка перевиставлення');
       }
     } catch { showToast('❌ Помилка'); }
     finally { setReissuing(false); }
@@ -370,9 +375,14 @@ export default function BookingViewModal({
                   </button>
                 </div>
               ) : isPaid ? (
-                <div style={{ marginTop: 8, padding: '10px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Receipt size={14} />
-                  Інвойс ще не згенеровано
+                <div style={{ marginTop: 8, padding: '10px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Receipt size={14} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1 }}>Інвойс ще не згенеровано</span>
+                  <button className="btn btn-sm btn-primary" style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={handleReissue} disabled={reissuing}>
+                    {reissuing ? <Loader2 size={12} className="animate-spin" /> : <Receipt size={12} />}
+                    Згенерувати
+                  </button>
                 </div>
               ) : null}
             </div>
