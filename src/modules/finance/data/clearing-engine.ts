@@ -203,6 +203,80 @@ export function backfillReceivables(db: any, orgId: string): number {
 }
 
 /**
+ * Try to match an incoming bank operation to outstanding receivables.
+ *
+ * Matching rules (in order of preference):
+ *   1. By statement_payout_id → all receivables sharing the payout_id whose
+ *      sum(actual_net) ≈ op.amount within tolerance → mark them all paid.
+ *      Booking.com works this way (one bank transfer settles many bookings).
+ *   2. Single receivable with matching amount + currency + date ±5 days.
+ *      VRBO works this way (one bank transfer per booking).
+ *
+ * Returns the list of receivable IDs that got linked to this op, or [] when
+ * no match was found.
+ */
+export function tryMatchBankOpToReceivables(
+  db: any,
+  orgId: string,
+  opId: string,
+  opAmount: number,
+  opCurrency: string,
+  opDate: string,
+): string[] {
+  if (opAmount <= 0) return [];
+  const tolerance = Math.max(0.5, opAmount * 0.005); // 0.5% or 0.50, whichever bigger
+
+  // Strategy 1: payout-group match (Booking.com)
+  const groups = db.prepare(`
+    SELECT statement_payout_id, SUM(COALESCE(actual_net, expected_net)) AS total, COUNT(*) AS n
+    FROM fin_channel_receivables
+    WHERE organization_id = ? AND status = 'in_statement'
+      AND statement_payout_id IS NOT NULL
+      AND currency = ?
+    GROUP BY statement_payout_id
+    HAVING ABS(SUM(COALESCE(actual_net, expected_net)) - ?) <= ?
+    ORDER BY ABS(SUM(COALESCE(actual_net, expected_net)) - ?) ASC
+    LIMIT 1
+  `).get(orgId, opCurrency, opAmount, tolerance, opAmount) as { statement_payout_id: string; total: number; n: number } | undefined;
+
+  if (groups) {
+    const ids = db.prepare(`
+      SELECT id FROM fin_channel_receivables
+      WHERE organization_id = ? AND statement_payout_id = ? AND status = 'in_statement'
+    `).all(orgId, groups.statement_payout_id) as { id: string }[];
+    db.prepare(`
+      UPDATE fin_channel_receivables
+      SET status = 'paid', paid_operation_id = ?, updated_at = datetime('now')
+      WHERE statement_payout_id = ? AND status = 'in_statement' AND organization_id = ?
+    `).run(opId, groups.statement_payout_id, orgId);
+    return ids.map((r) => r.id);
+  }
+
+  // Strategy 2: single-row match (VRBO and direct cases)
+  const single = db.prepare(`
+    SELECT id FROM fin_channel_receivables
+    WHERE organization_id = ? AND status IN ('in_statement', 'expected')
+      AND currency = ?
+      AND ABS(COALESCE(actual_net, expected_net) - ?) <= ?
+      AND ABS(julianday(?) - julianday(COALESCE(statement_payout_date, check_out))) <= 5
+    ORDER BY ABS(COALESCE(actual_net, expected_net) - ?) ASC,
+             ABS(julianday(?) - julianday(COALESCE(statement_payout_date, check_out))) ASC
+    LIMIT 1
+  `).get(orgId, opCurrency, opAmount, tolerance, opDate, opAmount, opDate) as { id: string } | undefined;
+
+  if (single) {
+    db.prepare(`
+      UPDATE fin_channel_receivables
+      SET status = 'paid', paid_operation_id = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(opId, single.id);
+    return [single.id];
+  }
+
+  return [];
+}
+
+/**
  * Compute clearing-account balance: sum of (expected|in_statement) receivables
  * minus settled (paid) receivables. Returns net "platform owes us" amount.
  *
