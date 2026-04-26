@@ -3094,30 +3094,45 @@ function runMigrations(database: any) {
       const hasClearingType = schemaRow?.sql?.includes("'clearing'") ?? false;
 
       if (!hasClearingType) {
-        database.exec(`
-          CREATE TABLE finance_accounts_pr15 (
-            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-            organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'card', 'investment', 'clearing', 'other')),
-            currency TEXT NOT NULL DEFAULT 'CZK',
-            initial_balance REAL NOT NULL DEFAULT 0,
-            credit_limit REAL,
-            iban TEXT,
-            color TEXT DEFAULT '#6366f1',
-            is_active INTEGER NOT NULL DEFAULT 1,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-          );
-          INSERT INTO finance_accounts_pr15
-            (id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, is_active, sort_order, created_at)
-          SELECT id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, is_active, sort_order, created_at
-          FROM finance_accounts;
-          DROP TABLE finance_accounts;
-          ALTER TABLE finance_accounts_pr15 RENAME TO finance_accounts;
-          CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id);
-          CREATE INDEX IF NOT EXISTS idx_fin_acct_iban ON finance_accounts(iban);
-        `);
+        // Clean up any orphan from a prior failed swap attempt (PR #18 hotfix:
+        // first run failed at DROP TABLE because of FK references from
+        // fin_operations.account_from_id/account_to_id, leaving the new table
+        // behind. CREATE then errors with "table already exists" on retry.)
+        database.exec("DROP TABLE IF EXISTS finance_accounts_pr15");
+
+        // Disable FK enforcement during swap so DROP TABLE doesn't fail on
+        // referenced rows. References in dependent tables (fin_operations,
+        // bank_transactions) auto-migrate to the renamed table because they
+        // store account_id strings, not row pointers.
+        database.pragma('foreign_keys = OFF');
+        try {
+          database.exec(`
+            CREATE TABLE finance_accounts_pr15 (
+              id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+              organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+              name TEXT NOT NULL,
+              type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'card', 'investment', 'clearing', 'other')),
+              currency TEXT NOT NULL DEFAULT 'CZK',
+              initial_balance REAL NOT NULL DEFAULT 0,
+              credit_limit REAL,
+              iban TEXT,
+              color TEXT DEFAULT '#6366f1',
+              is_active INTEGER NOT NULL DEFAULT 1,
+              sort_order INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO finance_accounts_pr15
+              (id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, is_active, sort_order, created_at)
+            SELECT id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, is_active, sort_order, created_at
+            FROM finance_accounts;
+            DROP TABLE finance_accounts;
+            ALTER TABLE finance_accounts_pr15 RENAME TO finance_accounts;
+            CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id);
+            CREATE INDEX IF NOT EXISTS idx_fin_acct_iban ON finance_accounts(iban);
+          `);
+        } finally {
+          database.pragma('foreign_keys = ON');
+        }
         console.log('[DB] PR #15: rebuilt finance_accounts to allow clearing type');
       }
     }
