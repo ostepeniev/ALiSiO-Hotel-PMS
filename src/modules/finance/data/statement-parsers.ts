@@ -256,9 +256,9 @@ export interface MatchOutcome {
   external_reservation_id: string;
   guest_name: string | null;
   check_in: string;
-  outcome: 'matched' | 'cancelled' | 'unmatched' | 'duplicate';
+  outcome: 'matched' | 'cancelled' | 'unmatched' | 'orphan_created' | 'duplicate';
   receivable_id?: string;
-  reservation_id?: string;
+  reservation_id?: string | null;
   amount?: number;
   currency?: string;
   message?: string;
@@ -269,11 +269,12 @@ export function applyStatementToReceivables(
   orgId: string,
   channel: StatementChannel,
   rows: StatementRow[],
-): { applied: number; cancelled: number; unmatched: number; outcomes: MatchOutcome[] } {
+): { applied: number; cancelled: number; unmatched: number; orphans_created: number; outcomes: MatchOutcome[] } {
   const outcomes: MatchOutcome[] = [];
   let applied = 0;
   let cancelled = 0;
   let unmatched = 0;
+  let orphans_created = 0;
 
   // Find all clearing accounts for this channel (could be CZK + EUR for Booking)
   const clearingAccounts = db.prepare(`
@@ -295,7 +296,7 @@ export function applyStatementToReceivables(
       });
       unmatched++;
     }
-    return { applied, cancelled, unmatched, outcomes };
+    return { applied, cancelled, unmatched, orphans_created, outcomes };
   }
 
   const placeholders = accountIds.map(() => '?').join(',');
@@ -326,6 +327,47 @@ export function applyStatementToReceivables(
     WHERE id = ? AND status != 'paid'
   `);
 
+  // PR #21: pick the right clearing account for orphan creation. We pick
+  // the first account whose currency matches the row; falls back to the
+  // first account if no currency match (rare, but defensive).
+  const pickClearingAccount = (rowCurrency: string): string => {
+    const exact = clearingAccounts.find((a) => a.currency === rowCurrency);
+    return (exact || clearingAccounts[0]).id;
+  };
+
+  // PR #21: insert an orphan receivable with NULL reservation_id when
+  // the statement row doesn't match anything in PMS. Status starts at
+  // 'in_statement' since we have actual numbers from the statement.
+  // Idempotent via (clearing_account_id, external_reservation_id) uniqueness:
+  // a second upload of the same statement updates the orphan instead of
+  // creating duplicate.
+  const findOrphanReceivable = db.prepare(`
+    SELECT id, status, reservation_id FROM fin_channel_receivables
+    WHERE organization_id = ? AND clearing_account_id = ?
+      AND external_reservation_id = ? AND reservation_id IS NULL
+    LIMIT 1
+  `);
+  const insertOrphan = db.prepare(`
+    INSERT INTO fin_channel_receivables
+      (id, organization_id, reservation_id, clearing_account_id,
+       channel_source, external_reservation_id,
+       gross_amount, expected_commission, expected_net,
+       actual_gross, actual_commission, actual_net,
+       currency, check_in, check_out,
+       status, statement_payout_id, statement_payout_date)
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'in_statement', ?, ?)
+  `);
+  const updateOrphan = db.prepare(`
+    UPDATE fin_channel_receivables
+    SET status = CASE WHEN status = 'paid' THEN status ELSE 'in_statement' END,
+        actual_gross = ?, actual_commission = ?, actual_net = ?,
+        gross_amount = ?, expected_commission = ?, expected_net = ?,
+        currency = ?, check_in = ?, check_out = ?,
+        statement_payout_id = ?, statement_payout_date = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `);
+
   const tx = db.transaction(() => {
     for (const row of rows) {
       const recv = findReceivable.get(orgId, ...accountIds, row.external_reservation_id) as any;
@@ -333,16 +375,66 @@ export function applyStatementToReceivables(
       const isCancelled = row.status && /cancel/i.test(row.status);
 
       if (!recv) {
-        outcomes.push({
-          external_reservation_id: row.external_reservation_id,
-          guest_name: row.guest_name,
-          check_in: row.check_in,
-          outcome: 'unmatched',
-          amount: row.net_amount,
-          currency: row.currency,
-          message: 'No matching reservation in PMS — likely missed by Hostex sync',
-        });
-        unmatched++;
+        // Orphan: no matching PMS reservation. Record what the statement
+        // says so accounting reflects reality — user can investigate the
+        // missing reservation separately (Hostex sync gap).
+        if (isCancelled) {
+          // Cancelled + no PMS reservation → just skip, nothing to record
+          outcomes.push({
+            external_reservation_id: row.external_reservation_id,
+            guest_name: row.guest_name,
+            check_in: row.check_in,
+            outcome: 'unmatched',
+            message: 'Cancelled, no PMS reservation — skipped',
+          });
+          unmatched++;
+          continue;
+        }
+
+        const clearingAccountId = pickClearingAccount(row.currency);
+        const existingOrphan = findOrphanReceivable.get(orgId, clearingAccountId, row.external_reservation_id) as any;
+
+        if (existingOrphan) {
+          updateOrphan.run(
+            row.gross_amount, row.commission_amount, row.net_amount,
+            row.gross_amount, 0, row.net_amount, // expected = actual for orphans
+            row.currency, row.check_in, row.check_out || row.check_in,
+            row.payout_id, row.payout_date,
+            existingOrphan.id,
+          );
+          outcomes.push({
+            external_reservation_id: row.external_reservation_id,
+            guest_name: row.guest_name,
+            check_in: row.check_in,
+            outcome: 'orphan_created',
+            receivable_id: existingOrphan.id,
+            reservation_id: null,
+            amount: row.net_amount,
+            currency: row.currency,
+            message: 'Orphan receivable updated (no PMS reservation)',
+          });
+        } else {
+          const id = `recv_orph_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          insertOrphan.run(
+            id, orgId, clearingAccountId, channel, row.external_reservation_id,
+            row.gross_amount, 0, row.net_amount,         // expected_commission=0, expected_net=actual
+            row.gross_amount, row.commission_amount, row.net_amount,
+            row.currency, row.check_in, row.check_out || row.check_in,
+            row.payout_id, row.payout_date,
+          );
+          outcomes.push({
+            external_reservation_id: row.external_reservation_id,
+            guest_name: row.guest_name,
+            check_in: row.check_in,
+            outcome: 'orphan_created',
+            receivable_id: id,
+            reservation_id: null,
+            amount: row.net_amount,
+            currency: row.currency,
+            message: 'Created orphan receivable (no PMS reservation)',
+          });
+        }
+        orphans_created++;
         continue;
       }
 
@@ -384,7 +476,7 @@ export function applyStatementToReceivables(
   });
   tx();
 
-  return { applied, cancelled, unmatched, outcomes };
+  return { applied, cancelled, unmatched, orphans_created, outcomes };
 }
 
 function channelDisplayName(channel: StatementChannel): string {

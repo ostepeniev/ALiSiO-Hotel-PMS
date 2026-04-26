@@ -45,6 +45,11 @@ interface Receivable {
   expected_net_czk: number | null;
   gross_diff_source_currency: number | null;
   reservation_vs_receivable_diff_czk: number | null;
+  is_orphan: number;
+}
+
+interface UploadResultExtended extends UploadResult {
+  orphans_created?: number;
 }
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
@@ -270,10 +275,15 @@ export default function ClearingPage() {
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>({uploadResult.channel}, {uploadResult.total_rows} рядків)</span>
             <button onClick={() => setUploadResult(null)} style={{ marginLeft: 'auto', ...btn, background: 'transparent' }}>×</button>
           </div>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 13 }}>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 13, flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#22c55e' }}>
               <CheckCircle2 size={14} /> <b>{uploadResult.applied}</b> matched
             </span>
+            {(uploadResult as UploadResultExtended).orphans_created != null && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#a855f7' }}>
+                <AlertCircle size={14} /> <b>{(uploadResult as UploadResultExtended).orphans_created}</b> orphan (без PMS бронювання)
+              </span>
+            )}
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#ef4444' }}>
               <XCircle size={14} /> <b>{uploadResult.cancelled}</b> cancelled
             </span>
@@ -404,8 +414,9 @@ export default function ClearingPage() {
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11 }}>{r.external_reservation_id || '—'}</td>
                     <td style={td}>
-                      <div>{r.guest_name}</div>
+                      <div>{r.guest_name}{r.is_orphan === 1 && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', background: 'rgba(168,85,247,0.15)', color: '#a855f7', borderRadius: 4, fontWeight: 600 }}>ORPHAN</span>}</div>
                       {r.unit_name && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{r.unit_name}</div>}
+                      {r.is_orphan === 1 && <div style={{ fontSize: 11, color: '#a855f7' }}>Без PMS бронювання</div>}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.check_in} → {r.check_out}</td>
                     <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
