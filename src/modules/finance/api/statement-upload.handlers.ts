@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import {
-  parseBookingCsv, parseVrboCsv, applyStatementToReceivables,
+  parseBookingCsv, parseVrboCsv, parseAirbnbCsv, applyStatementToReceivables,
   detectChannelFromCsv, type StatementChannel,
 } from '../data/statement-parsers';
 
@@ -47,7 +47,8 @@ export async function uploadStatement(request: NextRequest): Promise<NextRespons
 
     let rows;
     if (channel === 'booking') rows = parseBookingCsv(text);
-    else if (channel === 'vrbo') rows = parseVrboCsv(text);
+    else if (channel === 'vrbo')    rows = parseVrboCsv(text);
+    else if (channel === 'airbnb')  rows = parseAirbnbCsv(text);
     else {
       return NextResponse.json({ error: `Parser for ${channel} not implemented yet` }, { status: 400 });
     }

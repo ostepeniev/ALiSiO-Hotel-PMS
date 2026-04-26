@@ -393,15 +393,215 @@ function channelDisplayName(channel: StatementChannel): string {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Airbnb monthly transaction CSV parser
+//
+// Format: UTF-8 with BOM, Ukrainian locale headers. Mixed row types:
+//   - "Payout" row     — total bank transfer (no confirmation code)
+//   - "Бронювання"     — reservation, has Confirmation code (HMxxxxxxxx)
+//   - "Компенсація"    — refund/adjustment, has Confirmation code,
+//                        Amount can be negative
+//
+// Layout: Payout row first, then the bookings that make up that payout
+// below it (until the next Payout row).
+//
+// Column mapping (by position, since headers may be mojibake):
+//   0  Date                  | 12 Currency
+//   1  Payout end date       | 13 Amount (NET to host)
+//   2  Type                  | 14 Paid out (often empty)
+//   3  Confirmation code     | 15 Service fee
+//   4  Booking date          | 16 Quick payout fee
+//   5  Check-in              | 17 Cleaning fee
+//   6  Check-out             | 18 Tourist tax
+//   7  Nights                | 19 Pet fee
+//   8  Guest name            | 20 Gross earnings
+//   9  Listing title         | 21 Tax remitted by Airbnb
+//   10 Details               | 22 Year
+//   11 Transaction code (G-...)
+//
+// Aggregation: rows with the same Confirmation code (typically a booking
+// + a later compensation) are summed into one statement row. Net result
+// reflects the final amount the host receives for that reservation.
+// ─────────────────────────────────────────────────────────────────
+
+const AIRBNB_TYPE_PAYOUT = ['payout'];
+const AIRBNB_TYPE_RESERVATION = ['бронювання', 'reservation'];
+const AIRBNB_TYPE_COMPENSATION = ['компенсація', 'компенсация', 'compensation', 'resolution'];
+
+function airbnbType(s: string | undefined): 'payout' | 'reservation' | 'compensation' | 'unknown' {
+  if (!s) return 'unknown';
+  const lower = s.toLowerCase().trim();
+  if (AIRBNB_TYPE_PAYOUT.includes(lower)) return 'payout';
+  if (AIRBNB_TYPE_RESERVATION.some((t) => lower.includes(t))) return 'reservation';
+  if (AIRBNB_TYPE_COMPENSATION.some((t) => lower.includes(t))) return 'compensation';
+  return 'unknown';
+}
+
+export function parseAirbnbCsv(text: string): StatementRow[] {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return [];
+
+  // Position-based access — headers may be UTF-8 mojibake from Excel re-saves
+  const POS = {
+    date: 0,
+    payoutEndDate: 1,
+    type: 2,
+    confirmationCode: 3,
+    checkIn: 5,
+    checkOut: 6,
+    nights: 7,
+    guestName: 8,
+    listing: 9,
+    transactionCode: 11,
+    currency: 12,
+    amount: 13,
+    serviceFee: 15,
+    quickFee: 16,
+    cleaningFee: 17,
+    tax: 18,
+    petFee: 19,
+    grossEarnings: 20,
+  };
+
+  // Aggregate by confirmation code, tracking the most recent payout group
+  type Aggregate = {
+    external_reservation_id: string;
+    guest_name: string | null;
+    check_in: string;
+    check_out: string | null;
+    type_label: string;
+    net_total: number;
+    fees_total: number;
+    gross_total: number;
+    currency: string;
+    payout_id: string | null;
+    payout_date: string | null;
+    is_cancelled: boolean;
+  };
+  const agg = new Map<string, Aggregate>();
+  let currentPayoutCode: string | null = null;
+  let currentPayoutDate: string | null = null;
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const t = airbnbType(r[POS.type]);
+
+    if (t === 'payout') {
+      currentPayoutCode = r[POS.transactionCode]?.trim() || null;
+      currentPayoutDate = parseDate(r[POS.payoutEndDate]) || parseDate(r[POS.date]);
+      continue;
+    }
+
+    if (t !== 'reservation' && t !== 'compensation') continue;
+
+    const code = r[POS.confirmationCode]?.trim();
+    if (!code) continue;
+
+    const amount = parseNum(r[POS.amount]);
+    const serviceFee = parseNum(r[POS.serviceFee]);
+    const quickFee = parseNum(r[POS.quickFee]);
+    const gross = parseNum(r[POS.grossEarnings]);
+    const guestName = r[POS.guestName]?.trim() || null;
+    const checkIn = parseDate(r[POS.checkIn]) || '';
+    const checkOut = parseDate(r[POS.checkOut]);
+    const currency = (r[POS.currency]?.trim() || 'EUR').toUpperCase();
+
+    let entry = agg.get(code);
+    if (!entry) {
+      entry = {
+        external_reservation_id: code,
+        guest_name: guestName,
+        check_in: checkIn,
+        check_out: checkOut,
+        type_label: t,
+        net_total: 0,
+        fees_total: 0,
+        gross_total: 0,
+        currency,
+        payout_id: currentPayoutCode,
+        payout_date: currentPayoutDate,
+        is_cancelled: false,
+      };
+      agg.set(code, entry);
+    }
+
+    entry.net_total += amount;
+    entry.fees_total += serviceFee + quickFee;
+    entry.gross_total += gross;
+
+    // A compensation row with no positive booking → likely full cancellation
+    if (t === 'compensation' && amount < 0 && entry.gross_total === 0) {
+      entry.is_cancelled = true;
+    }
+    // Take the latest payout context (compensation usually issued later)
+    if (currentPayoutCode) {
+      entry.payout_id = currentPayoutCode;
+      entry.payout_date = currentPayoutDate;
+    }
+  }
+
+  const out: StatementRow[] = [];
+  for (const e of agg.values()) {
+    // Skip rows that aggregate to zero (full cancellation refund chain)
+    if (e.net_total === 0 && e.gross_total === 0) {
+      out.push({
+        external_reservation_id: e.external_reservation_id,
+        guest_name: e.guest_name,
+        check_in: e.check_in,
+        check_out: e.check_out,
+        status: 'Cancel',
+        gross_amount: 0,
+        commission_amount: 0,
+        net_amount: 0,
+        currency: e.currency,
+        payout_id: e.payout_id,
+        payout_date: e.payout_date,
+        raw: { aggregated: 'true' },
+      });
+      continue;
+    }
+    const gross = e.gross_total > 0 ? e.gross_total : (e.net_total + e.fees_total);
+    const net = e.net_total;
+    const commission = +(gross - net).toFixed(2);
+    out.push({
+      external_reservation_id: e.external_reservation_id,
+      guest_name: e.guest_name,
+      check_in: e.check_in,
+      check_out: e.check_out,
+      status: e.is_cancelled ? 'Cancel' : 'ok',
+      gross_amount: gross,
+      commission_amount: commission > 0 ? commission : 0,
+      net_amount: net,
+      currency: e.currency,
+      payout_id: e.payout_id,
+      payout_date: e.payout_date,
+      raw: { aggregated: 'true' },
+    });
+  }
+  return out;
+}
+
 /**
  * Auto-detect channel from CSV header signature.
  * Returns null when format is unrecognised.
+ *
+ * Airbnb files often have UTF-8 BOM + mojibake Cyrillic headers, so we
+ * also detect by the presence of HMxxxxxxxx confirmation codes in the
+ * first ~3kb of content.
  */
 export function detectChannelFromCsv(text: string): StatementChannel | null {
-  // Read first line only
-  const firstLine = text.substring(0, Math.min(text.length, 600)).split(/\r?\n/)[0]?.toLowerCase() || '';
+  // Strip BOM for detection
+  const sample = (text.charCodeAt(0) === 0xFEFF ? text.substring(1) : text)
+    .substring(0, Math.min(text.length, 3000));
+  const firstLine = sample.split(/\r?\n/)[0]?.toLowerCase() || '';
+
   if (firstLine.includes('payout id') && firstLine.includes('reference number')) return 'booking';
   if (firstLine.includes('reservation id') && firstLine.includes('property id')) return 'vrbo';
   if (firstLine.includes('confirmation code') || firstLine.includes('listing')) return 'airbnb';
+
+  // Mojibake-safe Airbnb detection: HMxxxxxxxx confirmation codes appear
+  // throughout the file, plus 'Payout' as type literal
+  if (/HM[A-Z0-9]{8}/.test(sample) && /Payout/.test(sample)) return 'airbnb';
+
   return null;
 }
