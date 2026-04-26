@@ -66,6 +66,65 @@ function findExistingOp(db: any, orgId: string, txnId: string): { id: string } |
 }
 
 /**
+ * Rate-limited tick: runs Teya reconciliation if 4 hours have elapsed
+ * since last automatic run. Default window = last 48 hours (overlap is
+ * fine — matched transactions are skipped).
+ *
+ * Skipped silently when Teya creds are missing (TEYA_CLIENT_ID empty).
+ * Errors logged but never thrown — never blocks getDb() bootstrap.
+ */
+const TEYA_TICK_INTERVAL_MS = 4 * 3600 * 1000; // 4 hours
+const TEYA_TICK_LOOKBACK_DAYS = 2;
+
+export async function runTeyaSyncTickIfDue(db: any): Promise<boolean> {
+  if (!process.env.TEYA_CLIENT_ID || !process.env.TEYA_CLIENT_SECRET) {
+    return false;
+  }
+
+  const lastRow = db.prepare("SELECT value FROM fin_system_state WHERE key = 'last_teya_sync_tick'").get() as { value: string } | undefined;
+  const now = Date.now();
+  if (lastRow?.value) {
+    const last = Number(lastRow.value);
+    if (!isNaN(last) && now - last < TEYA_TICK_INTERVAL_MS) return false;
+  }
+
+  // Mark immediately so concurrent calls don't double-trigger
+  db.prepare("INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('last_teya_sync_tick', ?, datetime('now'))")
+    .run(String(now));
+
+  const orgRow = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
+  if (!orgRow) return false;
+
+  const today = new Date();
+  const fromDate = new Date(today.getTime() - TEYA_TICK_LOOKBACK_DAYS * 24 * 3600 * 1000);
+  const from = fromDate.toISOString().substring(0, 10);
+  const to = today.toISOString().substring(0, 10);
+
+  // Run async — don't block. Log result via fin_system_state for UI visibility.
+  reconcileTeyaTransactions(db, orgRow.id, from, to)
+    .then((result) => {
+      db.prepare(`
+        INSERT OR REPLACE INTO fin_system_state (key, value, updated_at)
+        VALUES ('teya_sync_last_run', ?, datetime('now'))
+      `).run(JSON.stringify({
+        from, to,
+        fetched: result.fetched, matched: result.matched,
+        created: result.created, skipped: result.skipped, errors: result.errors,
+        ran_at: new Date().toISOString(),
+        triggered_by: 'auto-tick',
+      }));
+      if (result.created > 0 || result.errors > 0) {
+        console.log(`[Teya tick] window ${from}..${to}: fetched=${result.fetched} matched=${result.matched} created=${result.created} errors=${result.errors}`);
+      }
+    })
+    .catch((e: any) => {
+      console.log('[Teya tick] error:', e.message);
+    });
+
+  return true;
+}
+
+/**
  * Pulls transactions from Teya and reconciles against fin_operations.
  * Loops through pagination cursors until exhausted (capped at 50 pages /
  * 25k records as a safety net).

@@ -61,6 +61,16 @@ export function getDb(): any {
     console.log('[BankInbox] tick-if-due error:', e.message);
   }
 
+  // PR #25: Teya transaction sync if 4h elapsed (async, fire-and-forget,
+  // skipped silently when TEYA_CLIENT_ID env missing)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runTeyaSyncTickIfDue } = require('@/modules/finance/data/teya-reconcile-engine');
+    runTeyaSyncTickIfDue(db);
+  } catch (e: any) {
+    console.log('[Teya] tick-if-due error:', e.message);
+  }
+
   return db;
 }
 
