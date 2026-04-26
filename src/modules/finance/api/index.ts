@@ -228,3 +228,8 @@ export const runAllInboxes   = withPermission('import_bank_data', _runAllInboxes
 export {
   exportOperations, exportCashflow, exportPnl, exportStatement,
 } from './export.handlers';
+
+// ─── Clearing accounts (PR #15) — read + manage_finance_settings ─
+export { listClearingAccounts, listReceivables } from './clearing.handlers';
+import { backfillReceivablesHandler as _backfillReceivablesHandler } from './clearing.handlers';
+export const backfillReceivablesHandler = withPermission('manage_finance_settings', _backfillReceivablesHandler);

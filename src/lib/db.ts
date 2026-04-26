@@ -3074,6 +3074,134 @@ function runMigrations(database: any) {
     }
   } catch { /* */ }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // PR #15: Clearing accounts + channel receivables
+  // ═══════════════════════════════════════════════════════════════════
+  // Adds 'clearing' to finance_accounts.type CHECK constraint, seeds
+  // default clearing accounts (Booking CZK/EUR, Airbnb EUR, VRBO EUR),
+  // creates fin_channel_receivables to track expected payouts per
+  // reservation, and backfills receivables for existing channel-sourced
+  // reservations.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const acctCols = database.prepare("PRAGMA table_info(finance_accounts)").all() as { name: string }[];
+    if (acctCols.length > 0) {
+      // Probe current CHECK constraint by attempting insert with a clearing-typed dummy.
+      // Use sqlite_master to read the actual schema text.
+      const schemaRow = database.prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='finance_accounts'"
+      ).get() as { sql: string } | undefined;
+      const hasClearingType = schemaRow?.sql?.includes("'clearing'") ?? false;
+
+      if (!hasClearingType) {
+        database.exec(`
+          CREATE TABLE finance_accounts_pr15 (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'cash' CHECK (type IN ('cash', 'bank', 'card', 'investment', 'clearing', 'other')),
+            currency TEXT NOT NULL DEFAULT 'CZK',
+            initial_balance REAL NOT NULL DEFAULT 0,
+            credit_limit REAL,
+            iban TEXT,
+            color TEXT DEFAULT '#6366f1',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO finance_accounts_pr15
+            (id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, is_active, sort_order, created_at)
+          SELECT id, organization_id, name, type, currency, initial_balance, credit_limit, iban, color, is_active, sort_order, created_at
+          FROM finance_accounts;
+          DROP TABLE finance_accounts;
+          ALTER TABLE finance_accounts_pr15 RENAME TO finance_accounts;
+          CREATE INDEX IF NOT EXISTS idx_fin_acct_org ON finance_accounts(organization_id);
+          CREATE INDEX IF NOT EXISTS idx_fin_acct_iban ON finance_accounts(iban);
+        `);
+        console.log('[DB] PR #15: rebuilt finance_accounts to allow clearing type');
+      }
+    }
+  } catch (e: any) { console.log('[DB] PR #15 finance_accounts CHECK migration:', e.message); }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_channel_receivables (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      clearing_account_id TEXT NOT NULL REFERENCES finance_accounts(id) ON DELETE CASCADE,
+      channel_source TEXT NOT NULL,
+      external_reservation_id TEXT,
+      gross_amount REAL NOT NULL,
+      expected_commission REAL NOT NULL DEFAULT 0,
+      expected_net REAL NOT NULL,
+      actual_commission REAL,
+      actual_net REAL,
+      currency TEXT NOT NULL,
+      check_in TEXT NOT NULL,
+      check_out TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'expected' CHECK (status IN ('expected', 'in_statement', 'paid', 'cancelled')),
+      statement_payout_id TEXT,
+      statement_payout_date TEXT,
+      paid_operation_id TEXT REFERENCES fin_operations(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (reservation_id, clearing_account_id)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_recv_org ON fin_channel_receivables(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_recv_status ON fin_channel_receivables(status)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_recv_clearing ON fin_channel_receivables(clearing_account_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_recv_extid ON fin_channel_receivables(external_reservation_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_recv_payoutid ON fin_channel_receivables(statement_payout_id)');
+
+  // Seed default clearing accounts (one-time, idempotent via name+org check)
+  try {
+    const orgRow = database.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
+    if (orgRow) {
+      const orgId = orgRow.id;
+      const seeds = [
+        { name: 'Booking.com (CZK)', currency: 'CZK', color: '#003580', sort_order: 901 },
+        { name: 'Booking.com (EUR)', currency: 'EUR', color: '#003580', sort_order: 902 },
+        { name: 'Airbnb (EUR)',      currency: 'EUR', color: '#FF5A5F', sort_order: 903 },
+        { name: 'VRBO (EUR)',        currency: 'EUR', color: '#206A92', sort_order: 904 },
+      ];
+      const insertClearing = database.prepare(`
+        INSERT INTO finance_accounts (id, organization_id, name, type, currency, color, sort_order, is_active)
+        VALUES (?, ?, ?, 'clearing', ?, ?, ?, 1)
+      `);
+      const checkExists = database.prepare(
+        "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND type = 'clearing'"
+      );
+      let seeded = 0;
+      for (const s of seeds) {
+        if (checkExists.get(orgId, s.name)) continue;
+        const id = `acct_clr_${s.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        insertClearing.run(id, orgId, s.name, s.currency, s.color, s.sort_order);
+        seeded++;
+      }
+      if (seeded > 0) console.log(`[DB] PR #15: seeded ${seeded} clearing accounts`);
+    }
+  } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
+
+  // Backfill receivables for existing channel-sourced reservations (one-time)
+  try {
+    const flagRow = database.prepare(
+      "SELECT value FROM fin_system_state WHERE key = 'pr15_receivables_backfilled'"
+    ).get() as { value: string } | undefined;
+    if (!flagRow) {
+      const orgRow = database.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
+      if (orgRow) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { backfillReceivables } = require('@/modules/finance/data/clearing-engine');
+        const count = backfillReceivables(database, orgRow.id);
+        database.prepare(
+          "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+        ).run('pr15_receivables_backfilled', String(count));
+        console.log(`[DB] PR #15: backfilled ${count} channel receivables`);
+      }
+    }
+  } catch (e: any) { console.log('[DB] PR #15 receivables backfill:', e.message); }
+
 }
 
 
