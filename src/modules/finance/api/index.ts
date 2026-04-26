@@ -238,3 +238,10 @@ export const backfillReceivablesHandler = withPermission('manage_finance_setting
 export { listStatementUploads } from './statement-upload.handlers';
 import { uploadStatement as _uploadStatement } from './statement-upload.handlers';
 export const uploadStatement = withPermission('import_bank_data', _uploadStatement);
+
+// ─── Telegram bridge (PR #17) — bot writes via Bearer token, no session ─
+// Auth is handled inside each handler via TELEGRAM_BRIDGE_TOKEN env, so
+// these are NOT wrapped with withPermission (the bot has no user session).
+export {
+  recordTelegramOperation, listTelegramOperations, listTelegramCategories,
+} from './telegram-bridge.handlers';
