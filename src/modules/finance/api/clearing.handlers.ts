@@ -93,6 +93,10 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
     const params: any[] = [org];
     if (accountId) { where.push('rcv.clearing_account_id = ?'); params.push(accountId); }
     if (status) { where.push('rcv.status = ?'); params.push(status); }
+    // PR #21: 'orphan' is a synthetic filter — receivable exists but no PMS reservation
+    const orphanFilter = sp.get('orphan');
+    if (orphanFilter === '1') where.push('rcv.reservation_id IS NULL');
+    if (orphanFilter === '0') where.push('rcv.reservation_id IS NOT NULL');
     if (from) { where.push('rcv.check_in >= ?'); params.push(from); }
     if (to) { where.push('rcv.check_in <= ?'); params.push(to); }
     if (search) {
@@ -100,6 +104,7 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
+    // LEFT JOIN reservations so orphan receivables (reservation_id NULL) appear too
     const rows = db.prepare(`
       SELECT
         rcv.*,
@@ -110,12 +115,13 @@ export async function listReceivables(request: NextRequest): Promise<NextRespons
         r.net_rate_eur AS reservation_net_eur,
         r.payment_status,
         g.first_name, g.last_name,
-        u.name AS unit_name
+        u.name AS unit_name,
+        CASE WHEN rcv.reservation_id IS NULL THEN 1 ELSE 0 END AS is_orphan
       FROM fin_channel_receivables rcv
-      JOIN finance_accounts fa ON fa.id = rcv.clearing_account_id
-      JOIN reservations r      ON r.id = rcv.reservation_id
-      LEFT JOIN guests g       ON g.id = r.guest_id
-      LEFT JOIN units u        ON u.id = r.unit_id
+      JOIN finance_accounts fa     ON fa.id = rcv.clearing_account_id
+      LEFT JOIN reservations r     ON r.id = rcv.reservation_id
+      LEFT JOIN guests g           ON g.id = r.guest_id
+      LEFT JOIN units u            ON u.id = r.unit_id
       WHERE ${where.join(' AND ')}
       ORDER BY rcv.check_in DESC
       LIMIT ${limit}

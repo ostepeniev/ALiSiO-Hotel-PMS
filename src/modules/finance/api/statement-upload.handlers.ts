@@ -59,7 +59,7 @@ export async function uploadStatement(request: NextRequest): Promise<NextRespons
 
     const result = applyStatementToReceivables(db, org, channel, rows);
 
-    // Persist upload record
+    // Persist upload record (orphans counted as applied for activity log purposes)
     const uploadId = `upl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     db.prepare(`
       INSERT INTO fin_statement_uploads
@@ -67,7 +67,10 @@ export async function uploadStatement(request: NextRequest): Promise<NextRespons
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       uploadId, org, channel, file.name,
-      rows.length, result.applied, result.cancelled, result.unmatched,
+      rows.length,
+      result.applied + result.orphans_created,
+      result.cancelled,
+      result.unmatched,
     );
 
     return NextResponse.json({
@@ -77,6 +80,7 @@ export async function uploadStatement(request: NextRequest): Promise<NextRespons
       file_name: file.name,
       total_rows: rows.length,
       applied: result.applied,
+      orphans_created: result.orphans_created,
       cancelled: result.cancelled,
       unmatched: result.unmatched,
       outcomes: result.outcomes,

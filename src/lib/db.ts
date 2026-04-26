@@ -3198,6 +3198,66 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
+  // PR #21: allow orphan receivables (reservation_id NULL).
+  // When a statement upload has rows that don't match any PMS reservation
+  // (Hostex sync gap, missed bookings), we still record the receivable so
+  // accounting reflects what the platform paid. The UI surfaces orphans
+  // distinctly so user can investigate / link later.
+  try {
+    const recvCols = database.prepare("PRAGMA table_info(fin_channel_receivables)").all() as { name: string; notnull: number }[];
+    const ridCol = recvCols.find((c) => c.name === 'reservation_id');
+    if (ridCol && ridCol.notnull === 1) {
+      // SQLite can't drop NOT NULL via ALTER — rebuild table preserving data.
+      database.pragma('foreign_keys = OFF');
+      try {
+        database.exec(`
+          CREATE TABLE fin_channel_receivables_pr21 (
+            id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+            reservation_id TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+            clearing_account_id TEXT NOT NULL REFERENCES finance_accounts(id) ON DELETE CASCADE,
+            channel_source TEXT NOT NULL,
+            external_reservation_id TEXT,
+            gross_amount REAL NOT NULL,
+            expected_commission REAL NOT NULL DEFAULT 0,
+            expected_net REAL NOT NULL,
+            actual_gross REAL,
+            actual_commission REAL,
+            actual_net REAL,
+            currency TEXT NOT NULL,
+            check_in TEXT NOT NULL,
+            check_out TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'expected' CHECK (status IN ('expected', 'in_statement', 'paid', 'cancelled')),
+            statement_payout_id TEXT,
+            statement_payout_date TEXT,
+            paid_operation_id TEXT REFERENCES fin_operations(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (reservation_id, clearing_account_id, external_reservation_id)
+          );
+          INSERT INTO fin_channel_receivables_pr21
+            SELECT id, organization_id, reservation_id, clearing_account_id,
+                   channel_source, external_reservation_id, gross_amount,
+                   expected_commission, expected_net, actual_gross,
+                   actual_commission, actual_net, currency, check_in, check_out,
+                   status, statement_payout_id, statement_payout_date,
+                   paid_operation_id, created_at, updated_at
+            FROM fin_channel_receivables;
+          DROP TABLE fin_channel_receivables;
+          ALTER TABLE fin_channel_receivables_pr21 RENAME TO fin_channel_receivables;
+          CREATE INDEX IF NOT EXISTS idx_recv_org ON fin_channel_receivables(organization_id);
+          CREATE INDEX IF NOT EXISTS idx_recv_status ON fin_channel_receivables(status);
+          CREATE INDEX IF NOT EXISTS idx_recv_clearing ON fin_channel_receivables(clearing_account_id);
+          CREATE INDEX IF NOT EXISTS idx_recv_extid ON fin_channel_receivables(external_reservation_id);
+          CREATE INDEX IF NOT EXISTS idx_recv_payoutid ON fin_channel_receivables(statement_payout_id);
+        `);
+        console.log('[DB] PR #21: rebuilt fin_channel_receivables to allow NULL reservation_id (orphan receivables)');
+      } finally {
+        database.pragma('foreign_keys = ON');
+      }
+    }
+  } catch (e: any) { console.log('[DB] PR #21 orphan receivables migration:', e.message); }
+
   // PR #20: add actual_gross to fin_channel_receivables for EUR-level reconciliation.
   // Statement-uploaded gross can differ from Hostex-stored gross (post-stay refunds,
   // partial cancellations, tariff changes). Comparing both reveals real discrepancies.
