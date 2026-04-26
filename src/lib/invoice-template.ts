@@ -9,31 +9,33 @@
  * Also respects Zákon č. 563/1991 Sb. (Zákon o účetnictví)
  */
 
-// Inline type — avoids cross-module coupling for a pure template helper
+// Inline type — avoids cross-module coupling for a pure template helper.
+// Many fields are nullable because the SQL uses LEFT JOIN on units/guests,
+// so a deleted unit or guest produces a row with nulls instead of dropping it.
 export interface InvoiceData {
   id: string;
-  invoice_number: string;
-  issued_at: string;
-  due_date: string;
-  amount: number;
-  currency: string;
-  status: string;
-  reservation_id: string;
-  check_in: string;
-  check_out: string;
-  nights: number;
-  adults: number;
-  children: number;
-  unit_name: string;
-  unit_code?: string;
-  guest_first_name: string;
-  guest_last_name: string;
-  guest_email?: string;
-  guest_address?: string;
-  guest_city?: string;
-  guest_country?: string;
-  payment_method?: string;
-  payment_notes?: string;
+  invoice_number: string | null;
+  issued_at: string | null;
+  due_date: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  reservation_id: string | null;
+  check_in: string | null;
+  check_out: string | null;
+  nights: number | null;
+  adults: number | null;
+  children: number | null;
+  unit_name: string | null;
+  unit_code?: string | null;
+  guest_first_name: string | null;
+  guest_last_name: string | null;
+  guest_email?: string | null;
+  guest_address?: string | null;
+  guest_city?: string | null;
+  guest_country?: string | null;
+  payment_method?: string | null;
+  payment_notes?: string | null;
 }
 
 const SUPPLIER = {
@@ -58,23 +60,29 @@ const PAYMENT_METHODS: Record<string, string> = {
   booking_platform: 'OTA platforma',
 };
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function formatAmount(amount: number, currency = 'CZK'): string {
-  return new Intl.NumberFormat('cs-CZ', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+function formatAmount(amount: number | null | undefined, currency = 'CZK'): string {
+  const safe = typeof amount === 'number' && isFinite(amount) ? amount : 0;
+  const safeCur = currency || 'CZK';
+  try {
+    return new Intl.NumberFormat('cs-CZ', {
+      style: 'currency',
+      currency: safeCur,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(safe);
+  } catch {
+    return `${safe.toFixed(2)} ${safeCur}`;
+  }
 }
 
-function formatCountry(code?: string): string {
+function formatCountry(code: string | null | undefined): string {
   if (!code) return '';
   const countries: Record<string, string> = {
     CZ: 'Česká republika', SK: 'Slovensko', DE: 'Německo', AT: 'Rakousko',
@@ -85,10 +93,20 @@ function formatCountry(code?: string): string {
 }
 
 export function renderInvoiceHtml(data: InvoiceData): string {
-  const guestName = `${data.guest_first_name} ${data.guest_last_name}`;
+  // Defensive: any of these can arrive as null from a LEFT JOIN with deleted
+  // units/guests, or from legacy rows that pre-date a column being NOT NULL.
+  const invoiceNumber = data.invoice_number || data.id || '—';
+  const variableSymbol = invoiceNumber.replace(/-/g, '') || '0';
+  const guestFirst = data.guest_first_name || '';
+  const guestLast = data.guest_last_name || '';
+  const guestName = `${guestFirst} ${guestLast}`.trim() || 'Host neznámý';
   const paymentMethod = PAYMENT_METHODS[data.payment_method || ''] || data.payment_method || 'Hotovost';
-  const unitLabel = `${data.unit_name}${data.unit_code ? ` (${data.unit_code})` : ''}`;
+  const unitName = data.unit_name || 'Ubytovací jednotka';
+  const unitLabel = `${unitName}${data.unit_code ? ` (${data.unit_code})` : ''}`;
   const accommodation = `Ubytování – ${unitLabel}`;
+  const adults = data.adults ?? 0;
+  const children = data.children ?? 0;
+  const nights = data.nights ?? 0;
 
   const guestAddressLines: string[] = [];
   if (data.guest_address) guestAddressLines.push(data.guest_address);
@@ -489,7 +507,7 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       </div>
       <div class="doc-title">
         <h1>FAKTURA</h1>
-        <div class="invoice-number">č. ${data.invoice_number}</div>
+        <div class="invoice-number">č. ${invoiceNumber}</div>
       </div>
     </div>
 
@@ -559,15 +577,15 @@ export function renderInvoiceHtml(data: InvoiceData): string {
             <td>
               <div class="desc-main">${accommodation}</div>
               <div class="desc-sub">
-                ${data.adults} dospělý${data.adults > 1 ? 'ch' : ''}
-                ${data.children > 0 ? `, ${data.children} dítě${data.children > 1 ? 't' : ''}` : ''}
+                ${adults} dospělý${adults > 1 ? 'ch' : ''}
+                ${children > 0 ? `, ${children} dítě${children > 1 ? 't' : ''}` : ''}
               </div>
             </td>
             <td>
               ${formatDate(data.check_in)}<br>
               <span style="color:#6b7280; font-size:8.5pt">→ ${formatDate(data.check_out)}</span>
             </td>
-            <td>${data.nights}</td>
+            <td>${nights}</td>
             <td style="font-weight:600; color:#1a1a2e">${formatAmount(data.amount, data.currency)}</td>
           </tr>
         </tbody>
@@ -588,11 +606,11 @@ export function renderInvoiceHtml(data: InvoiceData): string {
       <div class="payment-info">
         <div class="pi-item">
           <div class="label">Variabilní symbol</div>
-          <div class="value">${data.invoice_number.replace('-', '')}</div>
+          <div class="value">${variableSymbol}</div>
         </div>
         <div class="pi-item">
           <div class="label">Číslo rezervace</div>
-          <div class="value">${data.reservation_id}</div>
+          <div class="value">${data.reservation_id || '—'}</div>
         </div>
         <div class="pi-item">
           <div class="label">Forma úhrady</div>
