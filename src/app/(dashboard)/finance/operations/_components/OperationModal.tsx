@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import AttachmentsSection from './AttachmentsSection';
 
 type OpType = 'income' | 'expense' | 'transfer';
 
@@ -186,6 +187,8 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
         </Field>
 
         {error && <div style={{ color: '#dc2626', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+        <AttachmentsSection operationId={initial?.id || null} />
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <button type="button" onClick={onClose} style={btnSec}>Відміна</button>
