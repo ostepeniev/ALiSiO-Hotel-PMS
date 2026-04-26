@@ -245,3 +245,12 @@ export const uploadStatement = withPermission('import_bank_data', _uploadStateme
 export {
   recordTelegramOperation, listTelegramOperations, listTelegramCategories,
 } from './telegram-bridge.handlers';
+
+// ─── Attachments (PR #23) — manage_payments for write, view_finance for read ─
+export { listOperationAttachments, downloadAttachment, getAttachmentCounts } from './attachments.handlers';
+import {
+  uploadAttachment as _uploadAttachment,
+  deleteAttachment as _deleteAttachment,
+} from './attachments.handlers';
+export const uploadAttachment = withPermission('manage_payments', _uploadAttachment);
+export const deleteAttachment = withPermission('manage_payments', _deleteAttachment);

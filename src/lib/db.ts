@@ -3198,6 +3198,23 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
+  // PR #23: file attachments per fin_operation (invoices, receipts, photos)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_operation_attachments (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      operation_id TEXT NOT NULL REFERENCES fin_operations(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_attach_op ON fin_operation_attachments(operation_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_attach_org ON fin_operation_attachments(organization_id)');
+
   // PR #21: allow orphan receivables (reservation_id NULL).
   // When a statement upload has rows that don't match any PMS reservation
   // (Hostex sync gap, missed bookings), we still record the receivable so

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 import ExportButton from '../_components/ExportButton';
 
@@ -53,6 +53,7 @@ export default function OperationsPage() {
   const [to, setTo] = useState(new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().substring(0, 10));
   const [filterType, setFilterType] = useState<OpType | ''>('');
   const [search, setSearch] = useState('');
+  const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
 
   const fetchOps = useCallback(async () => {
     setLoading(true);
@@ -62,7 +63,19 @@ export default function OperationsPage() {
     try {
       const res = await fetch(`/api/finance/operations?${params}`);
       const json = await res.json();
-      setOps(json.items || []);
+      const items: Operation[] = json.items || [];
+      setOps(items);
+      // Bulk-fetch attachment counts for visible ops (📎 badge)
+      if (items.length > 0) {
+        const ids = items.map((o) => o.id).join(',');
+        try {
+          const ar = await fetch(`/api/finance/operations/attachment-counts?ids=${ids}`);
+          const aj = await ar.json();
+          setAttachCounts(aj.counts || {});
+        } catch { setAttachCounts({}); }
+      } else {
+        setAttachCounts({});
+      }
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [from, to, filterType, search]);
@@ -229,6 +242,20 @@ export default function OperationsPage() {
                           )}
                         </td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                          {attachCounts[o.id] > 0 && (
+                            <span
+                              onClick={() => { setEditOp(o); setModalType(o.op_type); }}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 2,
+                                padding: '1px 5px', marginRight: 4, borderRadius: 4,
+                                background: 'rgba(99,102,241,0.12)', color: '#6366f1',
+                                fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                              }}
+                              title={`${attachCounts[o.id]} прикріплених документ(ів)`}
+                            >
+                              <Paperclip size={10} /> {attachCounts[o.id]}
+                            </span>
+                          )}
                           <button onClick={() => { setEditOp(o); setModalType(o.op_type); }} style={iconBtn} title="Редагувати"><Copy size={14} /></button>
                           <button onClick={() => handleDuplicate(o)} style={iconBtn} title="Дублювати"><Copy size={14} /></button>
                           <button onClick={() => handleDelete(o)} style={{ ...iconBtn, color: '#dc2626' }} title="Видалити"><Trash2 size={14} /></button>
