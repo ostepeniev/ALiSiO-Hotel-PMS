@@ -54,6 +54,31 @@ PMS (Next.js, port 3001)  ←→  kemptimebot (Python, polling)
    - Задачі/ремонти → POST на PMS API
    - Реєстрація гостей → POST на PMS API
 
+4. **Бот → PMS Finance (PR #17, активне)**
+   - Сауна walk-in → `POST /api/finance/telegram-bridge/operation` (sauna_income)
+   - Готівкова витрата → `POST /api/finance/telegram-bridge/operation` (cash_expense)
+   - Auth: `Authorization: Bearer <TELEGRAM_BRIDGE_TOKEN>` (з PMS `.env.local`)
+   - Idempotency: `chat_id + message_id` як dedup-ключ; повторний POST повертає існуючий operation_id
+
+   **Body для бота:**
+   ```json
+   {
+     "type": "sauna_income",
+     "amount": 600,
+     "currency": "CZK",
+     "category_id": "<optional>",
+     "project_id": "<optional>",
+     "comment": "Сауна 60хв · 2 особи",
+     "chat_id": 5417846338,
+     "message_id": 12345,
+     "recorded_by": "Olha"
+   }
+   ```
+
+   **Допоміжні endpoint'и для бота:**
+   - `GET /api/finance/telegram-bridge/categories?op_type=income|expense` — категорії + проєкти для inline-клавіатур
+   - `GET /api/finance/telegram-bridge/operations?source=telegram_sauna&limit=20` — recent imports
+
 ### Як додати нову інтеграцію
 
 **PMS → Telegram**: Використовуй `sendTelegramMessage()` з `src/lib/channels/telegram-bot.ts`  
