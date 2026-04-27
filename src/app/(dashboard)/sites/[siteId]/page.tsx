@@ -1098,13 +1098,17 @@ function RatePlansTab({ siteId }: { siteId: string }) {
 }
 
 /* ════════════════════════════════════════════════
-   TAB: PAYMENTS (stub — payment_accounts not yet
-   fully wired; shows placeholder UI)
+   TAB: PAYMENTS
+   Uses global ENV (same store as /book) by default.
+   Advanced section allows per-site Teya override.
    ════════════════════════════════════════════════ */
 function PaymentsTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: PaymentConfig) => void }) {
   const [cfg, setCfg] = useState<PaymentConfig>(site.payment_config || { provider: 'teya', enabled: false });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // True only when ALL three per-site Teya fields are filled
+  const hasCustomCreds = !!(cfg.teya?.client_id && cfg.teya?.client_secret && cfg.teya?.store_id);
 
   const save = async () => {
     setSaving(true);
@@ -1146,30 +1150,82 @@ function PaymentsTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: PaymentCo
           </div>
 
           {cfg.provider === 'teya' && (
-            <div style={{ padding: 20, border: '1px solid var(--border-primary)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <img src="https://teya.com/favicon.ico" style={{ width: 20, height: 20 }} alt="" />
-                <span style={{ fontWeight: 700 }}>Налаштування Teya</span>
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Status banner */}
+              {hasCustomCreds ? (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                  padding: 16, borderRadius: 12,
+                  border: '2px solid #f59e0b',
+                  background: 'color-mix(in srgb, #f59e0b 8%, var(--surface-primary))',
+                }}>
+                  <span style={{ fontSize: 22, lineHeight: 1 }}>⚙️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Окремий акаунт Teya для цього сайту</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      Налаштований власний Store ID. Щоб повернутись до стандартного акаунту — очистіть поля нижче.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                  padding: 16, borderRadius: 12,
+                  border: '2px solid #22c55e',
+                  background: 'color-mix(in srgb, #22c55e 8%, var(--surface-primary))',
+                }}>
+                  <span style={{ fontSize: 22, lineHeight: 1 }}>✅</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Використовуються стандартні налаштування оплати</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      Цей сайт використовує той самий платіжний акаунт Teya, що й основна форма бронювання{' '}
+                      <code style={{ background: 'var(--surface-secondary)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>/book</code>.
+                      Налаштовувати щось окремо не потрібно.
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              <div className="form-group">
-                <label className="form-label">Client ID</label>
-                <input className="form-input" type="password" value={cfg.teya?.client_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_id: e.target.value } }))} placeholder="Введіть Client ID" />
-              </div>
+              {/* Advanced: optional per-site credentials override */}
+              <details style={{ borderRadius: 10, border: '1px solid var(--border-primary)', overflow: 'hidden' }}>
+                <summary style={{
+                  padding: '10px 16px', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                  background: 'var(--surface-secondary)', userSelect: 'none', listStyle: 'none',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span>⚙️</span>
+                  <span>Розширені налаштування (окремий акаунт Teya для цього сайту)</span>
+                  {hasCustomCreds && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 8px', borderRadius: 99, background: '#f59e0b22', color: '#f59e0b', border: '1px solid #f59e0b44' }}>
+                      налаштовано
+                    </span>
+                  )}
+                </summary>
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ fontSize: 12, color: '#f59e0b', padding: '8px 12px', background: '#fef3c722', borderRadius: 8, border: '1px solid #f59e0b44' }}>
+                    ⚠️ Заповніть лише якщо для цього сайту є <strong>окремий магазин Teya</strong>. Якщо поля порожні — використовується стандартний акаунт.
+                  </div>
 
-              <div className="form-group">
-                <label className="form-label">Client Secret</label>
-                <input className="form-input" type="password" value={cfg.teya?.client_secret || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_secret: e.target.value } }))} placeholder="Введіть Client Secret" />
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Client ID</label>
+                    <input className="form-input" type="password" value={cfg.teya?.client_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_id: e.target.value } }))} placeholder="Введіть Client ID" />
+                  </div>
 
-              <div className="form-group">
-                <label className="form-label">Store ID</label>
-                <input className="form-input" value={cfg.teya?.store_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, store_id: e.target.value } }))} placeholder="Введіть Store ID" />
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Client Secret</label>
+                    <input className="form-input" type="password" value={cfg.teya?.client_secret || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_secret: e.target.value } }))} placeholder="Введіть Client Secret" />
+                  </div>
 
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: 12, borderRadius: 8, border: '1px solid var(--border-primary)' }}>
-                💡 Ви можете знайти ці дані в особистому кабінеті Teya (Developer Portal).
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Store ID</label>
+                    <input className="form-input" value={cfg.teya?.store_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, store_id: e.target.value } }))} placeholder="Введіть Store ID" />
+                  </div>
+
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: 12, borderRadius: 8, border: '1px solid var(--border-primary)' }}>
+                    💡 Ви можете знайти ці дані в особистому кабінеті Teya (Developer Portal).
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 
