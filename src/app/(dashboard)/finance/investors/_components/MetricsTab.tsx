@@ -5,25 +5,19 @@ import { Plus, Trash2, Edit } from 'lucide-react';
 
 interface Metric {
   id: string;
-  unit_id: string | null;
-  project_id: string | null;     // legacy fallback
+  project_id: string;
   project_name: string;
-  property_name: string | null;
   year_month: string;
   occupancy_pct: number | null;
   revenue: number | null;
   notes: string | null;
 }
 
-interface UnitOption { id: string; name: string; code: string; property_name: string }
-
-function unitLabel(u: UnitOption): string {
-  return `${u.property_name} / ${u.name}`;
-}
+interface Project { id: string; name: string }
 
 export default function MetricsTab() {
   const [items, setItems] = useState<Metric[]>([]);
-  const [units, setUnits] = useState<UnitOption[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<Metric> | null>(null);
   const [filter, setFilter] = useState<string>('');
@@ -32,14 +26,14 @@ export default function MetricsTab() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (filter) params.set('unit_id', filter);
-      const [mRes, uRes] = await Promise.all([
+      if (filter) params.set('project_id', filter);
+      const [mRes, pRes] = await Promise.all([
         fetch(`/api/finance/investor-monthly-metrics?${params}`),
-        fetch('/api/finance/investor-units'),
+        fetch('/api/finance/investor-projects'),
       ]);
-      const [mJ, uJ] = await Promise.all([mRes.json(), uRes.json()]);
+      const [mJ, pJ] = await Promise.all([mRes.json(), pRes.json()]);
       setItems(mJ.items || []);
-      setUnits((uJ.items || []).map((u: any) => ({ id: u.id, name: u.name, code: u.code, property_name: u.property_name })));
+      setProjects(pJ.items || []);
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [filter]);
@@ -47,21 +41,12 @@ export default function MetricsTab() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   async function save() {
-    if (!editing?.unit_id || !editing?.year_month) {
-      alert('Будинок (unit) і місяць обовʼязкові');
+    if (!editing?.project_id || !editing?.year_month) {
+      alert('project_id і year_month обовʼязкові');
       return;
     }
     try {
-      const res = await fetch('/api/finance/investor-monthly-metrics', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unit_id: editing.unit_id,
-          year_month: editing.year_month,
-          occupancy_pct: editing.occupancy_pct ?? null,
-          revenue: editing.revenue ?? null,
-          notes: editing.notes || null,
-        }),
-      });
+      const res = await fetch('/api/finance/investor-monthly-metrics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) });
       const j = await res.json();
       if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
       setEditing(null);
@@ -79,10 +64,10 @@ export default function MetricsTab() {
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <select style={input} value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="">Всі будинки</option>
-          {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
+          <option value="">Всі проєкти</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <button onClick={() => setEditing({ year_month: new Date().toISOString().substring(0,7), unit_id: filter || undefined })}
+        <button onClick={() => setEditing({ year_month: new Date().toISOString().substring(0,7), project_id: filter || undefined })}
                 style={{ marginLeft: 'auto', ...btn, background: '#3b82f6', color: '#fff', border: 'none' }}>
           <Plus size={14} /> Додати місяць
         </button>
@@ -98,7 +83,7 @@ export default function MetricsTab() {
             <thead>
               <tr style={{ background: 'var(--bg-secondary)' }}>
                 <th style={th}>Місяць</th>
-                <th style={th}>Будинок</th>
+                <th style={th}>Проєкт</th>
                 <th style={{ ...th, textAlign: 'right' }}>Occupancy %</th>
                 <th style={{ ...th, textAlign: 'right' }}>Revenue</th>
                 <th style={th}>Нотатки</th>
@@ -109,10 +94,7 @@ export default function MetricsTab() {
               {items.map((m) => (
                 <tr key={m.id} style={{ borderTop: '1px solid var(--border-primary)' }}>
                   <td style={td}><b>{m.year_month}</b></td>
-                  <td style={td}>
-                    <div>{m.project_name}</div>
-                    {m.property_name && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{m.property_name}</div>}
-                  </td>
+                  <td style={td}>{m.project_name}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{m.occupancy_pct != null ? `${m.occupancy_pct}%` : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{m.revenue != null ? m.revenue.toLocaleString('cs-CZ', { minimumFractionDigits: 2 }) : '—'}</td>
                   <td style={td}>{m.notes || '—'}</td>
@@ -131,10 +113,10 @@ export default function MetricsTab() {
         <div style={overlayStyle} onClick={() => setEditing(null)}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: 0, marginBottom: 16 }}>Місячна метрика</h3>
-            <Field label="Будинок (юніт) *">
-              <select style={input} value={editing.unit_id || ''} onChange={(e) => setEditing({ ...editing, unit_id: e.target.value })}>
+            <Field label="Проєкт *">
+              <select style={input} value={editing.project_id || ''} onChange={(e) => setEditing({ ...editing, project_id: e.target.value })}>
                 <option value="">—</option>
-                {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </Field>
             <Field label="Місяць (YYYY-MM) *"><input type="month" style={input} value={editing.year_month || ''} onChange={(e) => setEditing({ ...editing, year_month: e.target.value })} /></Field>

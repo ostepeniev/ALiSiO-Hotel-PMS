@@ -154,20 +154,11 @@ export async function listInvestments(request: NextRequest): Promise<NextRespons
     if (investorId) { where.push('ii.investor_id = ?'); params.push(investorId); }
     if (projectId)  { where.push('ii.project_id = ?');  params.push(projectId);  }
 
-    // Prefer unit_id (real house). Fall back to legacy project_id (business_unit)
-    // for rows that haven't been re-linked yet — UI shows them with a warning badge.
     const rows = db.prepare(`
-      SELECT ii.*,
-             i.name AS investor_name,
-             COALESCE(u.name, bu.name) AS project_name,
-             p.name AS property_name,
-             u.id IS NOT NULL AS has_unit,
-             ii.unit_id IS NULL AS needs_relink
+      SELECT ii.*, i.name AS investor_name, bu.name AS project_name
       FROM investor_investments ii
-      JOIN investors i        ON i.id = ii.investor_id
-      LEFT JOIN units u            ON u.id = ii.unit_id
-      LEFT JOIN properties p       ON p.id = u.property_id
-      LEFT JOIN business_units bu  ON bu.id = ii.project_id
+      JOIN investors i      ON i.id = ii.investor_id
+      JOIN business_units bu ON bu.id = ii.project_id
       WHERE ${where.join(' AND ')}
       ORDER BY ii.invested_at DESC
     `).all(...params);
@@ -182,19 +173,17 @@ export async function createInvestment(request: NextRequest): Promise<NextRespon
     const db = getDb();
     const orgId = getOrgId(db);
     const body = await request.json();
-    if (!body.investor_id || !body.unit_id || !body.amount || !body.invested_at) {
-      return NextResponse.json({ error: 'investor_id, unit_id, amount, invested_at required' }, { status: 400 });
+    if (!body.investor_id || !body.project_id || !body.amount || !body.invested_at) {
+      return NextResponse.json({ error: 'investor_id, project_id, amount, invested_at required' }, { status: 400 });
     }
     const id = `ivst_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    // project_id is set to NULL for new investments — investor module is now
-    // unit-keyed. Old rows keep their project_id for legacy display.
     db.prepare(`
       INSERT INTO investor_investments
-        (id, organization_id, investor_id, project_id, unit_id, amount, currency, equity_pct,
+        (id, organization_id, investor_id, project_id, amount, currency, equity_pct,
          invested_at, model_description, is_active)
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, orgId, body.investor_id, body.unit_id,
+      id, orgId, body.investor_id, body.project_id,
       body.amount, body.currency || 'EUR', body.equity_pct ?? null,
       body.invested_at, body.model_description || null, body.is_active === false ? 0 : 1,
     );
@@ -214,8 +203,7 @@ export async function updateInvestment(
     const body = await request.json();
     const fields: string[] = [];
     const params: any[] = [];
-    // unit_id added — new way to link investments.
-    for (const k of ['amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active', 'project_id', 'unit_id']) {
+    for (const k of ['amount', 'currency', 'equity_pct', 'invested_at', 'model_description', 'is_active', 'project_id']) {
       if (body[k] !== undefined) { fields.push(`${k} = ?`); params.push(body[k]); }
     }
     if (fields.length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
@@ -241,29 +229,25 @@ export async function deleteInvestment(
   }
 }
 
-// ─── Property monthly metrics CRUD (now keyed by unit_id) ──────────────────────
+// ─── Property monthly metrics CRUD ──────────────────────
 
 export async function listMonthlyMetrics(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const orgId = getOrgId(db);
     const sp = request.nextUrl.searchParams;
-    const unitId = sp.get('unit_id') || sp.get('project_id'); // backward-compat
+    const projectId = sp.get('project_id');
 
     const where: string[] = ['m.organization_id = ?'];
     const params: any[] = [orgId];
-    if (unitId) { where.push('(m.unit_id = ? OR m.project_id = ?)'); params.push(unitId, unitId); }
+    if (projectId) { where.push('m.project_id = ?'); params.push(projectId); }
 
     const rows = db.prepare(`
-      SELECT m.*,
-             COALESCE(u.name, bu.name) AS project_name,
-             p.name AS property_name
+      SELECT m.*, bu.name AS project_name
       FROM property_monthly_metrics m
-      LEFT JOIN units u            ON u.id = m.unit_id
-      LEFT JOIN properties p       ON p.id = u.property_id
-      LEFT JOIN business_units bu  ON bu.id = m.project_id
+      JOIN business_units bu ON bu.id = m.project_id
       WHERE ${where.join(' AND ')}
-      ORDER BY m.year_month DESC
+      ORDER BY m.year_month DESC, bu.sort_order
     `).all(...params);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
@@ -276,30 +260,21 @@ export async function upsertMonthlyMetric(request: NextRequest): Promise<NextRes
     const db = getDb();
     const orgId = getOrgId(db);
     const body = await request.json();
-    const unitId = body.unit_id;
-    if (!unitId || !body.year_month) {
-      return NextResponse.json({ error: 'unit_id and year_month required' }, { status: 400 });
+    if (!body.project_id || !body.year_month) {
+      return NextResponse.json({ error: 'project_id and year_month required' }, { status: 400 });
     }
-    // Upsert keyed by unit_id+year_month. project_id stays NULL for new rows.
-    const existing = db.prepare(
-      "SELECT id FROM property_monthly_metrics WHERE unit_id = ? AND year_month = ?"
-    ).get(unitId, body.year_month) as { id: string } | undefined;
-
-    if (existing) {
-      db.prepare(`
-        UPDATE property_monthly_metrics
-        SET occupancy_pct = ?, revenue = ?, notes = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(body.occupancy_pct ?? null, body.revenue ?? null, body.notes || null, existing.id);
-    } else {
-      const id = `pmm_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-      db.prepare(`
-        INSERT INTO property_monthly_metrics
-          (id, organization_id, unit_id, year_month, occupancy_pct, revenue, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, orgId, unitId, body.year_month,
-             body.occupancy_pct ?? null, body.revenue ?? null, body.notes || null);
-    }
+    const id = `pmm_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    db.prepare(`
+      INSERT INTO property_monthly_metrics
+        (id, organization_id, project_id, year_month, occupancy_pct, revenue, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id, year_month) DO UPDATE SET
+        occupancy_pct = excluded.occupancy_pct,
+        revenue = excluded.revenue,
+        notes = excluded.notes,
+        updated_at = datetime('now')
+    `).run(id, orgId, body.project_id, body.year_month,
+           body.occupancy_pct ?? null, body.revenue ?? null, body.notes || null);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -334,15 +309,10 @@ export async function listPayouts(request: NextRequest): Promise<NextResponse> {
     if (investorId) { where.push('p.investor_id = ?'); params.push(investorId); }
 
     const rows = db.prepare(`
-      SELECT p.*,
-             i.name AS investor_name,
-             COALESCE(u.name, bu.name) AS project_name,
-             prop.name AS property_name
+      SELECT p.*, i.name AS investor_name, bu.name AS project_name
       FROM investor_payouts p
-      JOIN investors i             ON i.id = p.investor_id
-      LEFT JOIN units u            ON u.id = p.unit_id
-      LEFT JOIN properties prop    ON prop.id = u.property_id
-      LEFT JOIN business_units bu  ON bu.id = p.project_id
+      JOIN investors i        ON i.id = p.investor_id
+      LEFT JOIN business_units bu ON bu.id = p.project_id
       WHERE ${where.join(' AND ')}
       ORDER BY p.paid_at DESC
     `).all(...params);
@@ -354,7 +324,7 @@ export async function listPayouts(request: NextRequest): Promise<NextResponse> {
 
 /**
  * POST /api/finance/investor-payouts
- * Body: { investor_id, unit_id?, amount, currency?, paid_at,
+ * Body: { investor_id, project_id?, amount, currency?, paid_at,
  *         period_year_month?, comment?, account_from_id? }
  *
  * Creates the payout row + a matching fin_operation (op_type='expense',
@@ -394,9 +364,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
     // P&L groups all investor payouts under one line.
     const dividendCategoryId = getOrCreateDividendCategory(db, orgId);
 
-    // Create the matching fin_operation. Note: fin_operation.project_id
-    // still points at business_units (finance-wide concept). We do NOT
-    // pass unit_id here — finance ops are unit-agnostic.
+    // Create the matching fin_operation
     const operationId = createOperationInTx(db, orgId, {
       op_type: 'expense',
       account_from_id: accountFromId,
@@ -415,10 +383,10 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
 
     db.prepare(`
       INSERT INTO investor_payouts
-        (id, organization_id, investor_id, project_id, unit_id, amount, currency,
+        (id, organization_id, investor_id, project_id, amount, currency,
          paid_at, period_year_month, comment, fin_operation_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(payoutId, orgId, body.investor_id, body.project_id || null, body.unit_id || null,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(payoutId, orgId, body.investor_id, body.project_id || null,
            body.amount, currency, body.paid_at, body.period_year_month || null,
            body.comment || null, operationId);
 
@@ -521,8 +489,7 @@ export async function sendDigestTelegram(request: NextRequest): Promise<NextResp
   }
 }
 
-// ─── Helper: get available projects (= business_units) — LEGACY ─────
-// Kept for backwards-compatibility only. New investments link to units.
+// ─── Helper: get available projects (= business_units) ─────
 
 export async function listInvestorProjects(_request: NextRequest): Promise<NextResponse> {
   try {
@@ -535,115 +502,6 @@ export async function listInvestorProjects(_request: NextRequest): Promise<NextR
       ORDER BY sort_order, name
     `).all(orgId);
     return NextResponse.json({ items: rows });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-// ─── Real units (= individual houses tracked in PMS) ─────
-//
-// Investors actually invest in specific houses (units), not in finance
-// cost-allocation buckets. Returns one row per active unit with its
-// property name, attached investor metadata (work_stages, image, status,
-// airbnb_url) and aggregate investment stats.
-
-export async function listInvestorUnits(_request: NextRequest): Promise<NextResponse> {
-  try {
-    const db = getDb();
-    const orgId = getOrgId(db);
-    const rows = db.prepare(`
-      SELECT
-        u.id,
-        u.name,
-        u.code,
-        p.name AS property_name,
-        u.is_active,
-        d.location,
-        d.image_url,
-        d.airbnb_url,
-        d.ical_url,
-        COALESCE(d.status, 'active') AS status,
-        ws.stages_json,
-        (SELECT COUNT(*) FROM investor_investments
-          WHERE unit_id = u.id AND is_active = 1) AS active_lots,
-        (SELECT COALESCE(SUM(amount), 0) FROM investor_investments
-          WHERE unit_id = u.id AND is_active = 1) AS total_invested
-      FROM units u
-      JOIN properties p ON p.id = u.property_id
-      LEFT JOIN investor_property_details d ON d.unit_id = u.id
-      LEFT JOIN property_work_stages    ws ON ws.unit_id = u.id
-      WHERE p.organization_id = ?
-      ORDER BY p.name, u.sort_order, u.name
-    `).all(orgId) as any[];
-    const items = rows.map((r) => ({
-      ...r,
-      work_stages: r.stages_json ? safeJson(r.stages_json) : [],
-      stages_json: undefined,
-    }));
-    return NextResponse.json({ items });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-function safeJson(s: string): any {
-  try { return JSON.parse(s); } catch { return []; }
-}
-
-/**
- * PUT /api/finance/investor-units/[id]
- * Body: any subset of { location, image_url, airbnb_url, ical_url, status, work_stages }
- * Upserts the per-unit investor metadata (image/airbnb/work_stages) keyed
- * by units.id. Does NOT touch the unit row itself (name/code/etc are
- * managed by the regular PMS settings).
- */
-export async function updateInvestorUnit(
-  request: NextRequest,
-  context: { params: Promise<{ id: string }> },
-): Promise<NextResponse> {
-  try {
-    const db = getDb();
-    const { id: unitId } = await context.params;
-    const body = await request.json();
-
-    const tx = db.transaction(() => {
-      const detailFields = ['location', 'image_url', 'airbnb_url', 'ical_url', 'status'];
-      const haveDetailUpdate = detailFields.some((k) => body[k] !== undefined);
-      if (haveDetailUpdate) {
-        const existing = db.prepare("SELECT id FROM investor_property_details WHERE unit_id = ?").get(unitId) as { id: string } | undefined;
-        if (existing) {
-          const setParts: string[] = [];
-          const params: any[] = [];
-          for (const k of detailFields) {
-            if (body[k] !== undefined) { setParts.push(`${k} = ?`); params.push(body[k]); }
-          }
-          setParts.push("updated_at = datetime('now')");
-          params.push(unitId);
-          db.prepare(`UPDATE investor_property_details SET ${setParts.join(', ')} WHERE unit_id = ?`).run(...params);
-        } else {
-          db.prepare(`
-            INSERT INTO investor_property_details (id, unit_id, location, image_url, airbnb_url, ical_url, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(`pd_u_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`, unitId,
-                 body.location || null, body.image_url || null, body.airbnb_url || null,
-                 body.ical_url || null, body.status || 'active');
-        }
-      }
-      if (Array.isArray(body.work_stages)) {
-        const existing = db.prepare("SELECT id FROM property_work_stages WHERE unit_id = ?").get(unitId) as { id: string } | undefined;
-        if (existing) {
-          db.prepare("UPDATE property_work_stages SET stages_json = ?, updated_at = datetime('now') WHERE unit_id = ?")
-            .run(JSON.stringify(body.work_stages), unitId);
-        } else {
-          db.prepare(`
-            INSERT INTO property_work_stages (id, unit_id, stages_json)
-            VALUES (?, ?, ?)
-          `).run(`pws_u_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`, unitId, JSON.stringify(body.work_stages));
-        }
-      }
-    });
-    tx();
-    return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -688,6 +546,10 @@ export async function listInvestorProperties(_request: NextRequest): Promise<Nex
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+function safeJson(s: string): any {
+  try { return JSON.parse(s); } catch { return []; }
 }
 
 /**
@@ -778,31 +640,27 @@ export async function updateInvestorProperty(
   }
 }
 
-// ─── Property monthly reports CRUD (now keyed by unit_id) ──────────────────────
+// ─── Property monthly reports CRUD ──────────────────────
 
 export async function listMonthlyReports(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const orgId = getOrgId(db);
     const sp = request.nextUrl.searchParams;
-    const unitId = sp.get('unit_id') || sp.get('project_id'); // backward-compat
+    const projectId = sp.get('project_id');
     const yearMonth = sp.get('year_month');
 
     const where: string[] = ['r.organization_id = ?'];
     const params: any[] = [orgId];
-    if (unitId)   { where.push('(r.unit_id = ? OR r.project_id = ?)'); params.push(unitId, unitId); }
+    if (projectId) { where.push('r.project_id = ?'); params.push(projectId); }
     if (yearMonth) { where.push('r.year_month = ?'); params.push(yearMonth); }
 
     const rows = db.prepare(`
-      SELECT r.*,
-             COALESCE(u.name, bu.name) AS project_name,
-             p.name AS property_name
+      SELECT r.*, bu.name AS project_name
       FROM property_monthly_reports r
-      LEFT JOIN units u            ON u.id = r.unit_id
-      LEFT JOIN properties p       ON p.id = u.property_id
-      LEFT JOIN business_units bu  ON bu.id = r.project_id
+      JOIN business_units bu ON bu.id = r.project_id
       WHERE ${where.join(' AND ')}
-      ORDER BY r.year_month DESC
+      ORDER BY r.year_month DESC, bu.sort_order
     `).all(...params);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
@@ -815,37 +673,27 @@ export async function upsertMonthlyReport(request: NextRequest): Promise<NextRes
     const db = getDb();
     const orgId = getOrgId(db);
     const body = await request.json();
-    const unitId = body.unit_id;
-    if (!unitId || !body.year_month) {
-      return NextResponse.json({ error: 'unit_id and year_month required' }, { status: 400 });
+    if (!body.project_id || !body.year_month) {
+      return NextResponse.json({ error: 'project_id and year_month required' }, { status: 400 });
     }
+    const id = `pmr_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
     const ops = Array.isArray(body.operational_updates) ? body.operational_updates : [];
-
-    const existing = db.prepare(
-      "SELECT id FROM property_monthly_reports WHERE unit_id = ? AND year_month = ?"
-    ).get(unitId, body.year_month) as { id: string } | undefined;
-
-    if (existing) {
-      db.prepare(`
-        UPDATE property_monthly_reports
-        SET adr = ?, general_comment = ?, market_insight = ?,
-            operational_updates_json = ?, photo_url = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(body.adr ?? null, body.general_comment || null,
-             body.market_insight || null, JSON.stringify(ops),
-             body.photo_url || null, existing.id);
-    } else {
-      const id = `pmr_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-      db.prepare(`
-        INSERT INTO property_monthly_reports
-          (id, organization_id, unit_id, year_month, adr, general_comment,
-           market_insight, operational_updates_json, photo_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, orgId, unitId, body.year_month,
-             body.adr ?? null, body.general_comment || null,
-             body.market_insight || null, JSON.stringify(ops),
-             body.photo_url || null);
-    }
+    db.prepare(`
+      INSERT INTO property_monthly_reports
+        (id, organization_id, project_id, year_month, adr, general_comment,
+         market_insight, operational_updates_json, photo_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id, year_month) DO UPDATE SET
+        adr = excluded.adr,
+        general_comment = excluded.general_comment,
+        market_insight = excluded.market_insight,
+        operational_updates_json = excluded.operational_updates_json,
+        photo_url = excluded.photo_url,
+        updated_at = datetime('now')
+    `).run(id, orgId, body.project_id, body.year_month,
+           body.adr ?? null, body.general_comment || null,
+           body.market_insight || null, JSON.stringify(ops),
+           body.photo_url || null);
     return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
