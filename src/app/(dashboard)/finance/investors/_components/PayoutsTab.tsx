@@ -8,7 +8,9 @@ interface Payout {
   investor_id: string;
   investor_name: string;
   project_id: string | null;
+  unit_id: string | null;
   project_name: string | null;
+  property_name: string | null;
   amount: number;
   currency: string;
   paid_at: string;
@@ -18,7 +20,8 @@ interface Payout {
 }
 
 interface Investor { id: string; name: string }
-interface Project  { id: string; name: string }
+interface UnitOption { id: string; name: string; code: string; property_name: string }
+function unitLabel(u: UnitOption): string { return `${u.property_name} / ${u.name}`; }
 
 function fmt(n: number, cur: string): string {
   return `${n.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
@@ -27,22 +30,22 @@ function fmt(n: number, cur: string): string {
 export default function PayoutsTab() {
   const [items, setItems] = useState<Payout[]>([]);
   const [investors, setInvestors] = useState<Investor[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<Payout> | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, iRes, prRes] = await Promise.all([
+      const [pRes, iRes, uRes] = await Promise.all([
         fetch('/api/finance/investor-payouts'),
         fetch('/api/finance/investors'),
-        fetch('/api/finance/investor-projects'),
+        fetch('/api/finance/investor-units'),
       ]);
-      const [pJ, iJ, prJ] = await Promise.all([pRes.json(), iRes.json(), prRes.json()]);
+      const [pJ, iJ, uJ] = await Promise.all([pRes.json(), iRes.json(), uRes.json()]);
       setItems(pJ.items || []);
       setInvestors((iJ.items || []).map((i: any) => ({ id: i.id, name: i.name })));
-      setProjects(prJ.items || []);
+      setUnits((uJ.items || []).map((u: any) => ({ id: u.id, name: u.name, code: u.code, property_name: u.property_name })));
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -127,10 +130,10 @@ export default function PayoutsTab() {
                 {investors.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
             </Field>
-            <Field label="Проєкт (опц., для атрибуції)">
-              <select style={input} value={editing.project_id || ''} onChange={(e) => setEditing({ ...editing, project_id: e.target.value || null })}>
+            <Field label="Будинок (опц., для атрибуції до конкретного юніта)">
+              <select style={input} value={editing.unit_id || ''} onChange={(e) => setEditing({ ...editing, unit_id: e.target.value || null })}>
                 <option value="">—</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
               </select>
             </Field>
             <div style={{ display: 'flex', gap: 8 }}>

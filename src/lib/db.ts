@@ -3236,6 +3236,85 @@ function runMigrations(database: any) {
   addCol('property_monthly_metrics',   'supabase_id', 'TEXT');
   addCol('property_monthly_reports',   'supabase_id', 'TEXT');
 
+  // ═══════════════════════════════════════════════════════════════════
+  // PR #39: Re-key investor module to real units (= individual houses)
+  // instead of business_units (= finance cost-allocation buckets like
+  // "Ресторан"/"Салон"). Each investor invests in a specific house.
+  //
+  // Adds unit_id columns to all investor tables; an auto-migration finds
+  // a matching units row by normalised name for each existing project_id
+  // and populates unit_id. Rows that don't match are flagged in the UI
+  // as needing manual relinking.
+  // ═══════════════════════════════════════════════════════════════════
+  addCol('investor_investments',       'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
+  addCol('investor_payouts',           'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
+  addCol('property_monthly_metrics',   'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('property_monthly_reports',   'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('property_work_stages',       'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('investor_property_details',  'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+
+  // One-time auto-migration: name-match business_units → units.
+  try {
+    const alreadyMigrated = database.prepare(
+      "SELECT value FROM fin_system_state WHERE key = 'pr39_units_migrated'"
+    ).get() as { value: string } | undefined;
+    if (!alreadyMigrated) {
+      const norm = (s: string) => (s || '').toLowerCase()
+        .replace(/[іії]/g, 'и').replace(/[єё]/g, 'е').replace(/ґ/g, 'г')
+        .replace(/[^a-zа-я0-9]/g, '');
+
+      const buRows = database.prepare(
+        "SELECT id, name FROM business_units"
+      ).all() as { id: string; name: string }[];
+      const unitRows = database.prepare(
+        "SELECT id, name FROM units WHERE is_active = 1"
+      ).all() as { id: string; name: string }[];
+
+      // Map: normalised business_unit name → unit_id
+      const unitByNorm = new Map<string, string>();
+      for (const u of unitRows) unitByNorm.set(norm(u.name), u.id);
+
+      const buToUnit = new Map<string, string>();
+      for (const bu of buRows) {
+        const u = unitByNorm.get(norm(bu.name));
+        if (u) buToUnit.set(bu.id, u);
+      }
+
+      let migrated = 0;
+      const tablesToMigrate = [
+        'investor_investments',
+        'investor_payouts',
+        'property_monthly_metrics',
+        'property_monthly_reports',
+        'property_work_stages',
+        'investor_property_details',
+      ];
+      for (const table of tablesToMigrate) {
+        const cols = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+        if (!cols.some((c) => c.name === 'project_id') || !cols.some((c) => c.name === 'unit_id')) continue;
+        const update = database.prepare(`UPDATE ${table} SET unit_id = ? WHERE project_id = ? AND unit_id IS NULL`);
+        for (const [buId, unitId] of buToUnit.entries()) {
+          const result = update.run(unitId, buId);
+          migrated += result.changes;
+        }
+      }
+      database.prepare(
+        "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('pr39_units_migrated', ?, datetime('now'))"
+      ).run(`migrated ${migrated} rows across ${tablesToMigrate.length} tables`);
+      if (migrated > 0) console.log(`[DB] PR #39: auto-relinked ${migrated} investor rows from business_units → units`);
+    }
+  } catch (e: any) { console.log('[DB] PR #39 unit migration:', e.message); }
+
+  // Indexes for unit-keyed lookups
+  try {
+    database.exec('CREATE INDEX IF NOT EXISTS idx_inv_invest_unit ON investor_investments(unit_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_inv_payouts_unit ON investor_payouts(unit_id)');
+    database.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_pmm_unit_month ON property_monthly_metrics(unit_id, year_month) WHERE unit_id IS NOT NULL');
+    database.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_pmr_unit_month ON property_monthly_reports(unit_id, year_month) WHERE unit_id IS NOT NULL');
+    database.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_pws_unit ON property_work_stages(unit_id) WHERE unit_id IS NOT NULL');
+    database.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_ipd_unit ON investor_property_details(unit_id) WHERE unit_id IS NOT NULL');
+  } catch (e: any) { console.log('[DB] PR #39 unit indexes:', e.message); }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
