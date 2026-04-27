@@ -267,8 +267,12 @@ export { getReconcileDashboard } from './reconcile-dashboard.handlers';
 
 // ─── Finmap historical import (PR #30) — manage_finance_settings ─
 export { getFinmapImportStatus } from './finmap-import.handlers';
-import { importFinmap as _importFinmap } from './finmap-import.handlers';
-export const importFinmap = withPermission('manage_finance_settings', _importFinmap);
+import {
+  importFinmap as _importFinmap,
+  rollbackFinmapImport as _rollbackFinmapImport,
+} from './finmap-import.handlers';
+export const importFinmap         = withPermission('manage_finance_settings', _importFinmap);
+export const rollbackFinmapImport = withPermission('manage_finance_settings', _rollbackFinmapImport);
 
 // ─── Investor module (PR #31) — manage_investors permission ─────
 export {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileSpreadsheet, AlertCircle, CheckCircle2, Upload } from 'lucide-react';
+import { FileSpreadsheet, AlertCircle, CheckCircle2, Upload, Trash2 } from 'lucide-react';
 
 interface ImportResult {
   ok: boolean;
@@ -36,10 +36,33 @@ export default function FinmapImportTab() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [rollbackResult, setRollbackResult] = useState<any>(null);
+  const [rollingBack, setRollingBack] = useState(false);
 
   useEffect(() => {
     fetch('/api/finance/finmap-import').then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
+
+  async function rollback(includeEntities: boolean, dryRun: boolean) {
+    const verb = dryRun ? 'Перевірити що буде видалено' : (includeEntities ? 'ВИДАЛИТИ операції + всі auto-створені accounts/categories/projects/counterparties' : 'ВИДАЛИТИ ТІЛЬКИ операції з джерелом finmap_import');
+    if (!dryRun && !confirm(`${verb}?\n\nЦя дія НЕЗВОРОТНА. Продовжити?`)) return;
+    setRollingBack(true);
+    setError(null);
+    setRollbackResult(null);
+    try {
+      const res = await fetch('/api/finance/finmap-import/rollback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ include_entities: includeEntities, dry_run: dryRun }),
+      });
+      const json = await res.json();
+      if (!res.ok) setError(json.error || 'Rollback failed');
+      else {
+        setRollbackResult(json);
+        fetch('/api/finance/finmap-import').then((r) => r.json()).then(setStatus).catch(() => {});
+      }
+    } catch (e: any) { setError(e.message); }
+    setRollingBack(false);
+  }
 
   async function run(dryRun: boolean) {
     setRunning(true);
@@ -201,6 +224,47 @@ export default function FinmapImportTab() {
           )}
         </div>
       )}
+
+      {/* Rollback section */}
+      <div style={{ padding: 16, marginBottom: 16, border: '1px solid #ef4444', borderRadius: 10, background: 'rgba(239,68,68,0.04)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Trash2 size={16} color="#ef4444" />
+          <h3 style={{ margin: 0, fontSize: 15, color: '#ef4444' }}>Rollback (відкат імпорту)</h3>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+          Видаляє всі fin_operations з джерелом <code>finmap_import</code>. Опціонально — також видаляє accounts/categories/projects/counterparties автоматично створені імпортом
+          (ID-префікси <code>acct_finmap_*</code>, <code>ec_finmap_*</code>, <code>bu_finmap_*</code>, <code>cp_finmap_*</code>).
+          Якщо якась entity використовується ще десь (FK conflict) — пропустить її і повідомить.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => rollback(false, true)} disabled={rollingBack} style={btn}>
+            🔍 Dry-run (тільки операції)
+          </button>
+          <button onClick={() => rollback(true, true)} disabled={rollingBack} style={btn}>
+            🔍 Dry-run (все, включно з entities)
+          </button>
+          <button onClick={() => rollback(false, false)} disabled={rollingBack} style={{ ...btn, background: '#ef4444', color: '#fff', border: 'none' }}>
+            <Trash2 size={12} /> {rollingBack ? 'Rollback…' : 'Видалити операції'}
+          </button>
+          <button onClick={() => rollback(true, false)} disabled={rollingBack} style={{ ...btn, background: '#dc2626', color: '#fff', border: 'none' }}>
+            <Trash2 size={12} /> {rollingBack ? 'Rollback…' : 'Видалити ВСЕ (operations + entities)'}
+          </button>
+        </div>
+
+        {rollbackResult && (
+          <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-primary)', borderRadius: 8, fontSize: 13 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>
+              {rollbackResult.dry_run ? '🔍 Що буде видалено:' : '✓ Видалено:'}
+            </div>
+            <div>Operations: <b>{rollbackResult.operations.deleted ?? rollbackResult.operations.found}</b> (знайдено {rollbackResult.operations.found})</div>
+            {rollbackResult.entities && !rollbackResult.entities.skipped && Object.entries(rollbackResult.entities).map(([k, v]: any) => (
+              <div key={k}>{k}: <b>{v.deleted ?? v.found}</b> (знайдено {v.found}){v.errors && v.errors.length > 0 && (
+                <span style={{ color: '#ef4444', marginLeft: 8 }}>· {v.errors.length} FK conflict(s)</span>
+              )}</div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
         <b>Workflow:</b>
