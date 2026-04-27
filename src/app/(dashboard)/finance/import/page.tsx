@@ -507,8 +507,13 @@ export default function ImportWizardPage() {
                       {items.map((item) => {
                         const ch = choices[et][item.source_value] || { pms_entity_id: null, action: 'create_new' as const };
                         const isExact = item.exact_match && ch.pms_entity_id === item.exact_match.id;
-                        const isHighSim = item.candidates[0] && (item.candidates[0].similarity || 0) >= 0.85 && ch.pms_entity_id === item.candidates[0].id;
-                        const matchLabel = isExact ? '✓ EXACT' : isHighSim ? `~${Math.round((item.candidates[0].similarity || 0) * 100)}%` : item.exact_match ? '✓ exact є' : item.candidates.length > 0 ? `~${Math.round((item.candidates[0].similarity || 0) * 100)}%` : '—';
+                        const topSim = item.candidates[0]?.similarity || 0;
+                        const isHighSim = topSim >= 0.85 && ch.pms_entity_id === item.candidates[0]?.id;
+                        const matchLabel = isExact ? '✓ EXACT'
+                          : isHighSim ? `~${Math.round(topSim * 100)}%`
+                          : item.exact_match ? '✓ exact є'
+                          : topSim >= 0.5 ? `~${Math.round(topSim * 100)}%`
+                          : '—';
                         return (
                           <tr key={item.source_value} style={{ borderTop: '1px solid var(--border-primary)' }}>
                             <td style={{ ...td, fontWeight: 600 }}>{item.source_value}</td>
@@ -535,12 +540,27 @@ export default function ImportWizardPage() {
                                   }));
                                 }}>
                                   <option value="">— вибери —</option>
-                                  {item.candidates.map((cand) => (
-                                    <option key={cand.id} value={cand.id}>
-                                      {cand.name}{cand.meta ? ` (${cand.meta})` : ''}{cand.similarity ? ` · ${Math.round(cand.similarity * 100)}%` : ''}
-                                    </option>
-                                  ))}
-                                  {item.candidates.length === 0 && <option disabled>— немає кандидатів —</option>}
+                                  {/* Top suggestions (similarity ≥ 50%) shown first */}
+                                  {item.candidates.filter((c) => (c.similarity || 0) >= 0.5).length > 0 && (
+                                    <optgroup label="Рекомендовані">
+                                      {item.candidates.filter((c) => (c.similarity || 0) >= 0.5).map((cand) => (
+                                        <option key={cand.id} value={cand.id}>
+                                          {cand.name}{cand.meta ? ` (${cand.meta})` : ''} · {Math.round((cand.similarity || 0) * 100)}%
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  {/* All other entities — manual pick */}
+                                  {item.candidates.filter((c) => (c.similarity || 0) < 0.5).length > 0 && (
+                                    <optgroup label="Усі інші">
+                                      {item.candidates.filter((c) => (c.similarity || 0) < 0.5).map((cand) => (
+                                        <option key={cand.id} value={cand.id}>
+                                          {cand.name}{cand.meta ? ` (${cand.meta})` : ''}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  {item.candidates.length === 0 && <option disabled>— у PMS немає {ENTITY_LABELS[et].toLowerCase()} —</option>}
                                 </select>
                               ) : ch.action === 'create_new' ? (
                                 <span style={{ color: '#3b82f6', fontStyle: 'italic' }}>Створити «{item.source_value}» при commit</span>

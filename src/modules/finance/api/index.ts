@@ -298,6 +298,10 @@ export const rollbackFinmapImport = withPermission('manage_finance_settings', _r
 // withPermission. Investor can revoke by regenerating token in admin.
 export { getInvestorPortalData } from './investor-portal.handlers';
 
+// ─── Supabase importer (PR #36) — manage_investors ──────────────
+import { importFromSupabase as _importFromSupabase } from './supabase-import.handlers';
+export const importFromSupabase = withPermission('manage_investors', _importFromSupabase);
+
 // ─── Investor module (PR #31) — manage_investors permission ─────
 export {
   listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
