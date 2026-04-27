@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle, Settings, ListChecks, Repeat } from 'lucide-react';
 import { useDevice } from '@/lib/useDevice';
 import MobileFinanceOverview from '@/components/mobile/pages/MobileFinanceOverview';
+import ReconcileWidget from './_components/ReconcileWidget';
 
 interface KPI {
   revenue: number;
@@ -174,6 +175,8 @@ export default function FinanceOverviewPage() {
           </Link>
         </div>
       </div>
+
+      <ReconcileWidget />
 
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
