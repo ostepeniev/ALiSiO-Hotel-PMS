@@ -125,6 +125,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow: visible;
 }
 
 /* ── TOP BAR ── */
@@ -587,12 +588,17 @@
 /* Desktop: two months side by side */
 @media (min-width: 768px) {
   .v3-cal-wrap {
-    min-width: 600px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 660px;
+    z-index: 200;
+    margin-bottom: 0;
   }
 
   .v3-cal-months-grid {
     flex-direction: row;
-    gap: 20px;
+    gap: 24px;
   }
 
   .v3-cal-months-grid .v3-month-section {
@@ -814,7 +820,7 @@
 .v3-cal-day.busy {
   position: relative;
   cursor: not-allowed;
-  color: rgba(0, 0, 0, 0.25);
+  color: var(--ink-3, rgba(150, 150, 150, 0.5));
   background: rgba(200, 50, 50, 0.07);
   border-radius: 8px;
   overflow: hidden;

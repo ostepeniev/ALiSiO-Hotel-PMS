@@ -254,10 +254,13 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (!isMounted) return;
     const fetchServices = async () => {
       if (!siteId && !siteSlug) return;
+      // Wait until siteConfig is loaded to get the resolved siteId
+      const resolvedSiteId = siteId || siteConfig?.id;
+      if (!resolvedSiteId) return; // siteConfig not yet loaded — will re-run when it loads
       setLoadingServices(true);
       try {
         const url = new URL(`${API_BASE}/api/booking/services`, window.location.origin);
-        if (siteId) url.searchParams.set('siteId', siteId);
+        url.searchParams.set('siteId', resolvedSiteId);
         const res = await fetch(url.toString());
         const data = await res.json();
         if (data.services) {
@@ -267,7 +270,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       setLoadingServices(false);
     };
     fetchServices();
-  }, [isMounted, siteId, siteSlug]);
+  }, [isMounted, siteId, siteSlug, siteConfig]);
 
   // Fetch basic unit info on mount (without dates) to show unit card and limits immediately
   useEffect(() => {
@@ -675,6 +678,30 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     return styles;
   }, [activeDesign]);
 
+  // Sync html/body background to match the widget theme
+  // (prevents white gaps from globals.css on /w/ pages)
+  useEffect(() => {
+    const theme = activeDesign?.theme?.toLowerCase() || '';
+    const BG_MAP: Record<string, string> = {
+      dark:      '#0f172a',
+      luxury:    '#0d0d1a',
+      nature:    '#f0fdf4',
+      ocean:     '#ecfeff',
+      sunset:    '#fff7ed',
+      nordic:    '#f8fafc',
+      minimal:   '#fafafa',
+      modern:    '#f1f5f9',
+      classical: '#fdf8f0',
+    };
+    const bg = BG_MAP[theme] || '#FAFAF7';
+    document.documentElement.style.background = bg;
+    document.body.style.background = bg;
+    return () => {
+      document.documentElement.style.background = '';
+      document.body.style.background = '';
+    };
+  }, [activeDesign]);
+
   return (
     <div className={`v3-body ${activeDesign?.theme?.toLowerCase() || ''}`} style={dynamicStyles} id="alisio-widget-v3">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -746,7 +773,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           )}
 
-          {/* Change unit button — shown when calendar is open, if unit is pre-selected */}
+          {/* Change unit button — temporarily hidden
           {selectedUnitId && calOpen && (
             <button className="v3-change-unit-btn" onClick={() => {
               setSelectedUnitId(null);
@@ -757,6 +784,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               ↺ Не знайшли вільну дату? Оберіть інший варіант
             </button>
           )}
+          */}
 
           <div className="v3-dates" onClick={() => setCalOpen(true)}>
             <div className={`v3-date-cell ${(checkIn && checkOut) || !selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
