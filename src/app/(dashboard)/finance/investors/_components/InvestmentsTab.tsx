@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit } from 'lucide-react';
 
 interface Investment {
   id: string;
@@ -108,6 +108,7 @@ export default function InvestmentsTab() {
                   <td style={{ ...td, textAlign: 'right' }}>{i.equity_pct != null ? `${i.equity_pct}%` : '—'}</td>
                   <td style={td}>{i.model_description || '—'}</td>
                   <td style={td}>
+                    <button onClick={() => setEditing(i)} style={iconBtn} title="Редагувати"><Edit size={14} /></button>
                     <button onClick={() => remove(i.id)} style={{ ...iconBtn, color: '#dc2626' }}><Trash2 size={14} /></button>
                   </td>
                 </tr>

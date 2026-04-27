@@ -142,6 +142,32 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           stages_json = excluded.stages_json,
           updated_at = datetime('now')
       `);
+      const upsertDetails = db.prepare(`
+        INSERT INTO investor_property_details (id, project_id, location, image_url, airbnb_url, ical_url, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id) DO UPDATE SET
+          location   = excluded.location,
+          image_url  = excluded.image_url,
+          airbnb_url = excluded.airbnb_url,
+          ical_url   = excluded.ical_url,
+          status     = excluded.status,
+          updated_at = datetime('now')
+      `);
+
+      function detailsForRow(r: CsvRow): { location: string | null; image_url: string | null; airbnb_url: string | null; ical_url: string | null; status: string } {
+        const rawStatus = (pickFirst(r, 'status') || '').toLowerCase();
+        let status = 'active';
+        if (rawStatus.includes('progress')) status = 'in_progress';
+        else if (rawStatus === 'project') status = 'project';
+        else if (rawStatus === 'paused') status = 'paused';
+        return {
+          location:   pickFirst(r, 'location') || null,
+          image_url:  pickFirst(r, 'image_url') || null,
+          airbnb_url: pickFirst(r, 'airbnb_url') || null,
+          ical_url:   pickFirst(r, 'ical_url') || null,
+          status,
+        };
+      }
 
       for (const r of rows) {
         try {
@@ -158,11 +184,15 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           if (localId) {
             propertyMap.set(supabaseId, localId);
             result.properties.skipped++;
-            // Still upsert work_stages (overwrites with newer Supabase data)
-            const stagesJson = pickFirst(r, 'work_stages');
-            if (stagesJson && !input.dryRun) {
-              const stagesId = `pws_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
-              upsertStages.run(stagesId, localId, stagesJson);
+            if (!input.dryRun) {
+              const stagesJson = pickFirst(r, 'work_stages');
+              if (stagesJson) {
+                const stagesId = `pws_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
+                upsertStages.run(stagesId, localId, stagesJson);
+              }
+              const d = detailsForRow(r);
+              upsertDetails.run(`pd_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
+                localId, d.location, d.image_url, d.airbnb_url, d.ical_url, d.status);
             }
             continue;
           }
@@ -176,12 +206,15 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           localBusByNormName.set(normName(name), newId);
           result.properties.created++;
 
-          // Add work_stages
+          // Add work_stages + details
           const stagesJson = pickFirst(r, 'work_stages');
           if (stagesJson) {
             const stagesId = `pws_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
             upsertStages.run(stagesId, newId, stagesJson);
           }
+          const d = detailsForRow(r);
+          upsertDetails.run(`pd_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
+            newId, d.location, d.image_url, d.airbnb_url, d.ical_url, d.status);
         } catch (e: any) {
           result.properties.errors.push(e.message);
         }

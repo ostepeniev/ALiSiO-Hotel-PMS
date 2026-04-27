@@ -3394,6 +3394,23 @@ function runMigrations(database: any) {
     )
   `);
 
+  // PR #38: Investor-facing property metadata that doesn't belong on
+  // business_units (which is shared with the rest of the PMS). Carries
+  // the InvestFlow fields: location label, image_url, status, airbnb_url,
+  // ical_url. Linked 1:1 to a business_unit (= property).
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_property_details (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      project_id TEXT NOT NULL UNIQUE REFERENCES business_units(id) ON DELETE CASCADE,
+      location TEXT,
+      image_url TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('project', 'in_progress', 'active', 'paused')),
+      airbnb_url TEXT,
+      ical_url TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   // PR #27: email-forward receipts inbox (separate from bank inbox)
   // User forwards email with invoice/receipt → IMAP poll extracts attachments
   // → drops them in fin_pending_receipts pool → user manually links to a
