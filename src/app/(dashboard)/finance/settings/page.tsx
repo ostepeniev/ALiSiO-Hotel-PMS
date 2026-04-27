@@ -12,6 +12,7 @@ import AutoRulesTab from './_components/AutoRulesTab';
 import RecurringTemplatesTab from './_components/RecurringTemplatesTab';
 import BankInboxesTab from './_components/BankInboxesTab';
 import TeyaSyncTab from './_components/TeyaSyncTab';
+import ReceiptInboxesTab from './_components/ReceiptInboxesTab';
 
 type TabId =
   | 'accounts'
@@ -23,6 +24,7 @@ type TabId =
   | 'auto-rules'
   | 'recurring'
   | 'bank-inboxes'
+  | 'receipt-inboxes'
   | 'teya-sync'
   | 'users';
 
@@ -43,6 +45,7 @@ const TABS: TabDef[] = [
   { id: 'auto-rules', label: 'Автоправила', icon: <Zap size={16} />, enabled: true },
   { id: 'recurring', label: 'Регулярки', icon: <Repeat size={16} />, enabled: true },
   { id: 'bank-inboxes', label: 'Банк-приймач', icon: <Mail size={16} />, enabled: true },
+  { id: 'receipt-inboxes', label: 'Receipt inbox (чеки)', icon: <Mail size={16} />, enabled: true },
   { id: 'teya-sync', label: 'Teya sync', icon: <CreditCard size={16} />, enabled: true },
   { id: 'users', label: 'Користувачі', icon: <UserCog size={16} />, enabled: false },
 ];
@@ -125,6 +128,7 @@ export default function FinanceSettingsPage() {
           {activeTab === 'auto-rules' && <AutoRulesTab />}
           {activeTab === 'recurring' && <RecurringTemplatesTab />}
           {activeTab === 'bank-inboxes' && <BankInboxesTab />}
+          {activeTab === 'receipt-inboxes' && <ReceiptInboxesTab />}
           {activeTab === 'teya-sync' && <TeyaSyncTab />}
         </main>
       </div>
