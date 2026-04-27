@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip } from 'lucide-react';
+import { Plus, Minus, ArrowLeftRight, Settings, Search, Trash2, Copy, Calendar, BarChart3, Wallet, Paperclip, Repeat } from 'lucide-react';
 import OperationModal from './_components/OperationModal';
 import ExportButton from '../_components/ExportButton';
 
@@ -32,6 +32,8 @@ interface Operation {
   source: string;
   reservation_id: string | null;
   tags: string[];
+  suggested_recurring_id: string | null;
+  suggested_recurring_name: string | null;
 }
 
 interface Account { id: string; name: string; color: string; balance: number; currency: string }
@@ -242,6 +244,20 @@ export default function OperationsPage() {
                           )}
                         </td>
                         <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                          {o.suggested_recurring_id && (
+                            <span
+                              onClick={() => { setEditOp(o); setModalType(o.op_type); }}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 2,
+                                padding: '1px 5px', marginRight: 4, borderRadius: 4,
+                                background: 'rgba(34,197,94,0.12)', color: '#16a34a',
+                                fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                              }}
+                              title={`Виглядає як ${o.suggested_recurring_name}. Клік щоб підтвердити.`}
+                            >
+                              <Repeat size={10} /> {o.suggested_recurring_name}
+                            </span>
+                          )}
                           {attachCounts[o.id] > 0 && (
                             <span
                               onClick={() => { setEditOp(o); setModalType(o.op_type); }}

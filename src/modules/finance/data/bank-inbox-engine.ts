@@ -6,6 +6,7 @@ import { parseStringPromise } from 'xml2js';
 import { loadActiveRules, applyRulesToOperation } from './auto-rules-engine';
 import { createOperationInTx } from '../api/operations.handlers';
 import { tryMatchBankOpToReceivables } from './clearing-engine';
+import { tagOpWithRecurringSuggestion } from './recurring-engine';
 
 // ─────────────────────────────────────────────────────────────────
 // Encryption (AES-256-GCM)
@@ -380,6 +381,15 @@ function importStatement(db: any, inbox: BankInboxConfig, stmt: ParsedStatement,
           tryMatchBankOpToReceivables(db, inbox.organization_id, opId, Math.abs(t.amount), t.currency, t.date);
         } catch (e: any) { console.log('[BankInbox] receivable match error:', e.message); }
       }
+
+      // PR #26: tag op with a recurring template suggestion if one looks like
+      // a likely match (rent / utilities / salary). User confirms in UI.
+      try {
+        const newOp = db.prepare("SELECT op_type, amount, currency, counterparty_id, paid_at FROM fin_operations WHERE id = ?").get(opId) as any;
+        if (newOp) {
+          tagOpWithRecurringSuggestion(db, inbox.organization_id, opId, newOp);
+        }
+      } catch (e: any) { console.log('[BankInbox] recurring suggestion error:', e.message); }
 
       insTx.run(
         txId, stmtId, inbox.organization_id, t.date, t.amount,

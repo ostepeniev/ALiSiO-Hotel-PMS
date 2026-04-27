@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Repeat, Check } from 'lucide-react';
 import AttachmentsSection from './AttachmentsSection';
 
 type OpType = 'income' | 'expense' | 'transfer';
@@ -188,6 +188,14 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
 
         {error && <div style={{ color: '#dc2626', fontSize: 13, marginBottom: 10 }}>{error}</div>}
 
+        {initial?.suggested_recurring_id && initial?.suggested_recurring_name && (
+          <RecurringSuggestionBanner
+            operationId={initial.id}
+            templateName={initial.suggested_recurring_name}
+            onApplied={() => { onSaved(); }}
+          />
+        )}
+
         <AttachmentsSection operationId={initial?.id || null} />
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
@@ -197,6 +205,68 @@ export default function OperationModal({ opType, initial, accounts, onClose, onS
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function RecurringSuggestionBanner({ operationId, templateName, onApplied }: {
+  operationId: string; templateName: string; onApplied: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function act(confirm: boolean) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/finance/operations/${operationId}/apply-recurring`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm }),
+      });
+      if (!res.ok) {
+        const j = await res.json();
+        alert(`Помилка: ${j.error || 'failed'}`);
+      } else {
+        onApplied();
+      }
+    } catch (e: any) { alert(`Помилка: ${e.message}`); }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: 12, marginBottom: 12, borderRadius: 8,
+      background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)',
+    }}>
+      <Repeat size={16} color="#16a34a" />
+      <div style={{ flex: 1, fontSize: 13 }}>
+        Виглядає як <b>{templateName}</b>. Підтвердити автозаповнення категорії/проєкту/контрагента з шаблону?
+      </div>
+      <button
+        type="button"
+        onClick={() => act(false)}
+        disabled={busy}
+        style={{
+          padding: '6px 12px', fontSize: 12, fontWeight: 500,
+          background: 'transparent', border: '1px solid var(--border-primary)',
+          borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer',
+        }}
+      >
+        Не моє
+      </button>
+      <button
+        type="button"
+        onClick={() => act(true)}
+        disabled={busy}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          padding: '6px 12px', fontSize: 12, fontWeight: 600,
+          background: '#16a34a', border: 'none', borderRadius: 6,
+          color: '#fff', cursor: 'pointer',
+        }}
+      >
+        <Check size={12} /> Підтвердити
+      </button>
     </div>
   );
 }
