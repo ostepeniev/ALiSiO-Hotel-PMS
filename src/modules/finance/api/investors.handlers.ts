@@ -20,6 +20,7 @@ import * as crypto from 'crypto';
 import { createOperationInTx } from './operations.handlers';
 import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
 import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
+import { getAutoRevenueAllProjects, getAutoRevenue } from '../data/auto-revenue-engine';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -484,6 +485,30 @@ export async function sendDigestTelegram(request: NextRequest): Promise<NextResp
     const result = await sendTelegramMessage(investor.telegram_chat_id, text);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
     return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Auto revenue from real reservations ─────
+//
+// Computes per-project monthly revenue from PMS reservations whose
+// guests have already checked out. Used to skip manual metric entry.
+
+export async function getAutoRevenueForMonth(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const yearMonth = sp.get('year_month');
+    const projectId = sp.get('project_id');
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'year_month=YYYY-MM required' }, { status: 400 });
+    }
+    if (projectId) {
+      return NextResponse.json({ items: [getAutoRevenue(db, orgId, projectId, yearMonth)] });
+    }
+    return NextResponse.json({ items: getAutoRevenueAllProjects(db, orgId, yearMonth) });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -15,6 +15,8 @@
 // driven by our SQLite schema (PR #31).
 //
 
+import { buildProjectToUnitMap, getInvestorIncomeBySource, type InvestorSourceBreakdown } from './auto-revenue-engine';
+
 export interface InvestorPortalData {
   investor: {
     id: string;
@@ -56,6 +58,7 @@ export interface InvestorPortalData {
   }>;
   capital_growth: Array<{ month: string; invested: number; profit_cumulative: number }>;
   occupancy_dynamics: Array<{ month: string; occupancy_pct: number }>;
+  income_by_source: InvestorSourceBreakdown[];
   monthly_reports: Array<{
     project_id: string;
     project_name: string;
@@ -119,6 +122,38 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   for (const m of metricsRows) {
     if (!metricsByProject.has(m.project_id)) metricsByProject.set(m.project_id, []);
     metricsByProject.get(m.project_id)!.push(m);
+  }
+
+  // Auto-revenue fallback: for each project, sum reservations.total_price by
+  // checkout month (only departed). Manual metrics override when present.
+  const orgIdRow = db.prepare("SELECT organization_id FROM investors WHERE id = ?").get(investor.id) as { organization_id: string };
+  const projectToUnit = buildProjectToUnitMap(db, orgIdRow.organization_id);
+  const today = new Date().toISOString().substring(0, 10);
+  for (const projectId of projectIds) {
+    const unit = projectToUnit.get(projectId);
+    if (!unit) continue;
+    const autoRows = db.prepare(`
+      SELECT substr(check_out, 1, 7) AS year_month,
+             COALESCE(SUM(total_price), 0) AS revenue
+      FROM reservations
+      WHERE unit_id = ? AND check_out <= ?
+        AND status NOT IN ('cancelled', 'no_show', 'draft')
+      GROUP BY substr(check_out, 1, 7)
+    `).all(unit.id, today) as { year_month: string; revenue: number }[];
+
+    const existing = metricsByProject.get(projectId) || [];
+    const existingMonths = new Set(existing.map((m: any) => m.year_month));
+    for (const a of autoRows) {
+      if (existingMonths.has(a.year_month)) continue;        // manual wins
+      existing.push({
+        project_id: projectId,
+        year_month: a.year_month,
+        occupancy_pct: null,
+        revenue: a.revenue,
+      });
+    }
+    existing.sort((a: any, b: any) => a.year_month.localeCompare(b.year_month));
+    metricsByProject.set(projectId, existing);
   }
 
   // Pre-load work_stages
@@ -296,6 +331,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     properties: propertyOut,
     capital_growth: capitalGrowth,
     occupancy_dynamics: occupancyDynamics,
+    income_by_source: getInvestorIncomeBySource(db, investor.id),
     monthly_reports: reportsRows.map((r) => ({
       project_id: r.project_id, project_name: r.project_name,
       year_month: r.year_month, adr: r.adr,
