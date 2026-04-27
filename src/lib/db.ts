@@ -3218,6 +3218,24 @@ function runMigrations(database: any) {
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
+  // PR #36: supabase_id columns on investor tables for idempotent re-import
+  // from the InvestFlow Supabase backend. Lets user re-upload CSVs without
+  // creating duplicates — second run is a no-op for already-imported rows.
+  const addCol = (table: string, col: string, def: string) => {
+    try {
+      const cols = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (!cols.some((c) => c.name === col)) {
+        database.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+        database.exec(`CREATE INDEX IF NOT EXISTS idx_${table}_${col} ON ${table}(${col})`);
+      }
+    } catch (e: any) { console.log(`[DB] PR #36 ${table}.${col} migration:`, e.message); }
+  };
+  addCol('investors',                  'supabase_id', 'TEXT');
+  addCol('investor_investments',       'supabase_id', 'TEXT');
+  addCol('investor_payouts',           'supabase_id', 'TEXT');
+  addCol('property_monthly_metrics',   'supabase_id', 'TEXT');
+  addCol('property_monthly_reports',   'supabase_id', 'TEXT');
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
