@@ -72,10 +72,9 @@ export function buildMonthlyDigest(
 
   for (const inv of investors) {
     const investments = db.prepare(`
-      SELECT ii.*, COALESCE(u.name, bu.name) AS project_name
+      SELECT ii.*, bu.name AS project_name
       FROM investor_investments ii
-      LEFT JOIN units u           ON u.id  = ii.unit_id
-      LEFT JOIN business_units bu ON bu.id = ii.project_id
+      JOIN business_units bu ON bu.id = ii.project_id
       WHERE ii.investor_id = ? AND ii.is_active = 1
       ORDER BY ii.invested_at
     `).all(inv.id) as any[];
@@ -94,30 +93,28 @@ export function buildMonthlyDigest(
 
     for (const ii of investments) {
       const eq = (ii.equity_pct || 0) / 100;
-      const key = ii.unit_id || ii.project_id; // prefer unit_id, fall back to legacy
 
       // Metric for the chosen month
       const monthMetric = db.prepare(`
         SELECT occupancy_pct, revenue
         FROM property_monthly_metrics
-        WHERE COALESCE(unit_id, project_id) = ? AND year_month = ?
-      `).get(key, yearMonth) as { occupancy_pct: number | null; revenue: number | null } | undefined;
+        WHERE project_id = ? AND year_month = ?
+      `).get(ii.project_id, yearMonth) as { occupancy_pct: number | null; revenue: number | null } | undefined;
 
       // All metrics from invested_at through chosen month (for accumulated)
       const cumMetrics = db.prepare(`
         SELECT revenue
         FROM property_monthly_metrics
-        WHERE COALESCE(unit_id, project_id) = ? AND year_month >= ? AND year_month <= ?
-      `).all(key, ii.invested_at.substring(0, 7), yearMonth) as { revenue: number | null }[];
+        WHERE project_id = ? AND year_month >= ? AND year_month <= ?
+      `).all(ii.project_id, ii.invested_at.substring(0, 7), yearMonth) as { revenue: number | null }[];
       const accProfit = cumMetrics.reduce((s, m) => s + ((m.revenue || 0) * eq), 0);
 
-      // All payouts to this investor for this unit (matches by unit_id OR legacy project_id)
+      // All payouts to this investor for this property
       const payouts = db.prepare(`
         SELECT amount, paid_at
         FROM investor_payouts
-        WHERE investor_id = ?
-          AND (unit_id = ? OR project_id = ? OR (unit_id IS NULL AND project_id IS NULL))
-      `).all(inv.id, key, key) as { amount: number; paid_at: string }[];
+        WHERE investor_id = ? AND (project_id = ? OR project_id IS NULL)
+      `).all(inv.id, ii.project_id) as { amount: number; paid_at: string }[];
       const totalPaidForProperty = payouts.reduce((s, p) => s + (p.amount || 0), 0);
       const paidThisMonth = payouts
         .filter((p) => p.paid_at && p.paid_at.substring(0, 7) === yearMonth)
@@ -127,13 +124,9 @@ export function buildMonthlyDigest(
       const monthlyProfit = revenue * eq;
       if (monthMetric) hasAnyMetric = true;
 
-      // Display name: prefer real unit name (not legacy business_unit name)
-      const displayName = ii.unit_id ? (db.prepare("SELECT u.name, p.name AS prop_name FROM units u JOIN properties p ON p.id = u.property_id WHERE u.id = ?").get(ii.unit_id) as any) : null;
-      const projectName = displayName ? `${displayName.prop_name} / ${displayName.name}` : ii.project_name;
-
       properties.push({
-        project_id: key,
-        project_name: projectName,
+        project_id: ii.project_id,
+        project_name: ii.project_name,
         equity_pct: ii.equity_pct,
         occupancy_pct: monthMetric?.occupancy_pct ?? null,
         revenue,

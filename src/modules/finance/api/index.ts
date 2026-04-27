@@ -302,11 +302,10 @@ export { getInvestorPortalData } from './investor-portal.handlers';
 import { importFromSupabase as _importFromSupabase } from './supabase-import.handlers';
 export const importFromSupabase = withPermission('manage_investors', _importFromSupabase);
 
-// ─── Investor module (PR #31, expanded #38, units in #39) — manage_investors permission ─────
+// ─── Investor module (PR #31, expanded #38) — manage_investors permission ─────
 export {
   listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
   listInvestorProperties, listMonthlyReports, getMonthlyDigest, getTelegramStatus,
-  listInvestorUnits,
 } from './investors.handlers';
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
@@ -316,7 +315,6 @@ import {
   createInvestorProperty as _createInvestorProperty, updateInvestorProperty as _updateInvestorProperty,
   upsertMonthlyReport as _upsertMonthlyReport, deleteMonthlyReport as _deleteMonthlyReport,
   sendDigestTelegram as _sendDigestTelegram,
-  updateInvestorUnit as _updateInvestorUnit,
 } from './investors.handlers';
 export const createInvestor      = withPermission('manage_investors', _createInvestor);
 export const updateInvestor      = withPermission('manage_investors', _updateInvestor);
@@ -333,7 +331,6 @@ export const updateInvestorProperty = withPermission('manage_investors', _update
 export const upsertMonthlyReport    = withPermission('manage_investors', _upsertMonthlyReport);
 export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
 export const sendDigestTelegram     = withPermission('manage_investors', _sendDigestTelegram);
-export const updateInvestorUnit     = withPermission('manage_investors', _updateInvestorUnit);
 
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
