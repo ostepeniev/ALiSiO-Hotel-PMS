@@ -49,6 +49,27 @@ export default function MonthlyDigestTab() {
   const [items, setItems] = useState<DigestInvestor[]>([]);
   const [loading, setLoading] = useState(false);
   const [previewText, setPreviewText] = useState<{ name: string; text: string } | null>(null);
+  const [tgBot, setTgBot] = useState<{ ok: boolean; username?: string; error?: string } | null>(null);
+
+  // Probe whether the Telegram bot is configured on the server. If yes,
+  // the per-investor "Telegram" button becomes active.
+  useEffect(() => {
+    fetch('/api/finance/telegram-bot').then(async (r) => setTgBot(await r.json())).catch(() => setTgBot({ ok: false }));
+  }, []);
+
+  async function sendTelegram(d: DigestInvestor) {
+    if (!d.telegram_chat_id) { alert('У інвестора не вказано telegram_chat_id'); return; }
+    if (!confirm(`Відправити звіт у Telegram (chat_id: ${d.telegram_chat_id})?`)) return;
+    try {
+      const res = await fetch('/api/finance/investor-monthly-digest/send-telegram', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ investor_id: d.investor_id, year_month: yearMonth }),
+      });
+      const json = await res.json();
+      if (!res.ok) { alert(`Telegram error: ${json.error}`); return; }
+      alert('✓ Відправлено у Telegram');
+    } catch (e: any) { alert(`Помилка: ${e.message}`); }
+  }
 
   const fetchDigest = useCallback(async () => {
     setLoading(true);
@@ -106,9 +127,14 @@ export default function MonthlyDigestTab() {
         </button>
       </div>
 
-      <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
+      <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
         Зведення обчислюється з метрик (Occupancy + Revenue) обраного місяця × частки інвестора. Виплати показуються ті, що з paid_at у цьому місяці. Для кожного інвестора окрема картка — клік на «Email», «Copy» або «Telegram» бере готовий текст.
       </p>
+      <div style={{ fontSize: 11, marginBottom: 16, padding: 8, background: tgBot?.ok ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)', borderRadius: 6, color: tgBot?.ok ? '#16a34a' : '#92400e' }}>
+        {tgBot === null ? 'Перевіряю стан Telegram-бота…'
+          : tgBot.ok ? `✓ Telegram-бот @${tgBot.username} підключено`
+          : `⚠ Telegram-бот не налаштовано (${tgBot.error}). Додайте TELEGRAM_BOT_TOKEN у .env на сервері та перезапустіть. Без нього кнопка «Telegram» неактивна.`}
+      </div>
 
       {items.length === 0 && !loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-primary)', borderRadius: 8 }}>
@@ -169,7 +195,10 @@ export default function MonthlyDigestTab() {
                 <button onClick={() => copyText(d.investor_id)} style={btn}><Copy size={12} /> Copy</button>
                 {d.email && <button onClick={() => emailDigest(d)} style={btn}><Mail size={12} /> Email</button>}
                 {d.telegram_chat_id && (
-                  <button disabled title="Потребує bot token (TG бот не налаштований)" style={{ ...btn, opacity: 0.5, cursor: 'not-allowed' }}>
+                  <button onClick={() => sendTelegram(d)}
+                          disabled={!tgBot?.ok}
+                          title={tgBot?.ok ? `Відправити у Telegram (${d.telegram_chat_id})` : 'Бот не налаштований'}
+                          style={{ ...btn, opacity: tgBot?.ok ? 1 : 0.5, cursor: tgBot?.ok ? 'pointer' : 'not-allowed' }}>
                     <MessageCircle size={12} /> Telegram
                   </button>
                 )}
