@@ -25,18 +25,20 @@ export async function importFromSupabase(request: NextRequest): Promise<NextResp
     const dryRun = request.nextUrl.searchParams.get('dry_run') === '1';
     const form = await request.formData();
 
+    const propertiesCsv   = form.get('properties_csv');
     const investorsCsv    = form.get('investors_csv');
     const investmentsCsv  = form.get('investments_csv');
     const paymentsCsv     = form.get('payments_csv');
     const metricsCsv      = form.get('metrics_csv');
 
     const input: any = { dryRun };
+    if (propertiesCsv instanceof File)  input.propertiesCsv  = await propertiesCsv.text();
     if (investorsCsv instanceof File)   input.investorsCsv   = await investorsCsv.text();
     if (investmentsCsv instanceof File) input.investmentsCsv = await investmentsCsv.text();
     if (paymentsCsv instanceof File)    input.paymentsCsv    = await paymentsCsv.text();
     if (metricsCsv instanceof File)     input.metricsCsv     = await metricsCsv.text();
 
-    if (!input.investorsCsv && !input.investmentsCsv && !input.paymentsCsv && !input.metricsCsv) {
+    if (!input.propertiesCsv && !input.investorsCsv && !input.investmentsCsv && !input.paymentsCsv && !input.metricsCsv) {
       return NextResponse.json({ error: 'At least one CSV file required' }, { status: 400 });
     }
 
