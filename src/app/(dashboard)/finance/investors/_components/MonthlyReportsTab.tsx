@@ -5,8 +5,10 @@ import { Plus, Trash2, Edit, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface MonthlyReport {
   id: string;
-  project_id: string;
+  unit_id: string | null;
+  project_id: string | null;
   project_name: string;
+  property_name: string | null;
   year_month: string;
   adr: number | null;
   general_comment: string | null;
@@ -16,12 +18,14 @@ interface MonthlyReport {
   supabase_id?: string | null;
 }
 
-interface Project { id: string; name: string }
-interface MetricKey { project_id: string; year_month: string }
+interface UnitOption { id: string; name: string; code: string; property_name: string }
+interface MetricKey { unit_id: string | null; project_id: string | null; year_month: string }
+
+function unitLabel(u: UnitOption): string { return `${u.property_name} / ${u.name}`; }
 
 export default function MonthlyReportsTab() {
   const [items, setItems] = useState<MonthlyReport[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
   const [metrics, setMetrics] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<MonthlyReport> & { ops?: string[] } | null>(null);
@@ -29,16 +33,19 @@ export default function MonthlyReportsTab() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [rRes, pRes, mRes] = await Promise.all([
+      const [rRes, uRes, mRes] = await Promise.all([
         fetch('/api/finance/investor-monthly-reports'),
-        fetch('/api/finance/investor-projects'),
+        fetch('/api/finance/investor-units'),
         fetch('/api/finance/investor-monthly-metrics'),
       ]);
-      const [rJ, pJ, mJ] = await Promise.all([rRes.json(), pRes.json(), mRes.json()]);
+      const [rJ, uJ, mJ] = await Promise.all([rRes.json(), uRes.json(), mRes.json()]);
       setItems(rJ.items || []);
-      setProjects(pJ.items || []);
+      setUnits((uJ.items || []).map((u: any) => ({ id: u.id, name: u.name, code: u.code, property_name: u.property_name })));
       const set = new Set<string>();
-      for (const m of mJ.items as MetricKey[]) set.add(`${m.project_id}|${m.year_month}`);
+      for (const m of mJ.items as MetricKey[]) {
+        const key = m.unit_id || m.project_id;
+        if (key) set.add(`${key}|${m.year_month}`);
+      }
       setMetrics(set);
     } catch (e) { console.error(e); }
     setLoading(false);
@@ -47,15 +54,15 @@ export default function MonthlyReportsTab() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   async function save() {
-    if (!editing?.project_id || !editing?.year_month) {
-      alert('project_id і year_month обовʼязкові');
+    if (!editing?.unit_id || !editing?.year_month) {
+      alert('Будинок (unit) і місяць обовʼязкові');
       return;
     }
     try {
       const res = await fetch('/api/finance/investor-monthly-reports', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          project_id: editing.project_id,
+          unit_id: editing.unit_id,
           year_month: editing.year_month,
           adr: editing.adr ?? null,
           general_comment: editing.general_comment || null,
@@ -109,7 +116,7 @@ export default function MonthlyReportsTab() {
             <thead>
               <tr style={{ background: 'var(--bg-secondary)' }}>
                 <th style={th}>Місяць</th>
-                <th style={th}>Проєкт</th>
+                <th style={th}>Будинок</th>
                 <th style={{ ...th, textAlign: 'right' }}>ADR</th>
                 <th style={th}>Коментар</th>
                 <th style={th}>Метрики є?</th>
@@ -118,11 +125,15 @@ export default function MonthlyReportsTab() {
             </thead>
             <tbody>
               {items.map((r) => {
-                const hasMetric = metrics.has(`${r.project_id}|${r.year_month}`);
+                const key = r.unit_id || r.project_id;
+                const hasMetric = key ? metrics.has(`${key}|${r.year_month}`) : false;
                 return (
                   <tr key={r.id} style={{ borderTop: '1px solid var(--border-primary)' }}>
                     <td style={td}><b>{r.year_month}</b></td>
-                    <td style={td}>{r.project_name}</td>
+                    <td style={td}>
+                      <div>{r.project_name}</div>
+                      {r.property_name && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{r.property_name}</div>}
+                    </td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.adr != null ? r.adr.toLocaleString('cs-CZ', { minimumFractionDigits: 2 }) : '—'}</td>
                     <td style={{ ...td, fontSize: 11, color: 'var(--text-secondary)' }}>{r.general_comment ? r.general_comment.substring(0, 60) + (r.general_comment.length > 60 ? '…' : '') : '—'}</td>
                     <td style={td}>
@@ -147,10 +158,10 @@ export default function MonthlyReportsTab() {
             <h3 style={{ margin: 0, marginBottom: 16 }}>Місячний звіт</h3>
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 2 }}>
-                <Field label="Проєкт *">
-                  <select style={input} value={editing.project_id || ''} onChange={(e) => setEditing({ ...editing, project_id: e.target.value })}>
+                <Field label="Будинок (юніт) *">
+                  <select style={input} value={editing.unit_id || ''} onChange={(e) => setEditing({ ...editing, unit_id: e.target.value })}>
                     <option value="">—</option>
-                    {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
                   </select>
                 </Field>
               </div>
