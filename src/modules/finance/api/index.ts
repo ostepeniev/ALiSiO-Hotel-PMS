@@ -305,7 +305,7 @@ export const importFromSupabase = withPermission('manage_investors', _importFrom
 // ─── Investor module (PR #31, expanded #38) — manage_investors permission ─────
 export {
   listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
-  listInvestorProperties, listMonthlyReports, getMonthlyDigest,
+  listInvestorProperties, listMonthlyReports, getMonthlyDigest, getTelegramStatus,
 } from './investors.handlers';
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
@@ -314,6 +314,7 @@ import {
   createPayout as _createPayout, deletePayout as _deletePayout,
   createInvestorProperty as _createInvestorProperty, updateInvestorProperty as _updateInvestorProperty,
   upsertMonthlyReport as _upsertMonthlyReport, deleteMonthlyReport as _deleteMonthlyReport,
+  sendDigestTelegram as _sendDigestTelegram,
 } from './investors.handlers';
 export const createInvestor      = withPermission('manage_investors', _createInvestor);
 export const updateInvestor      = withPermission('manage_investors', _updateInvestor);
@@ -329,6 +330,7 @@ export const createInvestorProperty = withPermission('manage_investors', _create
 export const updateInvestorProperty = withPermission('manage_investors', _updateInvestorProperty);
 export const upsertMonthlyReport    = withPermission('manage_investors', _upsertMonthlyReport);
 export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
+export const sendDigestTelegram     = withPermission('manage_investors', _sendDigestTelegram);
 
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
