@@ -9,24 +9,25 @@ interface SectionResult {
 }
 interface ImportResult {
   ok: boolean; dry_run: boolean;
-  investors: SectionResult; investments: SectionResult;
+  properties: SectionResult; investors: SectionResult; investments: SectionResult;
   payments: SectionResult; metrics: SectionResult;
 }
 
 export default function SupabaseImportTab() {
-  const [files, setFiles] = useState<{ investors?: File; investments?: File; payments?: File; metrics?: File }>({});
+  const [files, setFiles] = useState<{ properties?: File; investors?: File; investments?: File; payments?: File; metrics?: File }>({});
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function run(dryRun: boolean) {
-    if (!files.investors && !files.investments && !files.payments && !files.metrics) {
+    if (!files.properties && !files.investors && !files.investments && !files.payments && !files.metrics) {
       alert('Хоча б один файл потрібен');
       return;
     }
     setRunning(true); setError(null); setResult(null);
     try {
       const fd = new FormData();
+      if (files.properties)  fd.append('properties_csv',  files.properties);
       if (files.investors)   fd.append('investors_csv',   files.investors);
       if (files.investments) fd.append('investments_csv', files.investments);
       if (files.payments)    fd.append('payments_csv',    files.payments);
@@ -55,15 +56,17 @@ export default function SupabaseImportTab() {
       </p>
 
       <div style={{ padding: 12, marginBottom: 16, background: 'rgba(245,158,11,0.08)', border: '1px solid #f59e0b', borderRadius: 8, fontSize: 12, color: 'var(--text-primary)' }}>
-        ⚠️ <b>Порядок важливий:</b> investors → investments → payments → metrics. Properties (= business_units)
-        мають вже існувати у системі — імпорт мапить по name (fuzzy). Якщо не знайде — рядок повідомить про unmatched.
+        ⚠️ <b>Завантажуй усі 5 файлів разом</b> — порядок обробки фіксований (properties → investors → investments → payments → metrics)
+        і всі ID-зв&apos;язки розв&apos;язуються в одній транзакції. Properties → створюються нові business_units (або матчаться по name)
+        + імпортуються work_stages JSON. Решта файлів використовують <code>property_id</code> з Supabase.
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 16 }}>
-        <FileSlot label="1. investors.csv" file={files.investors} onChange={(f) => setFiles({ ...files, investors: f })} />
-        <FileSlot label="2. investments.csv" file={files.investments} onChange={(f) => setFiles({ ...files, investments: f })} />
-        <FileSlot label="3. payments.csv" file={files.payments} onChange={(f) => setFiles({ ...files, payments: f })} />
-        <FileSlot label="4. metrics.csv" file={files.metrics} onChange={(f) => setFiles({ ...files, metrics: f })} />
+        <FileSlot label="1. properties.csv" file={files.properties} onChange={(f) => setFiles({ ...files, properties: f })} />
+        <FileSlot label="2. investors.csv" file={files.investors} onChange={(f) => setFiles({ ...files, investors: f })} />
+        <FileSlot label="3. investments.csv" file={files.investments} onChange={(f) => setFiles({ ...files, investments: f })} />
+        <FileSlot label="4. payments.csv" file={files.payments} onChange={(f) => setFiles({ ...files, payments: f })} />
+        <FileSlot label="5. metrics.csv" file={files.metrics} onChange={(f) => setFiles({ ...files, metrics: f })} />
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>
@@ -85,7 +88,7 @@ export default function SupabaseImportTab() {
             {result.dry_run ? '🔍 Dry-run результат' : '✓ Імпорт виконано'}
           </div>
 
-          {(['investors', 'investments', 'payments', 'metrics'] as const).map((section) => {
+          {(['properties', 'investors', 'investments', 'payments', 'metrics'] as const).map((section) => {
             const r = result[section];
             if (r.parsed === 0 && r.errors.length === 0) return null;
             return (

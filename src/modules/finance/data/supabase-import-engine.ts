@@ -2,19 +2,20 @@
 //
 // Supabase → ALiSiO PMS investor data importer.
 //
-// User exports each table as CSV from the Supabase Dashboard:
+// User exports each table as CSV from Supabase Dashboard:
+//   - properties.csv    → business_units (+ property_work_stages JSON)
 //   - investors.csv     → investors
 //   - investments.csv   → investor_investments
 //   - payments.csv      → investor_payouts
 //   - metrics.csv       → property_monthly_metrics
-//   - (optional) monthly_reports.csv → property_monthly_reports
+//   - (optional) monthly_reports.csv (TODO future)
 //
-// Idempotent via supabase_id column added in PR #36. Re-uploading the
-// same CSV is a no-op for already-imported rows (matched by supabase_id).
+// Idempotent via supabase_id column added in PR #36 (+ business_units
+// gets a similar mechanism via name match — already present).
 //
-// Properties (= our business_units) are matched by name with fuzzy
-// fallback. Unmatched property names cause the row to error — user
-// fixes by either renaming a business_unit or creating a new one.
+// Investments / payments / metrics use property_id (Supabase PK) as the
+// foreign key — engine builds an in-memory map from properties_csv +
+// pre-existing business_units (matched by name fallback).
 //
 
 import * as crypto from 'crypto';
@@ -58,31 +59,6 @@ function normName(s: string): string {
     .replace(/[^a-zа-я0-9]/g, '');
 }
 
-interface PropertyMatch { id: string; name: string; matched: boolean; }
-
-function buildPropertyLookup(db: any, orgId: string): Map<string, string> {
-  // Map: normalised name → business_unit id
-  const rows = db.prepare(
-    "SELECT id, name FROM business_units WHERE organization_id = ?"
-  ).all(orgId) as { id: string; name: string }[];
-  const map = new Map<string, string>();
-  for (const r of rows) map.set(normName(r.name), r.id);
-  return map;
-}
-
-function matchProperty(lookup: Map<string, string>, supabaseName: string): PropertyMatch {
-  const normalised = normName(supabaseName);
-  const exact = lookup.get(normalised);
-  if (exact) return { id: exact, name: supabaseName, matched: true };
-  // Substring match fallback
-  for (const [normPmsName, id] of lookup) {
-    if (normPmsName.includes(normalised) || normalised.includes(normPmsName)) {
-      return { id, name: supabaseName, matched: true };
-    }
-  }
-  return { id: '', name: supabaseName, matched: false };
-}
-
 function pickFirst(row: CsvRow, ...keys: string[]): string {
   for (const k of keys) {
     if (row[k] != null && row[k] !== '') return row[k];
@@ -105,13 +81,15 @@ function toIsoDate(s: string): string {
 }
 
 export interface SupabaseImportResult {
+  properties:   { parsed: number; created: number; skipped: number; errors: string[] };
   investors:    { parsed: number; created: number; skipped: number; errors: string[] };
   investments:  { parsed: number; created: number; skipped: number; errors: string[]; unmatched_properties: string[] };
-  payments:     { parsed: number; created: number; skipped: number; errors: string[] };
+  payments:     { parsed: number; created: number; skipped: number; errors: string[]; unmatched_properties: string[] };
   metrics:      { parsed: number; created: number; skipped: number; errors: string[]; unmatched_properties: string[] };
 }
 
 export interface SupabaseImportInput {
+  propertiesCsv?: string;
   investorsCsv?: string;
   investmentsCsv?: string;
   paymentsCsv?: string;
@@ -121,23 +99,99 @@ export interface SupabaseImportInput {
 
 export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportInput): SupabaseImportResult {
   const result: SupabaseImportResult = {
+    properties:   { parsed: 0, created: 0, skipped: 0, errors: [] },
     investors:    { parsed: 0, created: 0, skipped: 0, errors: [] },
     investments:  { parsed: 0, created: 0, skipped: 0, errors: [], unmatched_properties: [] },
-    payments:     { parsed: 0, created: 0, skipped: 0, errors: [] },
+    payments:     { parsed: 0, created: 0, skipped: 0, errors: [], unmatched_properties: [] },
     metrics:      { parsed: 0, created: 0, skipped: 0, errors: [], unmatched_properties: [] },
   };
 
-  const propertyLookup = buildPropertyLookup(db, orgId);
-  const investorBySupabaseId = new Map<string, string>(); // supabase_id → local id
+  // ─── Build property mapping (supabase_id → local business_unit id) ───
+  // 1. Pre-load existing business_units by name (normalised)
+  const existingBus = db.prepare(
+    "SELECT id, name FROM business_units WHERE organization_id = ?"
+  ).all(orgId) as { id: string; name: string }[];
+  const localBusByNormName = new Map<string, string>();
+  for (const r of existingBus) localBusByNormName.set(normName(r.name), r.id);
 
-  // Pre-load existing investor mappings (in case investments/payments
-  // come in before investors, or investors already imported)
+  // 2. property_id (supabase) → local business_unit id
+  const propertyMap = new Map<string, string>();
+  // 3. property name (Supabase) for messages — supabase_id → name
+  const propertyName = new Map<string, string>();
+
+  const investorBySupabaseId = new Map<string, string>();
   const existingInvestors = db.prepare(
     "SELECT id, supabase_id FROM investors WHERE organization_id = ? AND supabase_id IS NOT NULL"
   ).all(orgId) as { id: string; supabase_id: string }[];
   for (const r of existingInvestors) investorBySupabaseId.set(r.supabase_id, r.id);
 
   const tx = db.transaction(() => {
+
+    // ─── PROPERTIES ─────────────────────────────────────
+    if (input.propertiesCsv) {
+      const rows = parseCsv(input.propertiesCsv);
+      result.properties.parsed = rows.length;
+      const insertBu = db.prepare(`
+        INSERT INTO business_units (id, organization_id, name, sort_order, is_active, is_shared)
+        VALUES (?, ?, ?, 500, 1, 0)
+      `);
+      const upsertStages = db.prepare(`
+        INSERT INTO property_work_stages (id, project_id, stages_json)
+        VALUES (?, ?, ?)
+        ON CONFLICT(project_id) DO UPDATE SET
+          stages_json = excluded.stages_json,
+          updated_at = datetime('now')
+      `);
+
+      for (const r of rows) {
+        try {
+          const supabaseId = pickFirst(r, 'id', 'property_id');
+          const name = pickFirst(r, 'name');
+          if (!supabaseId || !name) {
+            result.properties.errors.push(`Missing id/name in row`);
+            continue;
+          }
+          propertyName.set(supabaseId, name);
+
+          // Match by normalised name to existing business_unit
+          const localId = localBusByNormName.get(normName(name));
+          if (localId) {
+            propertyMap.set(supabaseId, localId);
+            result.properties.skipped++;
+            // Still upsert work_stages (overwrites with newer Supabase data)
+            const stagesJson = pickFirst(r, 'work_stages');
+            if (stagesJson && !input.dryRun) {
+              const stagesId = `pws_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
+              upsertStages.run(stagesId, localId, stagesJson);
+            }
+            continue;
+          }
+
+          if (input.dryRun) { result.properties.created++; continue; }
+
+          // Create new business_unit
+          const newId = `bu_sb_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+          insertBu.run(newId, orgId, name);
+          propertyMap.set(supabaseId, newId);
+          localBusByNormName.set(normName(name), newId);
+          result.properties.created++;
+
+          // Add work_stages
+          const stagesJson = pickFirst(r, 'work_stages');
+          if (stagesJson) {
+            const stagesId = `pws_sb_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
+            upsertStages.run(stagesId, newId, stagesJson);
+          }
+        } catch (e: any) {
+          result.properties.errors.push(e.message);
+        }
+      }
+    } else {
+      // No properties CSV — try to populate propertyMap from existing
+      // business_units' supabase_id-prefixed entries (none exist yet),
+      // so investments/payments/metrics that reference property_id will
+      // fail unless properties_csv is provided.
+    }
 
     // ─── INVESTORS ──────────────────────────────────────
     if (input.investorsCsv) {
@@ -156,7 +210,7 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           const supabaseId = pickFirst(r, 'id', 'investor_id', 'uuid');
           const name = pickFirst(r, 'name', 'full_name');
           if (!supabaseId || !name) {
-            result.investors.errors.push(`Missing id/name: ${JSON.stringify(r).substring(0, 100)}`);
+            result.investors.errors.push(`Missing id/name`);
             continue;
           }
           const existing = checkExisting.get(orgId, supabaseId) as { id: string } | undefined;
@@ -167,13 +221,13 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           }
           if (input.dryRun) { result.investors.created++; continue; }
           const localId = `inv_sb_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-          const token = crypto.randomBytes(32).toString('hex');
+          const token = pickFirst(r, 'token', 'portal_token') || crypto.randomBytes(32).toString('hex');
           insert.run(
             localId, orgId, name,
             pickFirst(r, 'email') || null,
             pickFirst(r, 'phone') || null,
             pickFirst(r, 'telegram_chat_id', 'telegramChatId', 'tg_chat_id') || null,
-            pickFirst(r, 'token', 'portal_token') || token,
+            token,
             (pickFirst(r, 'status') || 'active') === 'archived' ? 'archived' : 'active',
             pickFirst(r, 'notes') || null,
             supabaseId,
@@ -184,6 +238,15 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           result.investors.errors.push(e.message);
         }
       }
+    }
+
+    // Helper to resolve property_id reference
+    function resolvePropId(supabasePropId: string, unmatched: Set<string>): string | null {
+      if (!supabasePropId) return null;
+      const local = propertyMap.get(supabasePropId);
+      if (local) return local;
+      unmatched.add(propertyName.get(supabasePropId) || supabasePropId);
+      return null;
     }
 
     // ─── INVESTMENTS ────────────────────────────────────
@@ -206,23 +269,17 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           if (!supabaseId) { result.investments.errors.push('Missing id'); continue; }
           if (checkExisting.get(orgId, supabaseId)) { result.investments.skipped++; continue; }
 
-          const supabaseInvestorId = pickFirst(r, 'investor_id', 'investorId');
+          const supabaseInvestorId = pickFirst(r, 'investor_id');
           const localInvestorId = investorBySupabaseId.get(supabaseInvestorId);
           if (!localInvestorId) {
-            result.investments.errors.push(`Investor not found for investor_id=${supabaseInvestorId}`);
+            result.investments.errors.push(`Investor ${supabaseInvestorId} not found — import investors first`);
             continue;
           }
 
-          // Property matching: try property_id direct, fall back to property_name
-          const supabasePropName = pickFirst(r, 'property_name', 'propertyName');
-          let projectId = '';
-          if (supabasePropName) {
-            const m = matchProperty(propertyLookup, supabasePropName);
-            if (m.matched) projectId = m.id;
-            else unmatched.add(supabasePropName);
-          }
+          const supabasePropId = pickFirst(r, 'property_id');
+          const projectId = resolvePropId(supabasePropId, unmatched);
           if (!projectId) {
-            result.investments.errors.push(`No matching property for "${supabasePropName}" — create business_unit with this name first`);
+            result.investments.errors.push(`Property ${supabasePropId} not in propertyMap — import properties first`);
             continue;
           }
 
@@ -232,9 +289,9 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
             localId, orgId, localInvestorId, projectId,
             num(pickFirst(r, 'amount')),
             pickFirst(r, 'currency') || 'EUR',
-            num(pickFirst(r, 'equity_percentage', 'equity_pct', 'equityPercentage')) || null,
-            toIsoDate(pickFirst(r, 'date', 'invested_at', 'investedAt')),
-            pickFirst(r, 'model_description', 'modelDescription') || null,
+            num(pickFirst(r, 'equity_percentage', 'equity_pct')) || null,
+            toIsoDate(pickFirst(r, 'date', 'invested_at')),
+            pickFirst(r, 'model_description') || null,
             1,
             supabaseId,
           );
@@ -259,25 +316,22 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
            paid_at, comment, supabase_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
+      const unmatched = new Set<string>();
       for (const r of rows) {
         try {
           const supabaseId = pickFirst(r, 'id', 'payment_id');
           if (!supabaseId) { result.payments.errors.push('Missing id'); continue; }
           if (checkExisting.get(orgId, supabaseId)) { result.payments.skipped++; continue; }
 
-          const supabaseInvestorId = pickFirst(r, 'investor_id', 'investorId');
+          const supabaseInvestorId = pickFirst(r, 'investor_id');
           const localInvestorId = investorBySupabaseId.get(supabaseInvestorId);
           if (!localInvestorId) {
-            result.payments.errors.push(`Investor not found for investor_id=${supabaseInvestorId}`);
+            result.payments.errors.push(`Investor ${supabaseInvestorId} not found`);
             continue;
           }
 
-          let projectId: string | null = null;
-          const supabasePropName = pickFirst(r, 'property_name', 'propertyName');
-          if (supabasePropName) {
-            const m = matchProperty(propertyLookup, supabasePropName);
-            if (m.matched) projectId = m.id;
-          }
+          const supabasePropId = pickFirst(r, 'property_id');
+          const projectId = supabasePropId ? resolvePropId(supabasePropId, unmatched) : null;
 
           if (input.dryRun) { result.payments.created++; continue; }
           const localId = `payout_sb_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
@@ -285,7 +339,7 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
             localId, orgId, localInvestorId, projectId,
             num(pickFirst(r, 'amount')),
             pickFirst(r, 'currency') || 'EUR',
-            toIsoDate(pickFirst(r, 'date', 'paid_at', 'paidAt')),
+            toIsoDate(pickFirst(r, 'date', 'paid_at')),
             pickFirst(r, 'comment', 'note') || null,
             supabaseId,
           );
@@ -294,15 +348,13 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
           result.payments.errors.push(e.message);
         }
       }
+      result.payments.unmatched_properties = [...unmatched];
     }
 
     // ─── METRICS ────────────────────────────────────────
     if (input.metricsCsv) {
       const rows = parseCsv(input.metricsCsv);
       result.metrics.parsed = rows.length;
-      const checkExisting = db.prepare(
-        "SELECT id FROM property_monthly_metrics WHERE project_id = ? AND year_month = ?"
-      );
       const insert = db.prepare(`
         INSERT INTO property_monthly_metrics
           (id, organization_id, project_id, year_month, occupancy_pct, revenue, supabase_id)
@@ -316,20 +368,19 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
       const unmatched = new Set<string>();
       for (const r of rows) {
         try {
-          const supabasePropName = pickFirst(r, 'property_name', 'propertyName');
+          const supabasePropId = pickFirst(r, 'property_id');
           const month = pickFirst(r, 'month', 'year_month');
-          if (!supabasePropName || !month) { result.metrics.errors.push('Missing property_name or month'); continue; }
-          const m = matchProperty(propertyLookup, supabasePropName);
-          if (!m.matched) {
-            unmatched.add(supabasePropName);
-            result.metrics.errors.push(`No matching property for "${supabasePropName}"`);
+          if (!supabasePropId || !month) { result.metrics.errors.push('Missing property_id or month'); continue; }
+          const projectId = resolvePropId(supabasePropId, unmatched);
+          if (!projectId) {
+            result.metrics.errors.push(`Property ${supabasePropId} not in propertyMap`);
             continue;
           }
           if (input.dryRun) { result.metrics.created++; continue; }
-          const supabaseId = pickFirst(r, 'id') || `${supabasePropName}_${month}`;
+          const supabaseId = pickFirst(r, 'id') || `${supabasePropId}_${month}`;
           const localId = `pmm_sb_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
           insert.run(
-            localId, orgId, m.id, month,
+            localId, orgId, projectId, month,
             num(pickFirst(r, 'occupancy_rate', 'occupancy_pct')) || null,
             num(pickFirst(r, 'revenue')) || null,
             supabaseId,
@@ -344,8 +395,7 @@ export function runSupabaseImport(db: any, orgId: string, input: SupabaseImportI
   });
 
   // Always call tx() — dry-run mode short-circuits before each INSERT,
-  // so counts populate but no rows are written. The transaction commits
-  // with zero changes, which is harmless.
+  // so counts populate but no rows are written.
   tx();
 
   return result;

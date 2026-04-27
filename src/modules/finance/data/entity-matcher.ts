@@ -112,16 +112,18 @@ export function buildEntityCandidates(
   for (const src of sourceValues) {
     if (!src.trim()) continue;
     let exact: PmsEntity | null = null;
-    const scored: PmsEntity[] = [];
-    for (const e of allPms) {
+    // Score ALL PMS entities — UI needs to fall back to full list when
+    // no high-similarity matches exist (so user can manually pick anything).
+    // Sorted by similarity, best first.
+    const scored: PmsEntity[] = allPms.map((e) => {
       const sim = similarity(src, e.name);
       if (sim === 1) exact = { ...e, similarity: 1 };
-      if (sim >= 0.5) scored.push({ ...e, similarity: sim });
-    }
+      return { ...e, similarity: sim };
+    });
     scored.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
     out.push({
       source_value: src,
-      candidates: scored.slice(0, 5),
+      candidates: scored, // ALL entities returned, UI shows full list in dropdown
       exact_match: exact,
       saved_resolution: savedMap.get(src) || null,
     });
