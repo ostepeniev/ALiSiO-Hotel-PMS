@@ -147,7 +147,6 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
   }
 
   const data = await res.json();
-  console.log('[payments] Checkout session created:', data.session_id);
 
   return {
     sessionId:    data.session_id,
