@@ -77,11 +77,11 @@ export default function InvestorPortalPage() {
       <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#16a34a,#22c55e)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>A</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>ALiSiO Investment</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>ALiSiO Investment</div>
           <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Portfolio</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{data.investor.name}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{data.investor.name}</div>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Investor</div>
         </div>
       </header>
@@ -149,8 +149,8 @@ export default function InvestorPortalPage() {
                 const stat = STATUS_LABEL[p.status] || STATUS_LABEL.active;
                 return (
                   <tr key={p.project_id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                    <td style={{ ...td, fontWeight: 600 }}>{p.project_name}</td>
-                    <td style={td}>{fmt(p.invested, p.currency)}</td>
+                    <td style={{ ...td, fontWeight: 600, color: '#0f172a' }}>{p.project_name}</td>
+                    <td style={{ ...td, color: '#0f172a' }}>{fmt(p.invested, p.currency)}</td>
                     <td style={{ ...td, color: (p.roi_pct || 0) >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
                       {p.roi_pct != null ? `${p.roi_pct >= 0 ? '+' : ''}${p.roi_pct}%` : '—'}
                     </td>
@@ -199,7 +199,7 @@ export default function InvestorPortalPage() {
               {data.monthly_reports.slice(0, 6).map((r) => (
                 <div key={`${r.project_id}-${r.year_month}`} style={{ padding: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{r.year_month}</div>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{r.project_name}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: '#0f172a' }}>{r.project_name}</div>
                   {r.general_comment && <div style={{ fontSize: 12, color: '#475569' }}>{r.general_comment.substring(0, 100)}{r.general_comment.length > 100 ? '…' : ''}</div>}
                   <Link href={`/invest/${params.token}/property/${r.project_id}`} style={{ display: 'inline-block', marginTop: 8, color: '#3b82f6', fontSize: 12, textDecoration: 'none' }}>Відкрити звіт →</Link>
                 </div>
@@ -247,7 +247,7 @@ function Card({ title, subtitle, children, style }: { title: string; subtitle?: 
   return (
     <div style={{ background: '#fff', padding: 20, borderRadius: 12, border: '1px solid #e2e8f0', ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
+        <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>{title}</h3>
         {subtitle && <span style={{ fontSize: 11, color: '#94a3b8' }}>{subtitle}</span>}
       </div>
       {children}

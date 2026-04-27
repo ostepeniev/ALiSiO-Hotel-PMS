@@ -1,0 +1,15 @@
+/* Investor portal uses a light theme background (#f5f7fa). The PMS dashboard
+   sets --text-primary to a near-white (#e8eaf0) for its dark theme, which
+   leaks into invest pages and renders headings/text invisible against the
+   white cards. Override here so anything inside the portal scope inherits
+   a dark text color by default. */
+.invest-page-root {
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  color: #0f172a;
+}
+
+/* Headings inherit from their nearest coloured ancestor. The hero card
+   sets an inline color: #fff on its parent, so its inner h2 stays white;
+   all other h1/h2/h3 fall through to .invest-page-root's #0f172a. */
