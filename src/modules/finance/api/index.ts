@@ -306,6 +306,7 @@ export const importFromSupabase = withPermission('manage_investors', _importFrom
 export {
   listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
   listInvestorProperties, listMonthlyReports, getMonthlyDigest, getTelegramStatus,
+  getAutoRevenueForMonth,
 } from './investors.handlers';
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
