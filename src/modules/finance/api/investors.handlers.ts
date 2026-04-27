@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import * as crypto from 'crypto';
 import { createOperationInTx } from './operations.handlers';
+import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -408,6 +409,40 @@ export async function deletePayout(
     }
     db.prepare("DELETE FROM investor_payouts WHERE id = ?").run(id);
     return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Monthly digest aggregator ──────────────────────────
+//
+// GET /api/finance/investor-monthly-digest?year_month=YYYY-MM&investor_id=...
+// Returns the per-investor month snapshot used by the admin "Monthly digest"
+// tab. Optionally renders a plain-text body for one investor when ?text=1
+// and ?investor_id= are provided.
+
+export async function getMonthlyDigest(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const yearMonth = sp.get('year_month');
+    const investorId = sp.get('investor_id') || undefined;
+    const wantText = sp.get('text') === '1';
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'year_month=YYYY-MM required' }, { status: 400 });
+    }
+
+    const digest = buildMonthlyDigest(db, orgId, yearMonth, investorId);
+
+    if (wantText && investorId) {
+      const target = digest.investors.find((d) => d.investor_id === investorId);
+      if (!target) return NextResponse.json({ error: 'Investor has no investments' }, { status: 404 });
+      const origin = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+      return NextResponse.json({ text: renderDigestText(target, yearMonth, origin), digest: target });
+    }
+
+    return NextResponse.json(digest);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
