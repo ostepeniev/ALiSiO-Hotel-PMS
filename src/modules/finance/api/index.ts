@@ -262,6 +262,9 @@ export { getTeyaSyncStatus, getTeyaCoverage } from './teya-sync.handlers';
 import { syncTeyaTransactions as _syncTeyaTransactions } from './teya-sync.handlers';
 export const syncTeyaTransactions = withPermission('import_bank_data', _syncTeyaTransactions);
 
+// ─── Reconciliation dashboard (PR #28) — read ──────────────────
+export { getReconcileDashboard } from './reconcile-dashboard.handlers';
+
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
 import {
