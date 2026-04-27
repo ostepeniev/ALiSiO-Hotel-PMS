@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Upload, FileSpreadsheet, ArrowRight, Save, Trash2, History } from 'lucide-react';
+import { ArrowLeft, Upload, FileSpreadsheet, ArrowRight, Save, Trash2, History, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface ParseResult {
   ok: boolean;
@@ -38,14 +38,39 @@ interface RunHistory {
   created_at: string;
 }
 
+type EntityType = 'account' | 'category' | 'project' | 'counterparty';
+const ENTITY_LABELS: Record<EntityType, string> = {
+  account: 'Рахунки', category: 'Категорії', project: 'Проєкти', counterparty: 'Контрагенти',
+};
+
+interface PmsEntity { id: string; name: string; meta?: string; similarity?: number }
+interface EntityCandidate {
+  source_value: string;
+  candidates: PmsEntity[];
+  exact_match: PmsEntity | null;
+  saved_resolution: { entity_id: string | null; action: string } | null;
+}
+interface ResolutionResult {
+  ok: boolean;
+  resolutions: Record<EntityType, { source_values_count: number; items: EntityCandidate[] }>;
+}
+
+interface UserChoice {
+  pms_entity_id: string | null;
+  action: 'use_existing' | 'create_new' | 'ignore';
+}
+
 export default function ImportWizardPage() {
-  const [stage, setStage] = useState<'upload' | 'mapping'>('upload');
+  const [stage, setStage] = useState<'upload' | 'mapping' | 'resolution'>('upload');
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [mapping, setMapping] = useState<Record<number, string>>({});
+  const [formatId, setFormatId] = useState<string | null>(null);
   const [formatName, setFormatName] = useState('');
   const [formatDesc, setFormatDesc] = useState('');
   const [savedFormats, setSavedFormats] = useState<SavedFormat[]>([]);
   const [runs, setRuns] = useState<RunHistory[]>([]);
+  const [resolution, setResolution] = useState<ResolutionResult | null>(null);
+  const [choices, setChoices] = useState<Record<EntityType, Record<string, UserChoice>>>({ account: {}, category: {}, project: {}, counterparty: {} });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,9 +107,9 @@ export default function ImportWizardPage() {
   async function saveAndContinue() {
     if (!parsed) return;
     if (!formatName.trim()) { alert('Введи назву формату'); return; }
-    setLoading(true);
+    setLoading(true); setError(null);
     try {
-      const res = await fetch('/api/finance/import/formats', {
+      const fmtRes = await fetch('/api/finance/import/formats', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: parsed.matched_format?.id,
@@ -94,11 +119,59 @@ export default function ImportWizardPage() {
           field_mappings: mapping,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) { alert(`Помилка: ${json.error}`); setLoading(false); return; }
-      alert('✓ Формат збережено. Наступний крок (entity resolution) — у PR #34.');
+      const fmtJson = await fmtRes.json();
+      if (!fmtRes.ok) { setError(fmtJson.error || 'Save failed'); setLoading(false); return; }
+      const savedId = fmtJson.id as string;
+      setFormatId(savedId);
+
+      const resRes = await fetch('/api/finance/import/resolve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format_id: savedId, field_mappings: mapping, all_rows: parsed.all_rows }),
+      });
+      const resJson = await resRes.json() as ResolutionResult;
+      if (!resRes.ok) { setError((resJson as any).error || 'Resolve failed'); setLoading(false); return; }
+      setResolution(resJson);
+
+      // Pre-populate choices: saved → exact → high-similarity → create_new
+      const initial: Record<EntityType, Record<string, UserChoice>> = { account: {}, category: {}, project: {}, counterparty: {} };
+      for (const et of Object.keys(resJson.resolutions) as EntityType[]) {
+        for (const item of resJson.resolutions[et].items) {
+          if (item.saved_resolution) {
+            initial[et][item.source_value] = { pms_entity_id: item.saved_resolution.entity_id, action: item.saved_resolution.action as any };
+          } else if (item.exact_match) {
+            initial[et][item.source_value] = { pms_entity_id: item.exact_match.id, action: 'use_existing' };
+          } else if (item.candidates[0] && (item.candidates[0].similarity || 0) >= 0.85) {
+            initial[et][item.source_value] = { pms_entity_id: item.candidates[0].id, action: 'use_existing' };
+          } else {
+            initial[et][item.source_value] = { pms_entity_id: null, action: 'create_new' };
+          }
+        }
+      }
+      setChoices(initial);
+
+      setStage('resolution');
       fetchAuxiliary();
-    } catch (e: any) { alert(`Помилка: ${e.message}`); }
+    } catch (e: any) { setError(e.message); }
+    setLoading(false);
+  }
+
+  async function saveResolutionsAndContinue() {
+    if (!formatId || !resolution) return;
+    setLoading(true); setError(null);
+    try {
+      const payload: any = { format_id: formatId, resolutions: {} };
+      for (const et of Object.keys(choices) as EntityType[]) {
+        payload.resolutions[et] = Object.entries(choices[et]).map(([sv, c]) => ({
+          source_value: sv, pms_entity_id: c.pms_entity_id, action: c.action,
+        }));
+      }
+      const res = await fetch('/api/finance/import/save-resolutions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error || 'Save failed'); setLoading(false); return; }
+      alert(`✓ Збережено ${json.total_saved} resolutions. Stage 3 (row review + commit) — у PR #35.`);
+    } catch (e: any) { setError(e.message); }
     setLoading(false);
   }
 
@@ -126,8 +199,8 @@ export default function ImportWizardPage() {
 
       {/* STAGE INDICATOR */}
       <div style={{ display: 'flex', gap: 8, marginTop: 16, marginBottom: 24 }}>
-        <Stage n={1} label="Upload + Field mapping" active={stage === 'upload' || stage === 'mapping'} done={stage === 'mapping'} />
-        <Stage n={2} label="Entity resolution" active={false} done={false} disabled />
+        <Stage n={1} label="Upload + Field mapping" active={stage === 'upload' || stage === 'mapping'} done={stage === 'resolution'} />
+        <Stage n={2} label="Entity resolution" active={stage === 'resolution'} done={false} disabled={stage === 'upload'} />
         <Stage n={3} label="Row review + Commit" active={false} done={false} disabled />
       </div>
 
@@ -321,6 +394,118 @@ export default function ImportWizardPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </>
+      )}
+
+      {/* RESOLUTION STAGE (PR #34) */}
+      {stage === 'resolution' && resolution && (
+        <>
+          <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <b>Stage 2:</b> підтверди маппінг унікальних значень з файлу до існуючих PMS entities.
+                Auto-pre-filled: збережені рішення → exact matches → high-similarity ({'>'}85%) → інакше create_new.
+              </div>
+              <button onClick={() => setStage('mapping')} style={btn}>← Назад до field mapping</button>
+            </div>
+          </div>
+
+          {(['account', 'category', 'project', 'counterparty'] as EntityType[]).map((et) => {
+            const sec = resolution.resolutions[et];
+            if (!sec || sec.source_values_count === 0) return null;
+            const items = sec.items;
+
+            // Stats
+            const exact = items.filter((i) => choices[et][i.source_value]?.action === 'use_existing' && choices[et][i.source_value]?.pms_entity_id === i.exact_match?.id).length;
+            const newCount = items.filter((i) => choices[et][i.source_value]?.action === 'create_new').length;
+            const ignored = items.filter((i) => choices[et][i.source_value]?.action === 'ignore').length;
+
+            return (
+              <div key={et} style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 15, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {ENTITY_LABELS[et]} <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 400 }}>({items.length} унікальних)</span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, fontSize: 12, fontWeight: 400 }}>
+                    <span style={{ color: '#22c55e' }}><CheckCircle2 size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {exact} exact</span>
+                    <span style={{ color: '#3b82f6' }}>+ {newCount} new</span>
+                    {ignored > 0 && <span style={{ color: 'var(--text-secondary)' }}>{ignored} ignore</span>}
+                  </span>
+                </h3>
+                <div style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-secondary)' }}>
+                        <th style={th}>Source value</th>
+                        <th style={th}>Match</th>
+                        <th style={th}>Дія</th>
+                        <th style={th}>→ PMS entity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const ch = choices[et][item.source_value] || { pms_entity_id: null, action: 'create_new' as const };
+                        const isExact = item.exact_match && ch.pms_entity_id === item.exact_match.id;
+                        const isHighSim = item.candidates[0] && (item.candidates[0].similarity || 0) >= 0.85 && ch.pms_entity_id === item.candidates[0].id;
+                        const matchLabel = isExact ? '✓ EXACT' : isHighSim ? `~${Math.round((item.candidates[0].similarity || 0) * 100)}%` : item.exact_match ? '✓ exact є' : item.candidates.length > 0 ? `~${Math.round((item.candidates[0].similarity || 0) * 100)}%` : '—';
+                        return (
+                          <tr key={item.source_value} style={{ borderTop: '1px solid var(--border-primary)' }}>
+                            <td style={{ ...td, fontWeight: 600 }}>{item.source_value}</td>
+                            <td style={{ ...td, color: isExact ? '#22c55e' : isHighSim ? '#3b82f6' : 'var(--text-secondary)', fontSize: 11 }}>{matchLabel}</td>
+                            <td style={td}>
+                              <select style={input} value={ch.action} onChange={(e) => {
+                                const newAction = e.target.value as any;
+                                setChoices((c) => ({
+                                  ...c,
+                                  [et]: { ...c[et], [item.source_value]: { ...ch, action: newAction, pms_entity_id: newAction === 'use_existing' ? (ch.pms_entity_id || item.candidates[0]?.id || null) : null } },
+                                }));
+                              }}>
+                                <option value="use_existing">Use existing</option>
+                                <option value="create_new">Create new</option>
+                                <option value="ignore">Ignore</option>
+                              </select>
+                            </td>
+                            <td style={td}>
+                              {ch.action === 'use_existing' ? (
+                                <select style={input} value={ch.pms_entity_id || ''} onChange={(e) => {
+                                  setChoices((c) => ({
+                                    ...c,
+                                    [et]: { ...c[et], [item.source_value]: { ...ch, pms_entity_id: e.target.value || null } },
+                                  }));
+                                }}>
+                                  <option value="">— вибери —</option>
+                                  {item.candidates.map((cand) => (
+                                    <option key={cand.id} value={cand.id}>
+                                      {cand.name}{cand.meta ? ` (${cand.meta})` : ''}{cand.similarity ? ` · ${Math.round(cand.similarity * 100)}%` : ''}
+                                    </option>
+                                  ))}
+                                  {item.candidates.length === 0 && <option disabled>— немає кандидатів —</option>}
+                                </select>
+                              ) : ch.action === 'create_new' ? (
+                                <span style={{ color: '#3b82f6', fontStyle: 'italic' }}>Створити «{item.source_value}» при commit</span>
+                              ) : (
+                                <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic' }}>Пропустити рядки з цим значенням</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+
+          <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button onClick={() => setStage('mapping')} style={btn}>← Назад</button>
+            <button onClick={saveResolutionsAndContinue} disabled={loading} style={{ ...btn, background: '#3b82f6', color: '#fff', border: 'none' }}>
+              {loading ? 'Збереження…' : <>💾 Зберегти resolutions <ArrowRight size={14} /></>}
+            </button>
+          </div>
+
+          <div style={{ marginTop: 24, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+            <b>💡 Що далі:</b> Stage 3 (PR #35) — для кожного рядка покаже чи це новий запис, чи можливий дублікат існуючої fin_operation (по даті ±2д + сума ±0.01),
+            щоб ти міг точково підтвердити або пропустити.
           </div>
         </>
       )}

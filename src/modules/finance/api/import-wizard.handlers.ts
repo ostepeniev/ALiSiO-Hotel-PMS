@@ -6,6 +6,14 @@ import {
   findFormatBySignature, listSavedFormats, saveFormat,
   SUPPORTED_FIELDS,
 } from '../data/import-wizard-engine';
+import { buildEntityCandidates, saveResolutions, type EntityType } from '../data/entity-matcher';
+
+const ENTITY_FIELD_MAP: Record<EntityType, string[]> = {
+  account:      ['account_from', 'account_to'],
+  category:     ['category'],
+  project:      ['project'],
+  counterparty: ['counterparty'],
+};
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -160,4 +168,88 @@ export async function listImportRuns(_request: NextRequest): Promise<NextRespons
 function safeJsonParse(s: string | null, fallback: any): any {
   if (!s) return fallback;
   try { return JSON.parse(s); } catch { return fallback; }
+}
+
+/**
+ * POST /api/finance/import/resolve
+ * Body: { format_id, field_mappings: {colIdx: fieldName}, all_rows: any[][] }
+ *
+ * Stage 2 of the wizard: extracts unique values for each entity-typed
+ * column (account_from/account_to, category, project, counterparty),
+ * runs fuzzy matching against existing PMS entities, and returns
+ * candidate suggestions plus any previously-saved resolutions for this
+ * format. UI then shows dropdowns for the user to confirm/override.
+ */
+export async function resolveEntities(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    const { format_id, field_mappings, all_rows } = body;
+    if (!field_mappings || !Array.isArray(all_rows)) {
+      return NextResponse.json({ error: 'field_mappings and all_rows required' }, { status: 400 });
+    }
+
+    // Build a reverse index: PMS field name → list of source column indices
+    const fieldToCols: Record<string, number[]> = {};
+    for (const [colIdx, fieldName] of Object.entries(field_mappings)) {
+      const f = String(fieldName);
+      if (!fieldToCols[f]) fieldToCols[f] = [];
+      fieldToCols[f].push(parseInt(colIdx, 10));
+    }
+
+    const result: Record<EntityType, any> = {} as any;
+    for (const entityType of Object.keys(ENTITY_FIELD_MAP) as EntityType[]) {
+      const cols: number[] = [];
+      for (const fieldName of ENTITY_FIELD_MAP[entityType]) {
+        if (fieldToCols[fieldName]) cols.push(...fieldToCols[fieldName]);
+      }
+      if (cols.length === 0) {
+        result[entityType] = { source_values_count: 0, items: [] };
+        continue;
+      }
+
+      // Collect unique non-empty values across all the columns assigned to this entity
+      const uniqueValues = new Set<string>();
+      for (const row of all_rows) {
+        for (const col of cols) {
+          const v = row[col];
+          if (v != null && String(v).trim()) uniqueValues.add(String(v).trim());
+        }
+      }
+      const candidates = buildEntityCandidates(db, orgId, format_id || null, entityType, [...uniqueValues]);
+      result[entityType] = { source_values_count: uniqueValues.size, items: candidates };
+    }
+
+    return NextResponse.json({ ok: true, resolutions: result });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/import/save-resolutions
+ * Body: { format_id, resolutions: { account: [...], category: [...], ... } }
+ *
+ * Persists user's entity resolution choices. On future imports of the
+ * same format, these auto-apply (no re-mapping needed).
+ */
+export async function saveEntityResolutions(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { format_id, resolutions } = body;
+    if (!format_id || !resolutions) {
+      return NextResponse.json({ error: 'format_id and resolutions required' }, { status: 400 });
+    }
+    let total = 0;
+    for (const entityType of Object.keys(resolutions) as EntityType[]) {
+      const list = resolutions[entityType] as any[];
+      if (!Array.isArray(list)) continue;
+      total += saveResolutions(db, format_id, entityType, list);
+    }
+    return NextResponse.json({ ok: true, total_saved: total });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
