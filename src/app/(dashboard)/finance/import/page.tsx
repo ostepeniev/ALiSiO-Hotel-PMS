@@ -38,6 +38,31 @@ interface RunHistory {
   created_at: string;
 }
 
+type RowStatus = 'ok' | 'possible_dup' | 'exact_dup' | 'error';
+
+interface ProcessedRow {
+  index: number;
+  status: RowStatus;
+  paid_at: string | null;
+  amount: number;
+  currency: string;
+  op_type: 'income' | 'expense' | 'transfer' | null;
+  account_from: { source: string; resolved_id: string | null; action: string } | null;
+  account_to:   { source: string; resolved_id: string | null; action: string } | null;
+  category:     { source: string; resolved_id: string | null; action: string } | null;
+  project:      { source: string; resolved_id: string | null; action: string } | null;
+  counterparty: { source: string; resolved_id: string | null; action: string } | null;
+  comment: string | null;
+  error: string | null;
+  duplicate_candidates: Array<{ id: string; paid_at: string; amount: number; comment: string | null; source: string }>;
+}
+
+interface ReviewResult {
+  ok: boolean;
+  rows: ProcessedRow[];
+  summary: { total: number; ok: number; possible_dup: number; exact_dup: number; errors: number };
+}
+
 type EntityType = 'account' | 'category' | 'project' | 'counterparty';
 const ENTITY_LABELS: Record<EntityType, string> = {
   account: 'Рахунки', category: 'Категорії', project: 'Проєкти', counterparty: 'Контрагенти',
@@ -61,7 +86,11 @@ interface UserChoice {
 }
 
 export default function ImportWizardPage() {
-  const [stage, setStage] = useState<'upload' | 'mapping' | 'resolution'>('upload');
+  const [stage, setStage] = useState<'upload' | 'mapping' | 'resolution' | 'review'>('upload');
+  const [review, setReview] = useState<ReviewResult | null>(null);
+  const [approvedIndices, setApprovedIndices] = useState<Set<number>>(new Set());
+  const [committing, setCommitting] = useState(false);
+  const [commitResult, setCommitResult] = useState<any>(null);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [formatId, setFormatId] = useState<string | null>(null);
@@ -156,7 +185,7 @@ export default function ImportWizardPage() {
   }
 
   async function saveResolutionsAndContinue() {
-    if (!formatId || !resolution) return;
+    if (!formatId || !resolution || !parsed) return;
     setLoading(true); setError(null);
     try {
       const payload: any = { format_id: formatId, resolutions: {} };
@@ -165,14 +194,47 @@ export default function ImportWizardPage() {
           source_value: sv, pms_entity_id: c.pms_entity_id, action: c.action,
         }));
       }
-      const res = await fetch('/api/finance/import/save-resolutions', {
+      const sRes = await fetch('/api/finance/import/save-resolutions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      const json = await res.json();
-      if (!res.ok) { setError(json.error || 'Save failed'); setLoading(false); return; }
-      alert(`✓ Збережено ${json.total_saved} resolutions. Stage 3 (row review + commit) — у PR #35.`);
+      const sJson = await sRes.json();
+      if (!sRes.ok) { setError(sJson.error || 'Save failed'); setLoading(false); return; }
+
+      const rRes = await fetch('/api/finance/import/review', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format_id: formatId, field_mappings: mapping, all_rows: parsed.all_rows }),
+      });
+      const rJson = await rRes.json() as ReviewResult;
+      if (!rRes.ok) { setError((rJson as any).error || 'Review failed'); setLoading(false); return; }
+      setReview(rJson);
+      // Default approve: ok + possible_dup, skip exact_dup + error
+      const initial = new Set<number>();
+      for (const row of rJson.rows) {
+        if (row.status === 'ok' || row.status === 'possible_dup') initial.add(row.index);
+      }
+      setApprovedIndices(initial);
+      setStage('review');
     } catch (e: any) { setError(e.message); }
     setLoading(false);
+  }
+
+  async function commitFinal() {
+    if (!review || !formatId || !parsed) return;
+    if (approvedIndices.size === 0) { alert('Не вибрано жодного рядка для імпорту'); return; }
+    if (!confirm(`Створити ${approvedIndices.size} fin_operations? Дія НЕ скасовується через цю UI (можна потім видалити вручну за фільтром source = wizard_import).`)) return;
+    setCommitting(true); setError(null);
+    try {
+      const approved = review.rows.filter((r) => approvedIndices.has(r.index));
+      const res = await fetch('/api/finance/import/commit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format_id: formatId, file_name: parsed.file_name, approved_rows: approved }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error || 'Commit failed'); setCommitting(false); return; }
+      setCommitResult(json);
+      fetchAuxiliary();
+    } catch (e: any) { setError(e.message); }
+    setCommitting(false);
   }
 
   function backToUpload() {
@@ -199,9 +261,9 @@ export default function ImportWizardPage() {
 
       {/* STAGE INDICATOR */}
       <div style={{ display: 'flex', gap: 8, marginTop: 16, marginBottom: 24 }}>
-        <Stage n={1} label="Upload + Field mapping" active={stage === 'upload' || stage === 'mapping'} done={stage === 'resolution'} />
-        <Stage n={2} label="Entity resolution" active={stage === 'resolution'} done={false} disabled={stage === 'upload'} />
-        <Stage n={3} label="Row review + Commit" active={false} done={false} disabled />
+        <Stage n={1} label="Upload + Field mapping" active={stage === 'upload' || stage === 'mapping'} done={stage === 'resolution' || stage === 'review'} />
+        <Stage n={2} label="Entity resolution" active={stage === 'resolution'} done={stage === 'review'} disabled={stage === 'upload'} />
+        <Stage n={3} label="Row review + Commit" active={stage === 'review'} done={!!commitResult} disabled={stage !== 'review'} />
       </div>
 
       {error && (
@@ -499,13 +561,135 @@ export default function ImportWizardPage() {
           <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={() => setStage('mapping')} style={btn}>← Назад</button>
             <button onClick={saveResolutionsAndContinue} disabled={loading} style={{ ...btn, background: '#3b82f6', color: '#fff', border: 'none' }}>
-              {loading ? 'Збереження…' : <>💾 Зберегти resolutions <ArrowRight size={14} /></>}
+              {loading ? 'Обробка…' : <>💾 Save + Review rows <ArrowRight size={14} /></>}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* REVIEW STAGE (PR #35) */}
+      {stage === 'review' && review && parsed && (
+        <>
+          <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div><b>Stage 3:</b> Перегляд {review.summary.total} рядків. Вибрані будуть створені як fin_operations.</div>
+              <button onClick={() => setStage('resolution')} style={btn}>← Назад до resolution</button>
+            </div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
+              <span style={{ color: '#22c55e' }}>● {review.summary.ok} new</span>
+              <span style={{ color: '#f59e0b' }}>● {review.summary.possible_dup} possible dup</span>
+              <span style={{ color: '#ef4444' }}>● {review.summary.exact_dup} exact dup (skipped)</span>
+              {review.summary.errors > 0 && <span style={{ color: '#dc2626' }}>● {review.summary.errors} errors</span>}
+              <span style={{ marginLeft: 'auto', fontWeight: 600 }}>Вибрано: {approvedIndices.size}</span>
+            </div>
+          </div>
+
+          {/* Bulk actions */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <button onClick={() => setApprovedIndices(new Set(review.rows.filter((r) => r.status === 'ok').map((r) => r.index)))} style={btn}>
+              Тільки 🟢 new ({review.summary.ok})
+            </button>
+            <button onClick={() => setApprovedIndices(new Set(review.rows.filter((r) => r.status === 'ok' || r.status === 'possible_dup').map((r) => r.index)))} style={btn}>
+              🟢 new + 🟡 possible dup ({review.summary.ok + review.summary.possible_dup})
+            </button>
+            <button onClick={() => setApprovedIndices(new Set(review.rows.filter((r) => r.status !== 'error').map((r) => r.index)))} style={btn}>
+              Все крім errors ({review.summary.total - review.summary.errors})
+            </button>
+            <button onClick={() => setApprovedIndices(new Set())} style={btn}>Зняти всі</button>
+            <button onClick={commitFinal} disabled={committing || approvedIndices.size === 0} style={{ marginLeft: 'auto', ...btn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700 }}>
+              {committing ? 'Створення…' : `✓ COMMIT ${approvedIndices.size} рядків`}
             </button>
           </div>
 
-          <div style={{ marginTop: 24, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            <b>💡 Що далі:</b> Stage 3 (PR #35) — для кожного рядка покаже чи це новий запис, чи можливий дублікат існуючої fin_operation (по даті ±2д + сума ±0.01),
-            щоб ти міг точково підтвердити або пропустити.
+          {/* Commit result */}
+          {commitResult && (
+            <div style={{ padding: 16, marginBottom: 16, background: 'rgba(34,197,94,0.08)', border: '1px solid #16a34a', borderRadius: 10 }}>
+              <div style={{ fontWeight: 600, color: '#16a34a', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircle2 size={18} /> Імпорт виконано
+              </div>
+              <div style={{ fontSize: 13 }}>
+                Створено fin_operations: <b>{commitResult.created}</b>{' '}
+                · auto-created accounts: <b>{commitResult.entities_created.accounts}</b>{' '}
+                · categories: <b>{commitResult.entities_created.categories}</b>{' '}
+                · projects: <b>{commitResult.entities_created.projects}</b>{' '}
+                · counterparties: <b>{commitResult.entities_created.counterparties}</b>
+                {commitResult.errors.length > 0 && <span style={{ color: '#ef4444' }}> · errors: {commitResult.errors.length}</span>}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                Run ID: <code>{commitResult.run_id}</code> · фільтр у /finance/operations: <code>source = wizard_import</code>
+              </div>
+            </div>
+          )}
+
+          {/* Row table */}
+          <div style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'auto', maxHeight: '60vh' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)' }}>
+                <tr>
+                  <th style={th}><input type="checkbox" checked={approvedIndices.size === review.rows.length && review.rows.length > 0} onChange={(e) => {
+                    if (e.target.checked) setApprovedIndices(new Set(review.rows.map((r) => r.index)));
+                    else setApprovedIndices(new Set());
+                  }} /></th>
+                  <th style={th}>#</th>
+                  <th style={th}>Status</th>
+                  <th style={th}>Дата</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Сума</th>
+                  <th style={th}>Тип</th>
+                  <th style={th}>From → To</th>
+                  <th style={th}>Категорія</th>
+                  <th style={th}>Коментар</th>
+                </tr>
+              </thead>
+              <tbody>
+                {review.rows.map((r) => {
+                  const statusColor = r.status === 'ok' ? '#22c55e' : r.status === 'possible_dup' ? '#f59e0b' : r.status === 'exact_dup' ? '#ef4444' : '#dc2626';
+                  const statusLabel = r.status === 'ok' ? '🟢 new' : r.status === 'possible_dup' ? '🟡 dup?' : r.status === 'exact_dup' ? '🔴 exact' : '❌ error';
+                  return (
+                    <tr key={r.index} style={{ borderTop: '1px solid var(--border-primary)', background: r.status === 'error' ? 'rgba(220,38,38,0.05)' : undefined }}>
+                      <td style={td}>
+                        <input type="checkbox" disabled={r.status === 'error'}
+                               checked={approvedIndices.has(r.index)}
+                               onChange={(e) => {
+                                 const next = new Set(approvedIndices);
+                                 if (e.target.checked) next.add(r.index); else next.delete(r.index);
+                                 setApprovedIndices(next);
+                               }} />
+                      </td>
+                      <td style={{ ...td, color: 'var(--text-secondary)' }}>{r.index + 1}</td>
+                      <td style={{ ...td, color: statusColor, fontWeight: 600 }}>{statusLabel}</td>
+                      <td style={td}>{r.paid_at || '—'}</td>
+                      <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                        {r.amount.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} {r.currency}
+                      </td>
+                      <td style={td}>{r.op_type || '?'}</td>
+                      <td style={td}>
+                        {r.account_from?.source && <span>{r.account_from.source}{r.account_from.action === 'create_new' && ' (new)'}</span>}
+                        {r.account_from?.source && r.account_to?.source && ' → '}
+                        {r.account_to?.source && <span>{r.account_to.source}{r.account_to.action === 'create_new' && ' (new)'}</span>}
+                      </td>
+                      <td style={td}>
+                        {r.category?.source}{r.category?.action === 'create_new' && <span style={{ fontSize: 10, color: '#3b82f6' }}> (new)</span>}
+                      </td>
+                      <td style={{ ...td, fontSize: 11 }}>
+                        {r.comment || (r.error && <span style={{ color: '#dc2626' }}>{r.error}</span>) || '—'}
+                        {r.duplicate_candidates.length > 0 && (
+                          <details style={{ marginTop: 4 }}>
+                            <summary style={{ fontSize: 10, color: '#f59e0b', cursor: 'pointer' }}>
+                              Існуючі: {r.duplicate_candidates.length}
+                            </summary>
+                            <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
+                              {r.duplicate_candidates.map((c, i) => (
+                                <div key={i}>· {c.paid_at} {c.amount.toFixed(2)} ({c.source}) {c.comment ? `— ${c.comment.substring(0, 40)}` : ''}</div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </>
       )}

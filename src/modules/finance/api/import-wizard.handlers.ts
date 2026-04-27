@@ -7,6 +7,7 @@ import {
   SUPPORTED_FIELDS,
 } from '../data/import-wizard-engine';
 import { buildEntityCandidates, saveResolutions, type EntityType } from '../data/entity-matcher';
+import { processRowsForReview, commitApprovedRows } from '../data/import-commit-engine';
 
 const ENTITY_FIELD_MAP: Record<EntityType, string[]> = {
   account:      ['account_from', 'account_to'],
@@ -222,6 +223,58 @@ export async function resolveEntities(request: NextRequest): Promise<NextRespons
     }
 
     return NextResponse.json({ ok: true, resolutions: result });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/import/review
+ * Body: { format_id, field_mappings, all_rows }
+ *
+ * Stage 3 prep: applies field mapping + saved resolutions to every row,
+ * checks each against existing fin_operations for duplicates (date ±2d
+ * + amount ±0.01 + same op_type/currency). Returns row-by-row decision
+ * data the UI uses to render the review table.
+ */
+export async function reviewRows(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.format_id || !body.field_mappings || !Array.isArray(body.all_rows)) {
+      return NextResponse.json({ error: 'format_id, field_mappings, all_rows required' }, { status: 400 });
+    }
+    const result = processRowsForReview(db, orgId, body.format_id, body.field_mappings, body.all_rows);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/import/commit
+ * Body: { format_id, file_name, approved_rows: ProcessedRow[] }
+ *
+ * Final write: creates fin_operations from each approved row, auto-
+ * creating any entities still in 'create_new' state (cached per source
+ * value within the batch so duplicates aren't spawned). Persists an
+ * import_runs audit row.
+ */
+export async function commitImport(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.format_id || !Array.isArray(body.approved_rows)) {
+      return NextResponse.json({ error: 'format_id and approved_rows required' }, { status: 400 });
+    }
+    const result = commitApprovedRows(db, orgId, {
+      formatId: body.format_id,
+      fileName: body.file_name || 'unnamed',
+      approvedRows: body.approved_rows,
+    });
+    return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
