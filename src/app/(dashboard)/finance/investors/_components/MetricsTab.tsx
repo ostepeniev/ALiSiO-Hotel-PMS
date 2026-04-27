@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit } from 'lucide-react';
 
 interface Metric {
   id: string;
@@ -98,7 +98,10 @@ export default function MetricsTab() {
                   <td style={{ ...td, textAlign: 'right' }}>{m.occupancy_pct != null ? `${m.occupancy_pct}%` : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{m.revenue != null ? m.revenue.toLocaleString('cs-CZ', { minimumFractionDigits: 2 }) : '—'}</td>
                   <td style={td}>{m.notes || '—'}</td>
-                  <td style={td}><button onClick={() => remove(m.id)} style={{ ...iconBtn, color: '#dc2626' }}><Trash2 size={14} /></button></td>
+                  <td style={td}>
+                    <button onClick={() => setEditing(m)} style={iconBtn} title="Редагувати"><Edit size={14} /></button>
+                    <button onClick={() => remove(m.id)} style={{ ...iconBtn, color: '#dc2626' }}><Trash2 size={14} /></button>
+                  </td>
                 </tr>
               ))}
             </tbody>

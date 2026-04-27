@@ -302,15 +302,18 @@ export { getInvestorPortalData } from './investor-portal.handlers';
 import { importFromSupabase as _importFromSupabase } from './supabase-import.handlers';
 export const importFromSupabase = withPermission('manage_investors', _importFromSupabase);
 
-// ─── Investor module (PR #31) — manage_investors permission ─────
+// ─── Investor module (PR #31, expanded #38) — manage_investors permission ─────
 export {
   listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
+  listInvestorProperties, listMonthlyReports,
 } from './investors.handlers';
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
   createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,
   upsertMonthlyMetric as _upsertMonthlyMetric, deleteMonthlyMetric as _deleteMonthlyMetric,
   createPayout as _createPayout, deletePayout as _deletePayout,
+  createInvestorProperty as _createInvestorProperty, updateInvestorProperty as _updateInvestorProperty,
+  upsertMonthlyReport as _upsertMonthlyReport, deleteMonthlyReport as _deleteMonthlyReport,
 } from './investors.handlers';
 export const createInvestor      = withPermission('manage_investors', _createInvestor);
 export const updateInvestor      = withPermission('manage_investors', _updateInvestor);
@@ -322,6 +325,10 @@ export const upsertMonthlyMetric = withPermission('manage_investors', _upsertMon
 export const deleteMonthlyMetric = withPermission('manage_investors', _deleteMonthlyMetric);
 export const createPayout        = withPermission('manage_investors', _createPayout);
 export const deletePayout        = withPermission('manage_investors', _deletePayout);
+export const createInvestorProperty = withPermission('manage_investors', _createInvestorProperty);
+export const updateInvestorProperty = withPermission('manage_investors', _updateInvestorProperty);
+export const upsertMonthlyReport    = withPermission('manage_investors', _upsertMonthlyReport);
+export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
 
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';

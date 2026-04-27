@@ -151,6 +151,18 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     `).all(...projectIds) as any[];
   }
 
+  // Pre-load investor-facing property details (airbnb_url + status overrides
+  // the work-stage-derived status when admin set it explicitly)
+  const detailsByProject = new Map<string, { airbnb_url: string | null; status: string | null; image_url: string | null; location: string | null }>();
+  if (projectIds.length > 0) {
+    const placeholders = projectIds.map(() => '?').join(',');
+    const detRows = db.prepare(`
+      SELECT project_id, airbnb_url, status, image_url, location
+      FROM investor_property_details WHERE project_id IN (${placeholders})
+    `).all(...projectIds) as any[];
+    for (const d of detRows) detailsByProject.set(d.project_id, d);
+  }
+
   // Per-property calculations
   const propertyOut: InvestorPortalData['properties'] = [];
   const allMonthsSet = new Set<string>();
@@ -200,6 +212,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       weightedOccupancyDen += inv.amount;
     }
 
+    const det = detailsByProject.get(inv.project_id);
     propertyOut.push({
       project_id: inv.project_id,
       project_name: inv.project_name,
@@ -207,7 +220,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       equity_pct: inv.equity_pct,
       currency: inv.currency,
       invested_at: inv.invested_at,
-      status: deriveStatus(stages),
+      status: det?.status || deriveStatus(stages),
       monthly_profit: +monthlyProfit.toFixed(2),
       accumulated_profit: +accProfit.toFixed(2),
       paid_out: +paidOutForProperty.toFixed(2),
@@ -218,7 +231,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       last_metric_occupancy: occCount > 0 ? +lastOccupancy.toFixed(1) : null,
       last_metric_revenue: occCount > 0 ? +lastRev.toFixed(2) : null,
       work_stages: stages,
-      airbnb_url: null,
+      airbnb_url: det?.airbnb_url || null,
     });
   }
 
