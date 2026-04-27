@@ -26,6 +26,7 @@ import {
   Clock,
   Repeat,
   ListChecks,
+  Inbox,
   MessageSquare,
   Mail,
   GitBranch,
@@ -85,6 +86,7 @@ const navigation: NavSection[] = [
     title: 'Фінанси',
     items: [
       { label: 'Огляд', href: '/finance', icon: <Wallet size={20} />, permission: 'nav:finance' },
+      { label: 'Reconcile (чеклист)', href: '/finance/reconcile', icon: <Inbox size={20} />, permission: 'nav:finance' },
       { label: 'Операції', href: '/finance/operations', icon: <ListChecks size={20} />, permission: 'nav:finance' },
       { label: 'Clearing (платформи)', href: '/finance/clearing', icon: <Repeat size={20} />, permission: 'nav:finance' },
       { label: 'Чеки з пошти', href: '/finance/receipts', icon: <Mail size={20} />, permission: 'nav:finance' },
