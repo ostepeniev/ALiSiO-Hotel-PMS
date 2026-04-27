@@ -89,11 +89,15 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   ).get(token) as any;
   if (!investor) return null;
 
-  // All active investments
+  // All active investments. Prefer unit_id (real house) and fall back to
+  // legacy business_unit name when investment hasn't been re-linked yet.
   const investments = db.prepare(`
-    SELECT ii.*, bu.name AS project_name
+    SELECT ii.*,
+           COALESCE(u.id, ii.project_id) AS effective_id,
+           COALESCE(u.name, bu.name)     AS project_name
     FROM investor_investments ii
-    JOIN business_units bu ON bu.id = ii.project_id
+    LEFT JOIN units u           ON u.id  = ii.unit_id
+    LEFT JOIN business_units bu ON bu.id = ii.project_id
     WHERE ii.investor_id = ? AND ii.is_active = 1
     ORDER BY ii.invested_at
   `).all(investor.id) as any[];
@@ -103,64 +107,73 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     SELECT * FROM investor_payouts WHERE investor_id = ? ORDER BY paid_at
   `).all(investor.id) as any[];
 
-  // Pre-load monthly metrics for all relevant projects
-  const projectIds = [...new Set(investments.map((i) => i.project_id))];
+  // We use effective_id (unit_id when present, else legacy project_id) as
+  // the join key for metrics / work_stages / reports / details. The DB
+  // tables carry both columns during the migration window.
+  const effectiveIds = [...new Set(investments.map((i) => i.effective_id))];
+
+  // Pre-load monthly metrics
   let metricsRows: any[] = [];
-  if (projectIds.length > 0) {
-    const placeholders = projectIds.map(() => '?').join(',');
+  if (effectiveIds.length > 0) {
+    const placeholders = effectiveIds.map(() => '?').join(',');
     metricsRows = db.prepare(`
-      SELECT project_id, year_month, occupancy_pct, revenue
+      SELECT COALESCE(unit_id, project_id) AS key, year_month, occupancy_pct, revenue
       FROM property_monthly_metrics
-      WHERE project_id IN (${placeholders})
+      WHERE COALESCE(unit_id, project_id) IN (${placeholders})
       ORDER BY year_month
-    `).all(...projectIds) as any[];
+    `).all(...effectiveIds) as any[];
   }
   const metricsByProject = new Map<string, any[]>();
   for (const m of metricsRows) {
-    if (!metricsByProject.has(m.project_id)) metricsByProject.set(m.project_id, []);
-    metricsByProject.get(m.project_id)!.push(m);
+    if (!metricsByProject.has(m.key)) metricsByProject.set(m.key, []);
+    metricsByProject.get(m.key)!.push(m);
   }
 
   // Pre-load work_stages
   let stagesRows: any[] = [];
-  if (projectIds.length > 0) {
-    const placeholders = projectIds.map(() => '?').join(',');
+  if (effectiveIds.length > 0) {
+    const placeholders = effectiveIds.map(() => '?').join(',');
     stagesRows = db.prepare(
-      `SELECT project_id, stages_json FROM property_work_stages WHERE project_id IN (${placeholders})`
-    ).all(...projectIds) as any[];
+      `SELECT COALESCE(unit_id, project_id) AS key, stages_json
+       FROM property_work_stages
+       WHERE COALESCE(unit_id, project_id) IN (${placeholders})`
+    ).all(...effectiveIds) as any[];
   }
   const stagesByProject = new Map<string, any[]>();
   for (const s of stagesRows) {
     try {
       const parsed = JSON.parse(s.stages_json);
-      stagesByProject.set(s.project_id, Array.isArray(parsed) ? parsed : []);
+      stagesByProject.set(s.key, Array.isArray(parsed) ? parsed : []);
     } catch { /* ignore */ }
   }
 
   // Pre-load monthly reports
   let reportsRows: any[] = [];
-  if (projectIds.length > 0) {
-    const placeholders = projectIds.map(() => '?').join(',');
+  if (effectiveIds.length > 0) {
+    const placeholders = effectiveIds.map(() => '?').join(',');
     reportsRows = db.prepare(`
-      SELECT pr.*, bu.name AS project_name
+      SELECT pr.*,
+             COALESCE(u.name, bu.name) AS project_name,
+             COALESCE(pr.unit_id, pr.project_id) AS key
       FROM property_monthly_reports pr
-      JOIN business_units bu ON bu.id = pr.project_id
-      WHERE pr.project_id IN (${placeholders})
+      LEFT JOIN units u           ON u.id  = pr.unit_id
+      LEFT JOIN business_units bu ON bu.id = pr.project_id
+      WHERE COALESCE(pr.unit_id, pr.project_id) IN (${placeholders})
       ORDER BY pr.year_month DESC
       LIMIT 30
-    `).all(...projectIds) as any[];
+    `).all(...effectiveIds) as any[];
   }
 
-  // Pre-load investor-facing property details (airbnb_url + status overrides
-  // the work-stage-derived status when admin set it explicitly)
+  // Pre-load investor-facing property details
   const detailsByProject = new Map<string, { airbnb_url: string | null; status: string | null; image_url: string | null; location: string | null }>();
-  if (projectIds.length > 0) {
-    const placeholders = projectIds.map(() => '?').join(',');
+  if (effectiveIds.length > 0) {
+    const placeholders = effectiveIds.map(() => '?').join(',');
     const detRows = db.prepare(`
-      SELECT project_id, airbnb_url, status, image_url, location
-      FROM investor_property_details WHERE project_id IN (${placeholders})
-    `).all(...projectIds) as any[];
-    for (const d of detRows) detailsByProject.set(d.project_id, d);
+      SELECT COALESCE(unit_id, project_id) AS key, airbnb_url, status, image_url, location
+      FROM investor_property_details
+      WHERE COALESCE(unit_id, project_id) IN (${placeholders})
+    `).all(...effectiveIds) as any[];
+    for (const d of detRows) detailsByProject.set(d.key, d);
   }
 
   // Per-property calculations
@@ -176,8 +189,9 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
 
   for (const inv of investments) {
     const eq = (inv.equity_pct || 0) / 100;
-    const metrics = (metricsByProject.get(inv.project_id) || []).filter((m) => m.year_month >= inv.invested_at.substring(0, 7));
-    const stages = (stagesByProject.get(inv.project_id) || []).map((s: any) => ({ name: s.name || '?', pct: Number(s.percentage ?? s.pct) || 0 }));
+    const key = inv.effective_id;
+    const metrics = (metricsByProject.get(key) || []).filter((m) => m.year_month >= inv.invested_at.substring(0, 7));
+    const stages = (stagesByProject.get(key) || []).map((s: any) => ({ name: s.name || '?', pct: Number(s.percentage ?? s.pct) || 0 }));
 
     let accProfit = 0;
     let lastRev = 0;
@@ -194,8 +208,8 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     }
     const monthlyProfit = lastRev * eq; // most recent month's projected profit
 
-    // Payouts to this property
-    const propertyPayouts = payouts.filter((p) => p.project_id === inv.project_id);
+    // Payouts attributed to this unit (matches by unit_id OR legacy project_id)
+    const propertyPayouts = payouts.filter((p) => p.unit_id === inv.unit_id || (p.project_id && p.project_id === inv.project_id));
     const paidOutForProperty = propertyPayouts.reduce((s, p) => s + (p.amount || 0), 0);
 
     const pending = +(accProfit - paidOutForProperty).toFixed(2);
@@ -212,9 +226,9 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
       weightedOccupancyDen += inv.amount;
     }
 
-    const det = detailsByProject.get(inv.project_id);
+    const det = detailsByProject.get(key);
     propertyOut.push({
-      project_id: inv.project_id,
+      project_id: key,
       project_name: inv.project_name,
       invested: inv.amount,
       equity_pct: inv.equity_pct,
@@ -250,7 +264,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   const monthlyTotals = new Map<string, number>();
   for (const inv of investments) {
     const eq = (inv.equity_pct || 0) / 100;
-    const metrics = (metricsByProject.get(inv.project_id) || []).filter((m) => m.year_month >= inv.invested_at.substring(0, 7));
+    const metrics = (metricsByProject.get(inv.effective_id) || []).filter((m) => m.year_month >= inv.invested_at.substring(0, 7));
     for (const m of metrics) {
       const prev = monthlyTotals.get(m.year_month) || 0;
       monthlyTotals.set(m.year_month, prev + (m.revenue || 0) * eq);
@@ -264,7 +278,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
   // Occupancy dynamics — weighted by amount per month
   const occByMonth = new Map<string, { num: number; den: number }>();
   for (const inv of investments) {
-    const metrics = (metricsByProject.get(inv.project_id) || []);
+    const metrics = (metricsByProject.get(inv.effective_id) || []);
     for (const m of metrics) {
       if (m.occupancy_pct == null) continue;
       const cell = occByMonth.get(m.year_month) || { num: 0, den: 0 };
@@ -297,7 +311,7 @@ export function buildPortalData(db: any, token: string): InvestorPortalData | nu
     capital_growth: capitalGrowth,
     occupancy_dynamics: occupancyDynamics,
     monthly_reports: reportsRows.map((r) => ({
-      project_id: r.project_id, project_name: r.project_name,
+      project_id: r.key, project_name: r.project_name,
       year_month: r.year_month, adr: r.adr,
       general_comment: r.general_comment, market_insight: r.market_insight, photo_url: r.photo_url,
     })),

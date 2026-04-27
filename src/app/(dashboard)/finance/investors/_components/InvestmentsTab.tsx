@@ -1,14 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, Edit } from 'lucide-react';
+import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
 
 interface Investment {
   id: string;
   investor_id: string;
   investor_name: string;
-  project_id: string;
-  project_name: string;
+  project_id: string | null;     // legacy business_unit (may be null on new rows)
+  unit_id: string | null;        // real PMS unit (preferred)
+  project_name: string;          // resolved name (unit name OR legacy bu name)
+  property_name: string | null;  // PMS property the unit belongs to
+  needs_relink: number;          // 1 when unit_id is null (legacy, requires manual relink)
   amount: number;
   currency: string;
   equity_pct: number | null;
@@ -18,31 +21,35 @@ interface Investment {
 }
 
 interface Investor { id: string; name: string }
-interface Project  { id: string; name: string }
+interface UnitOption { id: string; name: string; code: string; property_name: string }
 
 function fmt(n: number, cur: string): string {
   return `${n.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
 }
 
+function unitLabel(u: UnitOption): string {
+  return `${u.property_name} / ${u.name}${u.code && u.code !== u.name ? ` (${u.code})` : ''}`;
+}
+
 export default function InvestmentsTab() {
   const [items, setItems] = useState<Investment[]>([]);
   const [investors, setInvestors] = useState<Investor[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [units, setUnits] = useState<UnitOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<Investment> | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [iRes, invRes, pRes] = await Promise.all([
+      const [iRes, invRes, uRes] = await Promise.all([
         fetch('/api/finance/investor-investments'),
         fetch('/api/finance/investors'),
-        fetch('/api/finance/investor-projects'),
+        fetch('/api/finance/investor-units'),
       ]);
-      const [iJ, invJ, pJ] = await Promise.all([iRes.json(), invRes.json(), pRes.json()]);
+      const [iJ, invJ, uJ] = await Promise.all([iRes.json(), invRes.json(), uRes.json()]);
       setItems(iJ.items || []);
       setInvestors((invJ.items || []).map((i: any) => ({ id: i.id, name: i.name })));
-      setProjects(pJ.items || []);
+      setUnits((uJ.items || []).map((u: any) => ({ id: u.id, name: u.name, code: u.code, property_name: u.property_name })));
     } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
@@ -50,8 +57,8 @@ export default function InvestmentsTab() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   async function save() {
-    if (!editing?.investor_id || !editing?.project_id || !editing?.amount || !editing?.invested_at) {
-      alert('investor_id, project_id, amount, invested_at — обовʼязкові');
+    if (!editing?.investor_id || !editing?.unit_id || !editing?.amount || !editing?.invested_at) {
+      alert('investor_id, unit_id (будинок), amount, invested_at — обовʼязкові');
       return;
     }
     try {
@@ -71,6 +78,17 @@ export default function InvestmentsTab() {
     fetchAll();
   }
 
+  async function relink(inv: Investment, newUnitId: string) {
+    if (!newUnitId) return;
+    await fetch(`/api/finance/investor-investments/${inv.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit_id: newUnitId }),
+    });
+    fetchAll();
+  }
+
+  const orphans = items.filter((i) => i.needs_relink);
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
@@ -79,6 +97,14 @@ export default function InvestmentsTab() {
           <Plus size={14} /> Додати інвестицію
         </button>
       </div>
+
+      {orphans.length > 0 && (
+        <div style={{ padding: 12, marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid #f59e0b', borderRadius: 8 }}>
+          <div style={{ fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AlertCircle size={14} /> <b>{orphans.length}</b> інвестицій ще привʼязані до старих finance-buckets, а не до реальних будинків. Перепривʼяжіть кожну на свій юніт у колонці «Будинок».
+          </div>
+        </div>
+      )}
 
       {loading ? <div>Завантаження…</div> : items.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-primary)', borderRadius: 8 }}>
@@ -91,7 +117,7 @@ export default function InvestmentsTab() {
               <tr style={{ background: 'var(--bg-secondary)' }}>
                 <th style={th}>Дата</th>
                 <th style={th}>Інвестор</th>
-                <th style={th}>Проєкт</th>
+                <th style={th}>Будинок</th>
                 <th style={{ ...th, textAlign: 'right' }}>Сума</th>
                 <th style={{ ...th, textAlign: 'right' }}>Equity %</th>
                 <th style={th}>Модель</th>
@@ -100,10 +126,25 @@ export default function InvestmentsTab() {
             </thead>
             <tbody>
               {items.map((i) => (
-                <tr key={i.id} style={{ borderTop: '1px solid var(--border-primary)' }}>
+                <tr key={i.id} style={{ borderTop: '1px solid var(--border-primary)', background: i.needs_relink ? 'rgba(245,158,11,0.05)' : undefined }}>
                   <td style={td}>{i.invested_at}</td>
                   <td style={td}><b>{i.investor_name}</b></td>
-                  <td style={td}>{i.project_name}</td>
+                  <td style={td}>
+                    {i.needs_relink ? (
+                      <div>
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 2 }}>⚠ legacy: {i.project_name}</div>
+                        <select style={{ ...input, fontSize: 11 }} value="" onChange={(e) => relink(i, e.target.value)}>
+                          <option value="">— перепривʼязати на юніт —</option>
+                          {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
+                        </select>
+                      </div>
+                    ) : (
+                      <div>
+                        <div>{i.project_name}</div>
+                        {i.property_name && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{i.property_name}</div>}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmt(i.amount, i.currency)}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{i.equity_pct != null ? `${i.equity_pct}%` : '—'}</td>
                   <td style={td}>{i.model_description || '—'}</td>
@@ -128,11 +169,12 @@ export default function InvestmentsTab() {
                 {investors.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
             </Field>
-            <Field label="Проєкт *">
-              <select style={input} value={editing.project_id || ''} onChange={(e) => setEditing({ ...editing, project_id: e.target.value })}>
+            <Field label="Будинок (юніт) *">
+              <select style={input} value={editing.unit_id || ''} onChange={(e) => setEditing({ ...editing, unit_id: e.target.value })}>
                 <option value="">—</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
               </select>
+              {units.length === 0 && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>У вас немає юнітів у PMS — створіть їх у Settings → Units.</div>}
             </Field>
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 2 }}><Field label="Сума *"><input type="number" step="0.01" style={input} value={editing.amount || ''} onChange={(e) => setEditing({ ...editing, amount: parseFloat(e.target.value) })} /></Field></div>
