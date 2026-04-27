@@ -820,6 +820,15 @@
   cursor: default;
 }
 
+.booking-cal-day.booked {
+  color: var(--bk-text-muted);
+  opacity: 0.45;
+  cursor: default;
+  text-decoration: line-through;
+  background: rgba(220, 38, 38, 0.06);
+}
+
+
 .booking-cal-day.today {
   font-weight: 700;
   color: var(--bk-accent);

@@ -410,12 +410,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             id: 'mock-1', name: 'Premium Glamping Tent', code: 'P1', beds: 2, unitTypeId: 't1', typeName: 'Tent', typeCode: 'T',
             description: 'Beautiful tent with view', maxAdults: 2, maxChildren: 1, maxOccupancy: 3, baseOccupancy: 2,
             avgPricePerNight: 2500, totalPrice: 2500 * 2, currency: 'Kč', extraPersonCharge: 500, petAllowed: true, petCharge: 200,
+            photos: [],
             amenities: [{ icon: 'wifi', name: 'Wi-Fi' }, { icon: 'coffee', name: 'Coffee' }]
           },
           {
             id: 'mock-2', name: 'Eco Wood Cabin', code: 'C1', beds: 4, unitTypeId: 't2', typeName: 'Cabin', typeCode: 'C',
             description: 'Cozy cabin in woods', maxAdults: 4, maxChildren: 2, maxOccupancy: 6, baseOccupancy: 2,
             avgPricePerNight: 3200, totalPrice: 3200 * 2, currency: 'Kč', extraPersonCharge: 600, petAllowed: false, petCharge: 0,
+            photos: [],
             amenities: [{ icon: 'fireplace', name: 'Fireplace' }]
           }
         ]
@@ -774,6 +776,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </div>
             </div>
 
+            <div className="v3-cal-months-grid">
             {[0, 1].map(offset => {
               const year = today.getFullYear();
               const month = today.getMonth() + calMonthOffset + offset;
@@ -782,8 +785,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               const first = getFirstDayOfMonth(year, month);
 
               return (
-                <div key={offset} className="v3-month-section" style={{ marginBottom: offset === 0 ? 24 : 0 }}>
-                  {offset > 0 && <div className="v3-month-divider" style={{ padding: '12px 0', fontSize: 14, fontWeight: 700, textAlign: 'center', color: 'var(--text-primary)', borderTop: '1px solid var(--border-primary)', marginTop: 12 }}>{monthName}</div>}
+                <div key={offset} className="v3-month-section">
+                  <div className="v3-month-divider">{monthName}</div>
                   <div className="v3-cal-weekdays">
                     {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(d => <div key={d} className="v3-cal-weekday">{d}</div>)}
                   </div>
@@ -827,6 +830,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               );
             })}
+            </div>
 
             {/* Calendar footer actions */}
             <div className="v3-cal-footer">
@@ -850,28 +854,6 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </button>
             </div>
           </div>
-
-          {/* Calendar legend */}
-          {(busyDates.size > 0 || partialDates.size > 0) && (
-            <div className="v3-cal-legend">
-              {busyDates.size > 0 && (
-                <div className="v3-cal-legend-item">
-                  <span className="v3-cal-legend-busy" />
-                  <span>Зайнято</span>
-                </div>
-              )}
-              {partialDates.size > 0 && (
-                <div className="v3-cal-legend-item">
-                  <span className="v3-cal-legend-partial" />
-                  <span>Частково</span>
-                </div>
-              )}
-              <div className="v3-cal-legend-item">
-                <span className="v3-cal-legend-free" />
-                <span>Вільно</span>
-              </div>
-            </div>
-          )}
 
           <div className="v3-guests">
             <div>
