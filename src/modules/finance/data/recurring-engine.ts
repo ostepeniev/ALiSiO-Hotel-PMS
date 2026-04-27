@@ -183,6 +183,111 @@ export function runRecurringTickIfDue(db: any): boolean {
  * Forecast what operations WOULD be created by active templates in a date range,
  * without actually writing to DB. Used by calendar view to preview recurring instances.
  */
+// ─────────────────────────────────────────────────────────────────
+// PR #26: suggest a recurring template that an incoming bank op might be
+//
+// When the bank inbox creates a fin_operation, we scan active recurring
+// templates for a likely match (same op_type, amount within tolerance,
+// optional counterparty match, currency match). If exactly one good
+// candidate exists, we tag the op with suggested_recurring_id so the UI
+// can offer a one-click "yes, this is the rent" confirmation.
+// ─────────────────────────────────────────────────────────────────
+
+const AMOUNT_TOLERANCE_PCT = 0.05; // 5% — covers small rent-rate adjustments
+
+export interface RecurringSuggestion {
+  template_id: string;
+  template_name: string;
+  amount: number;
+  category_id: string | null;
+  project_id: string | null;
+  counterparty_id: string | null;
+  comment: string | null;
+}
+
+/**
+ * Find at most one matching recurring template for an operation. Returns
+ * null when no match or multiple ambiguous matches (we don't want to guess).
+ *
+ * Match criteria (must all hold):
+ *   - same op_type (income/expense)
+ *   - same currency
+ *   - amount within ±5% of template
+ *   - is_active = 1
+ *
+ * Bonus signals (all-else-equal, prefer matching):
+ *   - same counterparty_id (if op has one)
+ *   - schedule_day close to op date day-of-month (within ±5 days)
+ */
+export function findRecurringSuggestion(
+  db: any,
+  orgId: string,
+  op: { op_type: string; amount: number; currency: string; counterparty_id: string | null; paid_at: string },
+): RecurringSuggestion | null {
+  const tolerance = op.amount * AMOUNT_TOLERANCE_PCT;
+  const minAmt = op.amount - tolerance;
+  const maxAmt = op.amount + tolerance;
+
+  const candidates = db.prepare(`
+    SELECT id, name, amount, category_id, project_id, counterparty_id, comment, schedule_day
+    FROM fin_recurring_templates
+    WHERE organization_id = ? AND is_active = 1
+      AND op_type = ? AND currency = ?
+      AND amount BETWEEN ? AND ?
+  `).all(orgId, op.op_type, op.currency, minAmt, maxAmt) as any[];
+
+  if (candidates.length === 0) return null;
+
+  // If exactly one — that's the suggestion
+  if (candidates.length === 1) {
+    const t = candidates[0];
+    return {
+      template_id: t.id, template_name: t.name, amount: t.amount,
+      category_id: t.category_id, project_id: t.project_id,
+      counterparty_id: t.counterparty_id, comment: t.comment,
+    };
+  }
+
+  // Multiple — score by closeness of (a) amount, (b) counterparty match,
+  // (c) day-of-month. Take winner if it dominates clearly; else null.
+  const opDay = Number((op.paid_at || '').substring(8, 10)) || 0;
+  const scored = candidates.map((t: any) => {
+    let score = 0;
+    score += 100 - Math.abs(t.amount - op.amount) / op.amount * 100; // 0..100
+    if (op.counterparty_id && t.counterparty_id === op.counterparty_id) score += 50;
+    if (t.schedule_day && opDay && Math.abs(t.schedule_day - opDay) <= 5) score += 20;
+    return { ...t, _score: score };
+  }).sort((a: any, b: any) => b._score - a._score);
+
+  // Winner must beat runner-up by 10+ points to avoid ambiguity
+  if (scored[0]._score - scored[1]._score < 10) return null;
+
+  const t = scored[0];
+  return {
+    template_id: t.id, template_name: t.name, amount: t.amount,
+    category_id: t.category_id, project_id: t.project_id,
+    counterparty_id: t.counterparty_id, comment: t.comment,
+  };
+}
+
+/**
+ * Convenience: find suggestion for an op + write suggested_recurring_id
+ * onto the operation row in one shot. Used by bank-inbox-engine.
+ */
+export function tagOpWithRecurringSuggestion(
+  db: any,
+  orgId: string,
+  opId: string,
+  op: { op_type: string; amount: number; currency: string; counterparty_id: string | null; paid_at: string },
+): RecurringSuggestion | null {
+  const suggestion = findRecurringSuggestion(db, orgId, op);
+  if (suggestion) {
+    db.prepare("UPDATE fin_operations SET suggested_recurring_id = ? WHERE id = ?")
+      .run(suggestion.template_id, opId);
+  }
+  return suggestion;
+}
+
 export interface ForecastOp {
   template_id: string;
   template_name: string;

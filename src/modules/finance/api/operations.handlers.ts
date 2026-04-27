@@ -90,13 +90,15 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
         bu.name  AS project_name,
         cp.name  AS counterparty_name,
         afr.name AS account_from_name, afr.color AS account_from_color, afr.currency AS account_from_currency,
-        ato.name AS account_to_name,   ato.color AS account_to_color,   ato.currency AS account_to_currency
+        ato.name AS account_to_name,   ato.color AS account_to_color,   ato.currency AS account_to_currency,
+        rt.name  AS suggested_recurring_name
       FROM fin_operations o
-      LEFT JOIN expense_categories    ec  ON ec.id  = o.category_id
-      LEFT JOIN business_units        bu  ON bu.id  = o.project_id
-      LEFT JOIN finance_counterparties cp ON cp.id  = o.counterparty_id
-      LEFT JOIN finance_accounts      afr ON afr.id = o.account_from_id
-      LEFT JOIN finance_accounts      ato ON ato.id = o.account_to_id
+      LEFT JOIN expense_categories     ec  ON ec.id  = o.category_id
+      LEFT JOIN business_units         bu  ON bu.id  = o.project_id
+      LEFT JOIN finance_counterparties cp  ON cp.id  = o.counterparty_id
+      LEFT JOIN finance_accounts       afr ON afr.id = o.account_from_id
+      LEFT JOIN finance_accounts       ato ON ato.id = o.account_to_id
+      LEFT JOIN fin_recurring_templates rt ON rt.id  = o.suggested_recurring_id
       WHERE ${whereSql}
       ORDER BY o.paid_at DESC, o.created_at DESC
       LIMIT ? OFFSET ?
@@ -116,7 +118,12 @@ export async function getOperation(
   try {
     const db = getDb();
     const { id } = await context.params;
-    const row = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id);
+    const row = db.prepare(`
+      SELECT o.*, rt.name AS suggested_recurring_name
+      FROM fin_operations o
+      LEFT JOIN fin_recurring_templates rt ON rt.id = o.suggested_recurring_id
+      WHERE o.id = ?
+    `).get(id);
     if (!row) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
     return NextResponse.json(enrichOperation(db, row));
   } catch (error: any) {
@@ -336,6 +343,65 @@ export async function duplicateOperation(
     return NextResponse.json(enrichOperation(db, created), { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+}
+
+/**
+ * POST /api/finance/operations/[id]/apply-recurring
+ * Body: { confirm: true } applies the suggestion (copies category/project/
+ *        counterparty/comment from the linked recurring template, clears
+ *        suggested_recurring_id), { confirm: false } just dismisses it.
+ */
+export async function applyRecurringSuggestion(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const { id } = await context.params;
+    const body = await request.json().catch(() => ({}));
+    const confirm = body.confirm !== false;
+
+    const op = db.prepare(
+      "SELECT id, suggested_recurring_id FROM fin_operations WHERE id = ? AND organization_id = ?"
+    ).get(id, orgId) as { id: string; suggested_recurring_id: string | null } | undefined;
+    if (!op) return NextResponse.json({ error: 'Operation not found' }, { status: 404 });
+
+    if (!op.suggested_recurring_id) {
+      return NextResponse.json({ error: 'No recurring suggestion to apply' }, { status: 400 });
+    }
+
+    if (!confirm) {
+      // Just dismiss
+      db.prepare("UPDATE fin_operations SET suggested_recurring_id = NULL WHERE id = ?").run(id);
+      return NextResponse.json({ ok: true, action: 'dismissed' });
+    }
+
+    const tpl = db.prepare(
+      "SELECT category_id, project_id, counterparty_id, comment FROM fin_recurring_templates WHERE id = ?"
+    ).get(op.suggested_recurring_id) as any;
+    if (!tpl) {
+      // Template was deleted — just dismiss
+      db.prepare("UPDATE fin_operations SET suggested_recurring_id = NULL WHERE id = ?").run(id);
+      return NextResponse.json({ ok: true, action: 'dismissed_orphan' });
+    }
+
+    db.prepare(`
+      UPDATE fin_operations
+      SET category_id     = COALESCE(?, category_id),
+          project_id      = COALESCE(?, project_id),
+          counterparty_id = COALESCE(?, counterparty_id),
+          comment = CASE WHEN comment IS NULL OR comment = '' THEN ? ELSE comment END,
+          suggested_recurring_id = NULL,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(tpl.category_id, tpl.project_id, tpl.counterparty_id, tpl.comment, id);
+
+    const updated = db.prepare("SELECT * FROM fin_operations WHERE id = ?").get(id);
+    return NextResponse.json({ ok: true, action: 'applied', operation: enrichOperation(db, updated) });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 

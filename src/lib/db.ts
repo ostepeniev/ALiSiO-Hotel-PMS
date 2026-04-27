@@ -3208,6 +3208,18 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
+  // PR #26: suggested_recurring_id on fin_operations — bank-imported ops
+  // get tagged with a candidate recurring template (similar amount + counterparty)
+  // for one-click confirmation by user.
+  try {
+    const opCols = database.prepare("PRAGMA table_info(fin_operations)").all() as { name: string }[];
+    if (opCols.length > 0 && !opCols.some((c) => c.name === 'suggested_recurring_id')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN suggested_recurring_id TEXT");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_fin_op_suggested_recurring ON fin_operations(suggested_recurring_id)");
+      console.log('[DB] PR #26: added suggested_recurring_id column to fin_operations');
+    }
+  } catch (e: any) { console.log('[DB] PR #26 suggested_recurring_id migration:', e.message); }
+
   // PR #23: file attachments per fin_operation (invoices, receipts, photos)
   database.exec(`
     CREATE TABLE IF NOT EXISTS fin_operation_attachments (

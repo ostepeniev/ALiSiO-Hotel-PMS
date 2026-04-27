@@ -161,11 +161,13 @@ export {
 import {
   createOperation as _createOperation, updateOperation as _updateOperation,
   deleteOperation as _deleteOperation, duplicateOperation as _duplicateOperation,
+  applyRecurringSuggestion as _applyRecurringSuggestion,
 } from './operations.handlers';
 export const createOperation    = withPermission('manage_payments', _createOperation);
 export const updateOperation    = withPermission('manage_payments', _updateOperation);
 export const deleteOperation    = withPermission('manage_payments', _deleteOperation);
 export const duplicateOperation = withPermission('manage_payments', _duplicateOperation);
+export const applyRecurringSuggestion = withPermission('manage_payments', _applyRecurringSuggestion);
 
 // ─── Payment bridge — INTERNAL (no HTTP, no guard) ────────────
 export {
