@@ -90,6 +90,7 @@ const navigation: NavSection[] = [
       { label: 'Операції', href: '/finance/operations', icon: <ListChecks size={20} />, permission: 'nav:finance' },
       { label: 'Clearing (платформи)', href: '/finance/clearing', icon: <Repeat size={20} />, permission: 'nav:finance' },
       { label: 'Чеки з пошти', href: '/finance/receipts', icon: <Mail size={20} />, permission: 'nav:finance' },
+      { label: 'Інвестори (адмін)', href: '/finance/investors', icon: <Users size={20} />, permission: 'nav:investors' },
       { label: 'Звіти', href: '/finance/reports', icon: <BarChart3 size={20} />, permission: 'nav:finance' },
       { label: 'Календар', href: '/finance/calendar', icon: <CalendarDays size={20} />, permission: 'nav:finance' },
       { label: 'Витрати (legacy)', href: '/finance/expenses', icon: <Receipt size={20} />, permission: 'nav:finance' },
