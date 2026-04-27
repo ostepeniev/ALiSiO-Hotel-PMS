@@ -4,21 +4,23 @@
  * Single entry point for all Teya payment session creation.
  * Store selection priority:
  *   1. intent.credentials  → per-site creds from booking_sites.payment_config
- *   2. intent.store        → 'camping' | 'glamping' | 'main'
+ *   2. TEYA_STORE (env)    → 'camping' | 'glamping' | 'main'
  *   3. default             → 'main' (TEYA_CLIENT_ID / TEYA_CLIENT_SECRET / TEYA_STORE_ID)
  */
 import crypto from 'crypto';
-import type { PaymentIntent, PaymentSession, TeyaStoreType } from '../domain/types';
+import type { PaymentIntent, PaymentSession, TeyaCredentials } from '../domain/types';
 
 // ─── Environment ──────────────────────────────────────────────────────────────
 const IS_PRODUCTION = (process.env.TEYA_ENVIRONMENT || 'staging') === 'production';
-const TEYA_API_URL  = IS_PRODUCTION ? 'https://api.teya.com'   : 'https://api.teya.xyz';
+const TEYA_API_URL   = IS_PRODUCTION ? 'https://api.teya.com'  : 'https://api.teya.xyz';
 const TEYA_OAUTH_URL = IS_PRODUCTION
   ? 'https://id.teya.com/oauth/v2/oauth-token'
   : 'https://id.teya.xyz/oauth/v2/oauth-token';
 
-// ─── Store map ────────────────────────────────────────────────────────────────
-const STORES: Record<TeyaStoreType, { client_id: string; client_secret: string; store_id: string }> = {
+// ─── Store map (internal — not part of public PaymentIntent API) ──────────────
+type TeyaStoreKey = 'main' | 'camping' | 'glamping';
+
+const STORES: Record<TeyaStoreKey, TeyaCredentials> = {
   main: {
     client_id:     process.env.TEYA_CLIENT_ID     || '',
     client_secret: process.env.TEYA_CLIENT_SECRET || '',
@@ -35,6 +37,11 @@ const STORES: Record<TeyaStoreType, { client_id: string; client_secret: string; 
     store_id:      process.env.TEYA_GLAMPING_STORE_ID      || process.env.TEYA_STORE_ID      || '',
   },
 };
+
+function getDefaultStore(): TeyaCredentials {
+  const key = (process.env.TEYA_STORE || 'main') as TeyaStoreKey;
+  return STORES[key] ?? STORES.main;
+}
 
 // ─── Token cache (per client_id) ─────────────────────────────────────────────
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
@@ -80,13 +87,18 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
  * This is the ONLY function modules should call — do NOT import from @/lib/teya.
  *
  * @example
- *   const session = await createPaymentSession({ amount: 1200, description: 'Booking #123' });
- *   redirect(session.session_url);
+ *   const session = await createPaymentSession({
+ *     kind: 'booking_full',
+ *     amount: 1200,
+ *     currency: 'CZK',
+ *     description: 'Booking #123',
+ *     metadata: { reservation_id: '...' },
+ *   });
+ *   redirect(session.sessionUrl);
  */
 export async function createPaymentSession(intent: PaymentIntent): Promise<PaymentSession> {
-  // Resolve credentials: explicit > named store > main
-  const storeKey: TeyaStoreType = intent.store ?? 'main';
-  const creds = intent.credentials ?? STORES[storeKey];
+  // Resolve credentials: explicit intent.credentials > env TEYA_STORE > 'main'
+  const creds: TeyaCredentials = intent.credentials ?? getDefaultStore();
 
   if (!creds.client_id || !creds.store_id) {
     throw new Error('[payments] No Teya credentials. Configure TEYA_CLIENT_ID, TEYA_CLIENT_SECRET, TEYA_STORE_ID in .env.local');
@@ -103,22 +115,26 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
     type: 'SALE',
   };
 
-  if (intent.items?.length) {
-    payload.line_items = intent.items;
-  } else if (intent.description) {
+  if (intent.lineItems?.length) {
+    payload.line_items = intent.lineItems.map(li => ({
+      description: li.description,
+      quantity:    li.quantity,
+      unit_price:  Math.round(li.unitPriceMajor * 100),
+    }));
+  } else {
     payload.line_items = [{ description: intent.description, quantity: 1, unit_price: amountMinor }];
   }
 
-  if (intent.metadata)    payload.metadata    = intent.metadata;
-  if (intent.success_url) payload.success_url = intent.success_url;
-  if (intent.cancel_url)  payload.cancel_url  = intent.cancel_url;
-  if (intent.expiresAt)   payload.expires_at  = intent.expiresAt;
+  if (intent.metadata)   payload.metadata    = intent.metadata;
+  if (intent.successUrl) payload.success_url = intent.successUrl;
+  if (intent.cancelUrl)  payload.cancel_url  = intent.cancelUrl;
+  if (intent.expiresAt)  payload.expires_at  = intent.expiresAt;
 
   const res = await fetch(`${TEYA_API_URL}/v2/checkout/sessions`, {
     method: 'POST',
     headers: {
-      Authorization:    `Bearer ${accessToken}`,
-      'Content-Type':   'application/json',
+      Authorization:     `Bearer ${accessToken}`,
+      'Content-Type':    'application/json',
       'Idempotency-Key': crypto.randomUUID(),
     },
     body: JSON.stringify(payload),
@@ -134,9 +150,10 @@ export async function createPaymentSession(intent: PaymentIntent): Promise<Payme
   console.log('[payments] Checkout session created:', data.session_id);
 
   return {
-    id:            data.session_id,
-    session_token: data.session_token,
-    session_url:   data.session_url,
-    status:        data.status ?? 'OPEN',
+    sessionId:    data.session_id,
+    sessionToken: data.session_token,
+    sessionUrl:   data.session_url,
+    provider:     'teya',
+    intentKind:   intent.kind,
   };
 }
