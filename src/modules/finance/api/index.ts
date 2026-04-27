@@ -293,6 +293,11 @@ import {
 export const importFinmap         = withPermission('manage_finance_settings', _importFinmap);
 export const rollbackFinmapImport = withPermission('manage_finance_settings', _rollbackFinmapImport);
 
+// ─── Investor public portal (PR #32) — token-auth, no session ────
+// Public endpoint — auth is the portal_token in URL. NOT wrapped with
+// withPermission. Investor can revoke by regenerating token in admin.
+export { getInvestorPortalData } from './investor-portal.handlers';
+
 // ─── Investor module (PR #31) — manage_investors permission ─────
 export {
   listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
