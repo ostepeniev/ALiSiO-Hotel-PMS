@@ -3218,6 +3218,62 @@ function runMigrations(database: any) {
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
   // ═══════════════════════════════════════════════════════════════════
+  // PR #33-#35: Generic spreadsheet import wizard
+  // - import_formats: persisted column→field mappings per source format
+  //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
+  // - import_entity_mappings: persisted entity resolution (source value
+  //   "KB Kemp Крони" → existing PMS account ID, OR action='create_new'
+  //   to spawn fresh on commit, OR 'ignore' to skip).
+  // - import_runs: audit log of each import attempt — file name, format,
+  //   counts. Lets user see history.
+  // ═══════════════════════════════════════════════════════════════════
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS import_formats (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      detector_signature TEXT,
+      field_mappings_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_import_formats_org ON import_formats(organization_id)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS import_entity_mappings (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      format_id TEXT NOT NULL REFERENCES import_formats(id) ON DELETE CASCADE,
+      entity_type TEXT NOT NULL CHECK (entity_type IN ('account','category','project','counterparty')),
+      source_value TEXT NOT NULL,
+      pms_entity_id TEXT,
+      action TEXT NOT NULL DEFAULT 'use_existing' CHECK (action IN ('use_existing','create_new','ignore')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(format_id, entity_type, source_value)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_iem_format ON import_entity_mappings(format_id, entity_type)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS import_runs (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      format_id TEXT REFERENCES import_formats(id) ON DELETE SET NULL,
+      file_name TEXT,
+      rows_total INTEGER NOT NULL DEFAULT 0,
+      rows_created INTEGER NOT NULL DEFAULT 0,
+      rows_skipped INTEGER NOT NULL DEFAULT 0,
+      rows_dup INTEGER NOT NULL DEFAULT 0,
+      errors_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'committed',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_import_runs_org ON import_runs(organization_id, created_at)');
+
+  // ═══════════════════════════════════════════════════════════════════
   // PR #31: Investor module — investors, investments, monthly metrics,
   // payouts. Adapted from investflow-dashboard architecture but reuses
   // our business_units (= properties).

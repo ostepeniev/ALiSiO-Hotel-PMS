@@ -265,6 +265,17 @@ export const syncTeyaTransactions = withPermission('import_bank_data', _syncTeya
 // ─── Reconciliation dashboard (PR #28) — read ──────────────────
 export { getReconcileDashboard } from './reconcile-dashboard.handlers';
 
+// ─── Generic import wizard (PR #33) — manage_finance_settings ──
+export { listImportFormats, listImportRuns } from './import-wizard.handlers';
+import {
+  parseImportFile as _parseImportFile,
+  saveImportFormat as _saveImportFormat,
+  deleteImportFormat as _deleteImportFormat,
+} from './import-wizard.handlers';
+export const parseImportFile    = withPermission('manage_finance_settings', _parseImportFile);
+export const saveImportFormat   = withPermission('manage_finance_settings', _saveImportFormat);
+export const deleteImportFormat = withPermission('manage_finance_settings', _deleteImportFormat);
+
 // ─── Finmap historical import (PR #30) — manage_finance_settings ─
 export { getFinmapImportStatus } from './finmap-import.handlers';
 import {

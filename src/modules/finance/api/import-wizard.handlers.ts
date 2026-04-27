@@ -1,0 +1,163 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@core/db';
+import {
+  parseUploadedFile, suggestFieldMapping,
+  findFormatBySignature, listSavedFormats, saveFormat,
+  SUPPORTED_FIELDS,
+} from '../data/import-wizard-engine';
+
+function getOrgId(db: any): string {
+  const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
+  if (!row) throw new Error('No organization found');
+  return row.id;
+}
+
+/**
+ * POST /api/finance/import/parse
+ * Multipart: file=<xlsx|csv>
+ *
+ * Stage 1 of the wizard: parse the uploaded file, return:
+ *   - headers + sample rows (first 20 for preview)
+ *   - row_count
+ *   - signature (sha256 of normalised headers)
+ *   - matched_format (if a saved format with this signature exists)
+ *   - suggested_mapping (heuristic field guess for first-time formats)
+ *   - supported_fields (list of PMS field names UI uses for dropdowns)
+ *   - rows_payload (full parsed data, base64-zipped for next stage)
+ *
+ * No DB writes — purely parsing for UI to show the wizard.
+ */
+export async function parseImportFile(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: 'file is required' }, { status: 400 });
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File too large (max 20 MB)' }, { status: 413 });
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const parsed = await parseUploadedFile(buffer, file.name);
+
+    if (parsed.headers.length === 0) {
+      return NextResponse.json({ error: 'No columns detected — empty file?' }, { status: 400 });
+    }
+
+    const matchedFormat = findFormatBySignature(db, orgId, parsed.signature);
+    const suggestedMapping = matchedFormat
+      ? safeJsonParse(matchedFormat.field_mappings_json, {})
+      : suggestFieldMapping(parsed.headers);
+
+    return NextResponse.json({
+      ok: true,
+      file_name: file.name,
+      headers: parsed.headers,
+      sample_rows: parsed.rows.slice(0, 20),
+      row_count: parsed.row_count,
+      signature: parsed.signature,
+      matched_format: matchedFormat ? {
+        id: matchedFormat.id,
+        name: matchedFormat.name,
+        description: matchedFormat.description,
+      } : null,
+      suggested_mapping: suggestedMapping,
+      supported_fields: SUPPORTED_FIELDS,
+      // Send full rows back so the wizard's next stage doesn't need to re-upload
+      all_rows: parsed.rows,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/finance/import/formats
+ * List all saved import formats for the org.
+ */
+export async function listImportFormats(_request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const items = listSavedFormats(db, orgId).map((r: any) => ({
+      ...r,
+      field_mappings: safeJsonParse(r.field_mappings_json, {}),
+    }));
+    return NextResponse.json({ items });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/import/formats
+ * Body: { id?, name, description?, signature, field_mappings: {colIdx: fieldName} }
+ *
+ * Creates or updates a saved format. The next time a file with the same
+ * header signature is parsed, this format will auto-match.
+ */
+export async function saveImportFormat(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.name || !body.signature || !body.field_mappings) {
+      return NextResponse.json({ error: 'name, signature, field_mappings required' }, { status: 400 });
+    }
+    const id = saveFormat(db, orgId, {
+      id: body.id, name: body.name, description: body.description,
+      signature: body.signature, field_mappings: body.field_mappings,
+    });
+    const row = db.prepare("SELECT * FROM import_formats WHERE id = ?").get(id) as any;
+    return NextResponse.json({ ok: true, id, format: { ...row, field_mappings: safeJsonParse(row.field_mappings_json, {}) } });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/finance/import/formats/[id]
+ */
+export async function deleteImportFormat(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+    db.prepare("DELETE FROM import_formats WHERE id = ?").run(id);
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * GET /api/finance/import/runs
+ * Recent import runs (audit log).
+ */
+export async function listImportRuns(_request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const items = db.prepare(`
+      SELECT r.*, f.name AS format_name
+      FROM import_runs r
+      LEFT JOIN import_formats f ON f.id = r.format_id
+      WHERE r.organization_id = ?
+      ORDER BY r.created_at DESC LIMIT 50
+    `).all(orgId);
+    return NextResponse.json({ items });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+function safeJsonParse(s: string | null, fallback: any): any {
+  if (!s) return fallback;
+  try { return JSON.parse(s); } catch { return fallback; }
+}
