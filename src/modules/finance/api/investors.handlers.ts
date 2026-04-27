@@ -19,6 +19,7 @@ import { getDb } from '@core/db';
 import * as crypto from 'crypto';
 import { createOperationInTx } from './operations.handlers';
 import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
+import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -443,6 +444,46 @@ export async function getMonthlyDigest(request: NextRequest): Promise<NextRespon
     }
 
     return NextResponse.json(digest);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Telegram bot status + send digest ──────────────────
+
+export async function getTelegramStatus(_request: NextRequest): Promise<NextResponse> {
+  const info = await getTelegramBotInfo();
+  return NextResponse.json(info);
+}
+
+/**
+ * POST /api/finance/investor-monthly-digest/send-telegram
+ * Body: { investor_id, year_month }
+ * Sends the rendered digest text via Telegram Bot API to the investor's
+ * stored telegram_chat_id. Requires TELEGRAM_BOT_TOKEN env var on server.
+ */
+export async function sendDigestTelegram(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.investor_id || !body.year_month) {
+      return NextResponse.json({ error: 'investor_id and year_month required' }, { status: 400 });
+    }
+    const investor = db.prepare("SELECT name, telegram_chat_id FROM investors WHERE id = ? AND organization_id = ?")
+      .get(body.investor_id, orgId) as { name: string; telegram_chat_id: string | null } | undefined;
+    if (!investor) return NextResponse.json({ error: 'Investor not found' }, { status: 404 });
+    if (!investor.telegram_chat_id) return NextResponse.json({ error: 'У інвестора не вказано telegram_chat_id' }, { status: 400 });
+
+    const digest = buildMonthlyDigest(db, orgId, body.year_month, body.investor_id);
+    const target = digest.investors.find((d) => d.investor_id === body.investor_id);
+    if (!target) return NextResponse.json({ error: 'У інвестора немає інвестицій' }, { status: 404 });
+
+    const origin = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+    const text = renderDigestText(target, body.year_month, origin);
+    const result = await sendTelegramMessage(investor.telegram_chat_id, text);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
+    return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
