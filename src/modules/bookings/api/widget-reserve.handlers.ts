@@ -136,23 +136,25 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     let promoDiscount = 0;
-    if (promoCode && hasPromotions) {
-      const promo = db.prepare(`
-        SELECT * FROM promotions
-        WHERE promo_code = ? AND is_active = 1
-          AND (date_from IS NULL OR date_from <= ?)
-          AND (date_to IS NULL OR date_to >= ?)
-          AND (usage_limit IS NULL OR usage_count < usage_limit)
-      `).get(promoCode, checkOut, checkIn) as any;
+    if (promoCode) {
+      try {
+        const promo = db.prepare(`
+          SELECT * FROM promo_codes
+          WHERE code = ? AND is_active = 1
+            AND (valid_from IS NULL OR valid_from <= ?)
+            AND (valid_until IS NULL OR valid_until >= ?)
+            AND (max_uses IS NULL OR current_uses < max_uses)
+        `).get(String(promoCode).toUpperCase().trim(), checkOut, checkIn) as any;
 
-      if (promo) {
-        if (promo.discount_type === 'percentage') {
-          promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
-        } else {
-          promoDiscount = promo.discount_value;
+        if (promo) {
+          if (promo.discount_type === 'percentage') {
+            promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
+          } else {
+            promoDiscount = promo.discount_value;
+          }
+          db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
         }
-        db.prepare('UPDATE promotions SET usage_count = usage_count + 1 WHERE id = ?').run(promo.id);
-      }
+      } catch { /* promo lookup failed — continue without discount */ }
     }
 
     let certificateDiscount = 0;

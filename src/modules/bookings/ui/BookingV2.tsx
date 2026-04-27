@@ -126,6 +126,9 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
   const [promoCode, setPromoCode] = useState('');
   const [showPromo, setShowPromo] = useState(false);
+  const [promoApplied, setPromoApplied] = useState<{ code: string; discount_type: string; discount_value: number; description?: string } | null>(null);
+  const [promoError, setPromoError] = useState('');
+  const [applyingPromo, setApplyingPromo] = useState(false);
 
   // New site config states
   const [siteConfig, setSiteConfig] = useState<any>(null);
@@ -508,6 +511,24 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   };
 
+  const handleApplyPromo = async () => {
+    const code = promoCode.trim().toUpperCase();
+    if (!code) return;
+    setApplyingPromo(true);
+    setPromoError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}`);
+      const data = await res.json();
+      if (data.valid) {
+        setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
+        setShowPromo(false);
+      } else {
+        setPromoError(data.error || 'Невірний промокод');
+      }
+    } catch { setPromoError('Помилка підключення'); }
+    setApplyingPromo(false);
+  };
+
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) return;
 
@@ -543,6 +564,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           email,
           phone,
           siteId: siteId || undefined,
+          promoCode: promoApplied?.code || undefined,
         }),
       });
       if (res.ok) {
@@ -903,17 +925,30 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             <button className="v3-promo-toggle" onClick={() => setShowPromo(!showPromo)}>
               {showPromo ? '−' : '+'} {t.promoCode} / {t.certificateCode}
             </button>
+            {promoApplied && (
+              <div className="v3-promo-success">
+                🏷️ {promoApplied.code}: {promoApplied.discount_type === 'percentage' ? `-${promoApplied.discount_value}%` : `-${promoApplied.discount_value} Kč`}
+              </div>
+            )}
             {showPromo && (
               <div className="v3-promo-field">
                 <input
                   className="v3-field-input"
                   placeholder={t.promoCode}
                   value={promoCode}
-                  onChange={e => setPromoCode(e.target.value)}
+                  onChange={e => { setPromoCode(e.target.value); setPromoError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && !applyingPromo && handleApplyPromo()}
                 />
-                <button className="v3-promo-apply">{t.apply}</button>
+                <button
+                  className="v3-promo-apply"
+                  onClick={handleApplyPromo}
+                  disabled={applyingPromo || !promoCode.trim()}
+                >
+                  {applyingPromo ? '...' : t.apply}
+                </button>
               </div>
             )}
+            {promoError && <div className="v3-promo-error">{promoError}</div>}
           </div>
         </div>
 

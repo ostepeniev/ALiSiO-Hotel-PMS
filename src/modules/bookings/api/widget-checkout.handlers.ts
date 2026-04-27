@@ -75,7 +75,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       // Apply promo code discount if provided
       if (body.promoCode) {
         try {
-          const promo = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND active = 1").get(body.promoCode) as any;
+          const promo = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND is_active = 1").get(body.promoCode) as any;
           if (promo) {
             if (promo.discount_type === 'fixed_price') {
               basePrice = promo.discount_value;
