@@ -21,3 +21,4 @@ export { listServiceOrders, updateServiceOrder } from './service-orders.handlers
 export { getWidgetCalendar, getWidgetCalendarOptions } from './widget-calendar-public.handlers';
 export { getWidgetSiteConfig, getWidgetSiteConfigOptions } from './widget-site.handlers';
 export { createBookingDraft, getBookingDraft, deleteBookingDraft, createBookingDraftOptions } from './booking-drafts.handlers';
+export { fixServiceOrderPayment, getPendingOrders } from './fix-payment.handlers';

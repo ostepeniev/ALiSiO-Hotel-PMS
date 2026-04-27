@@ -151,7 +151,6 @@ export async function getAvailability(request: NextRequest) {
         typeName: unit.type_name,
         typeCode: unit.type_code,
         description: unit.type_description,
-        photos: unit.type_photos ? unit.type_photos.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         maxAdults: unit.max_adults,
         maxChildren: unit.max_children,
         maxOccupancy: unit.max_occupancy,

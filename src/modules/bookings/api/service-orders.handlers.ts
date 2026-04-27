@@ -33,6 +33,8 @@ export async function listServiceOrders(req: NextRequest) {
       LEFT JOIN guests g ON r.guest_id = g.id
       LEFT JOIN units u ON r.unit_id = u.id
       WHERE 1=1 ${dateFilter}
+        AND bso.status != 'cancelled'
+        AND bso.payment_status NOT IN ('failed', 'refunded')
       ORDER BY bso.service_date ASC, bso.created_at DESC
     `).all() as any[];
 
@@ -88,6 +90,8 @@ export async function listServiceOrders(req: NextRequest) {
       JOIN guests g ON r.guest_id = g.id
       LEFT JOIN units u ON r.unit_id = u.id
       WHERE 1=1 ${soDateFilter}
+        AND so.status != 'cancelled'
+        AND so.payment_status NOT IN ('failed', 'refunded')
       ORDER BY so.created_at DESC
       LIMIT 50
     `).all() as any[];

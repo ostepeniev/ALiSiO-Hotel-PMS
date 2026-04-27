@@ -84,6 +84,25 @@ export function generateInvoiceForReservation(reservationId: string): string | n
   }
 }
 
+/**
+ * Cancel an existing invoice and generate a fresh one for the same reservation.
+ * The old invoice is soft-deleted (status → 'cancelled'), not removed from DB.
+ */
+export function reissueInvoiceForReservation(reservationId: string): string | null {
+  try {
+    const db = getDb();
+    // Cancel all existing non-cancelled invoices for this reservation
+    db.prepare(
+      "UPDATE invoices SET status = 'cancelled' WHERE reservation_id = ? AND status != 'cancelled'"
+    ).run(reservationId);
+    // Force-create a new invoice (existing check now passes since all are cancelled)
+    return generateInvoiceForReservation(reservationId);
+  } catch (e: any) {
+    console.error('[Invoices] reissue error:', e.message);
+    return null;
+  }
+}
+
 // ─── API Handlers ─────────────────────────────────────────────────────────────
 
 /**
@@ -126,6 +145,8 @@ export async function getInvoiceHtml(
     const { searchParams } = new URL(request.url);
     const asDownload = searchParams.get('format') === 'download';
 
+    // LEFT JOIN units/guests so a deleted unit or guest doesn't drop the entire
+    // row and turn into a misleading 404. The template tolerates null fields.
     const data = db.prepare(`
       SELECT
         i.id, i.invoice_number, i.issued_at, i.due_date,
@@ -133,22 +154,37 @@ export async function getInvoiceHtml(
         r.check_in, r.check_out, r.nights, r.adults, r.children,
         u.name as unit_name, u.code as unit_code,
         g.first_name as guest_first_name, g.last_name as guest_last_name,
-        g.email as guest_email, g.address as guest_address,
-        g.city as guest_city, g.country as guest_country,
-        p.method as payment_method, p.notes as payment_notes
+        g.email as guest_email,
+        COALESCE(NULLIF(g.address,''), rg.address) as guest_address,
+        COALESCE(NULLIF(g.city,''),    rg.city)    as guest_city,
+        COALESCE(NULLIF(g.country,''),rg.country)  as guest_country,
+        p.method as payment_method, p.comment as payment_notes
       FROM invoices i
       JOIN reservations r ON i.reservation_id = r.id
-      JOIN units u ON r.unit_id = u.id
-      JOIN guests g ON r.guest_id = g.id
-      LEFT JOIN payments p
-        ON p.reservation_id = r.id AND p.status = 'completed'
+      LEFT JOIN units u ON r.unit_id = u.id
+      LEFT JOIN guests g ON r.guest_id = g.id
+      LEFT JOIN (
+        SELECT gr.reservation_id,
+               rg2.address, rg2.city, rg2.country
+        FROM guest_registrations gr
+        JOIN guests rg2 ON gr.guest_id = rg2.id
+        WHERE (rg2.address IS NOT NULL AND rg2.address != '')
+           OR (rg2.city IS NOT NULL AND rg2.city != '')
+        ORDER BY gr.registered_at ASC
+        LIMIT 1
+      ) rg ON rg.reservation_id = r.id
+      LEFT JOIN fin_operations p
+        ON p.reservation_id = r.id
+        AND p.op_type = 'income'
+        AND p.status = 'completed'
       WHERE i.id = ?
       ORDER BY p.paid_at DESC
       LIMIT 1
     `).get(id) as InvoiceData | undefined;
 
     if (!data) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+      console.error('[Invoices] getInvoiceHtml: no row for invoice id', id);
+      return NextResponse.json({ error: 'Invoice not found', invoice_id: id }, { status: 404 });
     }
 
     const html = renderInvoiceHtml(data);
@@ -171,7 +207,61 @@ export async function getInvoiceHtml(
       },
     });
   } catch (e: any) {
-    console.error('[Invoices] getInvoiceHtml error:', e.message);
-    return NextResponse.json({ error: 'Failed to render invoice' }, { status: 500 });
+    const msg = e?.message || String(e);
+    console.error('[Invoices] getInvoiceHtml error:', msg, e?.stack);
+    return NextResponse.json(
+      { error: 'Failed to render invoice', detail: msg },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET /api/bookings/[id]/invoice
+ * Returns the current (issued) invoice for a reservation, or null.
+ */
+export async function getInvoiceByReservation(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await params;
+    const row = db.prepare(`
+      SELECT id, invoice_number, issued_at, amount, currency, status
+      FROM invoices
+      WHERE reservation_id = ? AND status = 'issued'
+      ORDER BY issued_at DESC
+      LIMIT 1
+    `).get(id) as { id: string; invoice_number: string; issued_at: string; amount: number; currency: string; status: string } | undefined;
+    return NextResponse.json(row ?? null);
+  } catch (e: any) {
+    console.error('[Invoices] getInvoiceByReservation error:', e.message);
+    return NextResponse.json(null);
+  }
+}
+
+/**
+ * POST /api/bookings/[id]/invoice/reissue
+ * Cancels the current invoice and generates a new one with fresh data.
+ */
+export async function reissueInvoiceHandler(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+    const newInvoiceId = reissueInvoiceForReservation(id);
+    if (!newInvoiceId) {
+      return NextResponse.json({ error: 'Failed to reissue invoice' }, { status: 500 });
+    }
+    const db = getDb();
+    const invoice = db.prepare(
+      'SELECT id, invoice_number, issued_at, amount, currency FROM invoices WHERE id = ?'
+    ).get(newInvoiceId) as { id: string; invoice_number: string; issued_at: string; amount: number; currency: string };
+    return NextResponse.json({ success: true, invoice });
+  } catch (e: any) {
+    console.error('[Invoices] reissueInvoiceHandler error:', e.message);
+    return NextResponse.json({ error: 'Reissue failed' }, { status: 500 });
   }
 }

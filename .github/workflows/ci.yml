@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript syntax check (TS1xxx parser errors)
+        run: |
+          set +e
+          OUTPUT=$(npx tsc --noEmit 2>&1)
+          STATUS=$?
+          SYNTAX=$(echo "$OUTPUT" | grep -E "error TS1[0-9]{3}:" || true)
+          if [ -n "$SYNTAX" ]; then
+            echo "::error::TypeScript syntax errors found:"
+            echo "$SYNTAX"
+            exit 1
+          fi
+          echo "✓ No syntax errors"
+          # Print legacy TS2xxx count for visibility, but don't fail the job
+          LEGACY_COUNT=$(echo "$OUTPUT" | grep -cE "error TS[0-9]+:" || true)
+          echo "::notice::Legacy semantic errors (not blocking): $LEGACY_COUNT"
+
+      - name: Next.js build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          # Some routes instantiate API clients at module-evaluation time, which
+          # next build runs during "Collecting page data". Pass dummy values so
+          # the build succeeds; real keys live in the VPS systemd unit at runtime.
+          OPENAI_API_KEY: 'sk-build-dummy-not-used'
+          ANTHROPIC_API_KEY: 'sk-ant-build-dummy-not-used'
+          TEYA_CLIENT_ID: 'build-dummy'
+          TEYA_CLIENT_SECRET: 'build-dummy'
+          TEYA_STORE_ID: 'build-dummy'

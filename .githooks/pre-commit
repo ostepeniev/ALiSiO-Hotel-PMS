@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Pre-commit hook for ALiSiO PMS.
+#
+# Blocks commits that contain TypeScript SYNTAX errors (TS1xxx codes — the
+# kind that prevents Next.js from compiling). Semantic errors (TS2xxx) are
+# allowed because the codebase has known legacy ones during the modular
+# migration.
+#
+# Activation (one-time, per clone):
+#   git config core.hooksPath .githooks
+#
+# To bypass in an emergency: git commit --no-verify  (DO NOT make a habit)
+
+set -u
+
+# Skip if no TS files staged — saves time on docs/config-only commits.
+STAGED_TS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx)$' || true)
+if [ -z "$STAGED_TS" ]; then
+  exit 0
+fi
+
+echo "[pre-commit] Scanning for TypeScript syntax errors (TS1xxx)..."
+
+# Run tsc and grep for parser-level errors only. tsc exits non-zero when any
+# error is present, so we must not propagate that exit code unless TS1xxx hit.
+TSC_OUTPUT=$(npx --no-install tsc --noEmit 2>&1 || true)
+SYNTAX_ERRORS=$(echo "$TSC_OUTPUT" | grep -E "error TS1[0-9]{3}:" || true)
+
+if [ -n "$SYNTAX_ERRORS" ]; then
+  echo ""
+  echo "❌ Commit blocked — TypeScript SYNTAX errors detected:"
+  echo ""
+  echo "$SYNTAX_ERRORS"
+  echo ""
+  echo "These are parser-level errors (e.g. mismatched quotes, broken JSX)."
+  echo "The Next.js build WILL fail with these in place."
+  echo ""
+  echo "Fix them, then 'git add' the fixed files and commit again."
+  echo "To bypass (NOT recommended): git commit --no-verify"
+  exit 1
+fi
+
+echo "[pre-commit] ✓ No syntax errors"

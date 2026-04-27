@@ -4,6 +4,7 @@ import { getDb } from '@core/db';
 import { fetchNewEmailsAllAccounts, isBlacklisted, classifyEmail, markEmailAsRead, getAccountById } from '@/lib/channels/email'; // TODO: eventBus
 import type { IncomingEmail } from '@/lib/channels/email';
 import { parseBookingComEmail, cleanBookingComBody } from '@/lib/channels/booking-com-parser';
+import { parseVrboEmail } from '@/lib/channels/vrbo-parser';
 import { generateAutoResponse } from '@/lib/ai/auto-response';
 import { findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync';
 import { onInboundMessage } from '@/lib/crm/stage-transitions';
@@ -106,6 +107,39 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
 
   if (bookingData.isBookingCom && lead.id) {
     enrichLeadWithBookingData(db, lead.id, bookingData);
+    
+    // Auto-create reservation for Resort (ONLY if it's a new booking)
+    if (bookingData.isBookingCom && bookingData.isNewReservation && bookingData.categoryType === 'resort' && !lead.reservation_id && bookingData.checkIn && bookingData.checkOut) {
+      autoCreateReservationForResort(db, lead.id, bookingData, email.textBody);
+    }
+  }
+
+  // --- Vrbo / Homeaway (PowerBO) parsing ---
+  const vrboData = parseVrboEmail(email.textBody, email.subject);
+  if (vrboData.isVrbo && lead.id) {
+    // Enrich lead with Vrbo data
+    const sets = [];
+    if (vrboData.guestName) sets.push(`name = '${vrboData.guestName.replace(/'/g, "''")}'`);
+    if (vrboData.guestPhone) sets.push(`phone = '${vrboData.guestPhone}'`);
+    if (sets.length > 0) {
+      db.prepare(`UPDATE crm_leads SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(lead.id);
+    }
+
+    // Auto-create reservation for Vrbo (Resort by default)
+    if (vrboData.isNewReservation && !lead.reservation_id && vrboData.checkIn && vrboData.checkOut) {
+      // Map VrboData to a compatible format for autoCreateReservationForResort or handle directly
+      const mappedData = {
+        confirmationId: vrboData.confirmationId,
+        checkIn: vrboData.checkIn,
+        checkOut: vrboData.checkOut,
+        totalGuests: vrboData.totalGuests,
+        totalPrice: vrboData.totalPrice,
+        currency: vrboData.currency,
+        propertyName: vrboData.propertyName,
+        source: 'vrbo'
+      };
+      autoCreateReservationForResort(db, lead.id, mappedData, email.textBody);
+    }
   }
 
   let conv = db.prepare(
@@ -353,5 +387,86 @@ function enrichLeadWithBookingData(db: any, leadId: string, data: any): void {
     values.push(leadId);
     db.prepare(`UPDATE crm_leads SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     console.log(`[Lead Enrich] Updated lead ${leadId} with Booking.com data (${updates.length - 2} fields)`);
+  }
+}
+
+function autoCreateReservationForResort(db: any, leadId: string, data: any, emailText: string): void {
+  try {
+    const lead = db.prepare("SELECT organization_id, guest_id FROM crm_leads WHERE id = ?").get(leadId) as any;
+    if (!lead || !lead.guest_id) return;
+
+    // 1. Find the property (Carlsbad Wellness & Camping Resort)
+    const prop = db.prepare("SELECT id FROM properties WHERE name LIKE '%Camping%' LIMIT 1").get() as any;
+    if (!prop) {
+      console.error("[AutoRes] Property 'Camping' not found");
+      return;
+    }
+
+    // 2. Determine target building (D if Wellness Hostel, else F)
+    const isBuildingD = emailText.toLowerCase().includes('wellness hostel') || (data.propertyName || '').toLowerCase().includes('hostel');
+    const buildingCode = isBuildingD ? 'D' : 'F';
+    const buildingId = isBuildingD ? 'bldg_d' : 'bldg_f';
+
+    // 3. Find a free unit in the target building
+    let unit = db.prepare(`
+      SELECT u.id, u.name 
+      FROM units u
+      WHERE u.building_id = ?
+      AND u.id NOT IN (
+        SELECT unit_id FROM reservations 
+        WHERE status NOT IN ('cancelled', 'no_show')
+        AND NOT (check_out <= ? OR check_in >= ?)
+      )
+      ORDER BY u.sort_order ASC LIMIT 1
+    `).get(buildingId, data.checkIn, data.checkOut) as any;
+
+    if (!unit) {
+      // Fallback: any free resort unit if specific building is full
+      unit = db.prepare(`
+        SELECT u.id, u.name 
+        FROM units u
+        JOIN categories c ON c.id = u.category_id
+        WHERE c.type = 'resort'
+        AND u.id NOT IN (
+          SELECT unit_id FROM reservations 
+          WHERE status NOT IN ('cancelled', 'no_show')
+          AND NOT (check_out <= ? OR check_in >= ?)
+        )
+        ORDER BY u.sort_order ASC LIMIT 1
+      `).get(data.checkIn, data.checkOut) as any;
+    }
+
+    if (!unit) {
+      console.warn(`[AutoRes] No free resort units for ${data.checkIn} - ${data.checkOut}`);
+      return;
+    }
+
+    // 4. Calculate nights
+    const start = new Date(data.checkIn);
+    const end = new Date(data.checkOut);
+    const nights = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+
+    // 5. Create reservation
+    const resId = crypto.randomBytes(16).toString('hex');
+    db.prepare(`
+      INSERT INTO reservations (
+        id, property_id, unit_id, guest_id, check_in, check_out, 
+        nights, adults, status, source, total_price, currency, 
+        external_uid, bcom_reservation_id, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'booking_com', ?, ?, ?, ?, ?)
+    `).run(
+      resId, prop.id, unit.id, lead.guest_id, data.checkIn, data.checkOut,
+      nights, data.totalGuests || 1, data.totalPrice || 0, data.currency || 'CZK',
+      data.confirmationId, data.confirmationId,
+      `Auto-created from ${data.source || 'Booking.com'} email (Resort Building ${buildingCode}${isBuildingD ? ' - Wellness Hostel' : ''})`
+    );
+
+    // 6. Link lead to reservation
+    db.prepare("UPDATE crm_leads SET reservation_id = ?, stage = 'booked', updated_at = datetime('now') WHERE id = ?")
+      .run(resId, leadId);
+
+    console.log(`[AutoRes] Created reservation ${resId} for lead ${leadId} in unit ${unit.name} (Building ${buildingCode})`);
+  } catch (err: any) {
+    console.error(`[AutoRes] Error:`, err.message);
   }
 }

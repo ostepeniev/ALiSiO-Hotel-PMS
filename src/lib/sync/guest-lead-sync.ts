@@ -45,7 +45,7 @@ export function findOrCreateGuestForLead(leadId: string): string | null {
   
   if (guest) {
     // Link existing guest
-    db.prepare('UPDATE crm_leads SET guest_id = ?, updated_at = datetime("now") WHERE id = ?')
+    db.prepare('UPDATE crm_leads SET guest_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
       .run(guest.id, leadId);
     
     // Sync lead data to guest (fill gaps)
@@ -66,7 +66,7 @@ export function findOrCreateGuestForLead(leadId: string): string | null {
   );
   
   // Link to lead
-  db.prepare('UPDATE crm_leads SET guest_id = ?, updated_at = datetime("now") WHERE id = ?')
+  db.prepare('UPDATE crm_leads SET guest_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
     .run(guestId, leadId);
   
   return guestId;
@@ -121,7 +121,7 @@ export function syncLeadToGuest(leadId: string): void {
   }
   
   if (updates.length > 0) {
-    updates.push('updated_at = datetime("now")');
+    updates.push('updated_at = datetime(\'now\')');
     values.push(lead.guest_id);
     db.prepare(`UPDATE guests SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   }

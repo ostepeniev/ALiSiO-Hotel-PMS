@@ -1,35 +1,54 @@
-export type TeyaStoreType = 'main' | 'camping' | 'glamping';
+export type PaymentProvider = 'teya';
 
-export interface PaymentLineItem {
+export type PaymentIntentKind =
+  | 'booking_full'
+  | 'booking_balance'
+  | 'booking_deposit'
+  | 'service_standalone'
+  | 'service_cart'
+  | 'reservation_services';
+
+export type TeyaCredentials = {
+  client_id: string;
+  client_secret: string;
+  store_id: string;
+};
+
+export type PaymentLineItem = {
   description: string;
   quantity: number;
-  unit_price: number;
-}
+  unitPriceMajor: number;
+};
 
-export interface PaymentIntent {
-  /** Amount in MAJOR units (e.g. 1200 = 1200 CZK). Converted to minor units internally. */
+export type PaymentIntent = {
+  kind: PaymentIntentKind;
+
   amount: number;
-  currency?: string;
-  description?: string;
-  items?: PaymentLineItem[];
-  /** Which Teya store to use. Defaults to 'main'. */
-  store?: TeyaStoreType;
-  /** Per-site credential override from booking_sites.payment_config */
-  credentials?: {
-    client_id: string;
-    client_secret: string;
-    store_id: string;
-  };
-  /** Metadata forwarded to Teya — DO NOT rename existing keys */
-  metadata?: Record<string, string>;
-  success_url?: string;
-  cancel_url?: string;
-  expiresAt?: string;
-}
+  currency: string;
+  description: string;
+  lineItems?: PaymentLineItem[];
 
-export interface PaymentSession {
-  id: string;
-  session_token: string;
-  session_url?: string;
-  status: string;
-}
+  metadata: Record<string, string>;
+
+  successUrl?: string;
+  cancelUrl?: string;
+  expiresAt?: string;
+
+  credentials?: TeyaCredentials;
+};
+
+export type PaymentSession = {
+  sessionId: string;
+  sessionToken: string;
+  sessionUrl?: string;
+  provider: PaymentProvider;
+  intentKind: PaymentIntentKind;
+};
+
+export type ResolvedSiteCredentials = {
+  siteId: string;
+  siteUrl?: string;
+  credentials: TeyaCredentials;
+};
+
+export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';

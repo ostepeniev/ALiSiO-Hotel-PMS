@@ -19,7 +19,17 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
+            # Fail fast: any command failing aborts the deploy. Without this,
+            # a failed `npm run build` would still trigger systemctl restart
+            # and bring the whole service down with broken code.
+            set -euo pipefail
+
             cd /root/projects/alisio-pms
+
+            # Save the currently-deployed commit so we can roll back if the
+            # new build fails health-check. This stays even after git reset.
+            PREVIOUS_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
+            echo "Previous commit: $PREVIOUS_COMMIT"
 
             # Pull latest code
             if [ ! -d ".git" ]; then
@@ -32,16 +42,42 @@ jobs:
               git reset --hard origin/main
             fi
 
+            NEW_COMMIT=$(git rev-parse HEAD)
+            echo "New commit:      $NEW_COMMIT"
+
             # Ensure data dir exists (DB lives here, excluded from git)
             mkdir -p data
 
             # Install dependencies
             npm ci --production=false
 
-            # Build Next.js
-            npm run build
+            # Build Next.js. If this fails, `set -e` aborts BEFORE we touch the
+            # running service, so the currently-running version keeps serving.
+            if ! npm run build; then
+              echo "❌ Build failed — aborting deploy. Live service untouched."
+              if [ -n "$PREVIOUS_COMMIT" ]; then
+                echo "Rolling working tree back to $PREVIOUS_COMMIT"
+                git reset --hard "$PREVIOUS_COMMIT"
+              fi
+              exit 1
+            fi
 
-            # Restart service
+            # Restart service only after a successful build.
             systemctl restart alisio-pms
-            echo "✅ Deploy complete"
+            sleep 3
+
+            # Verify the service actually came up. If not, roll back.
+            if ! systemctl is-active --quiet alisio-pms; then
+              echo "❌ Service failed to start after restart — rolling back"
+              if [ -n "$PREVIOUS_COMMIT" ]; then
+                git reset --hard "$PREVIOUS_COMMIT"
+                npm ci --production=false
+                npm run build
+                systemctl restart alisio-pms
+                echo "↩  Rolled back to $PREVIOUS_COMMIT"
+              fi
+              exit 1
+            fi
+
+            echo "✅ Deploy complete (was $PREVIOUS_COMMIT, now $NEW_COMMIT)"
             systemctl status alisio-pms --no-pager

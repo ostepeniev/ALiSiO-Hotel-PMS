@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Edit3, X, Save, Plus, Check, ArrowRight, Copy, ExternalLink,
-  Loader2, Trash2, Phone,
+  Loader2, Trash2, Phone, Receipt, RefreshCw,
 } from 'lucide-react';
 
 function Modal({ open, onClose, title, children, footer, size }: {
@@ -73,13 +73,46 @@ export default function BookingViewModal({
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', type: 'partial', notes: '' });
   const [regForm, setRegForm] = useState({ firstName: '', lastName: '', dateOfBirth: '', documentType: 'ID_CARD', documentNumber: '', nationality: '', country: '', address: '' });
   const [savingReg, setSavingReg] = useState(false);
+  const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
+  const [reissuing, setReissuing] = useState(false);
+
+  // Load current invoice whenever modal opens or booking changes
+  useEffect(() => {
+    if (!b?.id) return;
+    fetch(`/api/bookings/${b.id}/invoice`)
+      .then(r => r.json())
+      .then(data => setInvoice(data))
+      .catch(() => setInvoice(null));
+  }, [b?.id, b?.payment_status]);
+
+  const handleReissue = async () => {
+    const isFresh = !invoice;
+    const confirmMsg = isFresh
+      ? 'Згенерувати фактуру для цього бронювання?'
+      : `Перевиставити фактуру ${invoice!.invoice_number}? Стара буде скасована.`;
+    if (!confirm(confirmMsg)) return;
+    setReissuing(true);
+    try {
+      const res = await fetch(`/api/bookings/${b.id}/invoice/reissue`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setInvoice(data.invoice);
+        showToast(isFresh
+          ? `✅ Фактуру ${data.invoice.invoice_number} створено`
+          : `✅ Фактуру ${data.invoice.invoice_number} перевиставлено`);
+      } else {
+        showToast(isFresh ? '❌ Помилка створення' : '❌ Помилка перевиставлення');
+      }
+    } catch { showToast('❌ Помилка'); }
+    finally { setReissuing(false); }
+  };
 
   const total = b.total_price || 0;
   const paid = payments.filter(p => p.status === 'completed').reduce((s: number, p: any) => s + (p.type === 'refund' ? -p.amount : p.amount), 0);
   const remaining = Math.max(0, total - paid);
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
   const barColor = pct >= 100 ? '#22c55e' : pct > 0 ? '#3b82f6' : '#ef4444';
-  const isPaid = b.payment_status === 'paid';
+  const isPaid = b.payment_status === 'paid' || b.payment_status === 'prepaid';
   const isRegistered = b.registration_status === 'registered';
   const canCheckIn = isPaid && isRegistered;
   const regNeeded = b.adults || 1;
@@ -257,6 +290,36 @@ export default function BookingViewModal({
                   ))}
                 </div>
               )}
+              {/* Zero-price confirmation block */}
+              {total === 0 && !isPaid && (
+                <div style={{ padding: '14px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#f59e0b' }}>
+                    <span style={{ fontSize: 18 }}>⚠️</span>
+                    Безоплатне бронювання
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Ціна = 0 CZK. Це може бути промокод, бартер або помилка. Підтвердіть свідомо або встановіть реальну ціну.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn btn-sm btn-primary"
+                      onClick={async () => {
+                        if (!confirm('Підтвердити безоплатне бронювання? Гість зможе заселитись без оплати.')) return;
+                        await fetch(`/api/bookings/${b.id}`, {
+                          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ payment_status: 'paid' }),
+                        });
+                        setBooking({ ...b, payment_status: 'paid' });
+                        onFetchBookings();
+                        showToast('✅ Безоплатне бронювання підтверджено');
+                      }}>
+                      ✅ Підтвердити — це свідоме рішення
+                    </button>
+                    <button className="btn btn-sm btn-secondary" onClick={onEdit}>
+                      ✏️ Встановити ціну
+                    </button>
+                  </div>
+                </div>
+              )}
               {!showPayForm ? (
                 <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => setShowPayForm(true)}><Plus size={14} /> Додати платіж</button>
               ) : (
@@ -292,6 +355,36 @@ export default function BookingViewModal({
                 onClick={async () => { const ns = b.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested'; await fetch(`/api/bookings/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_status: ns }) }); setBooking({ ...b, payment_status: ns }); onFetchBookings(); showToast(ns === 'payment_requested' ? 'Запит надіслано' : 'Скасовано'); }}>
                 ✉ Запит оплати
               </button>
+
+              {/* ── Invoice block ── */}
+              {invoice ? (
+                <div style={{ marginTop: 8, padding: '12px 14px', background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Receipt size={16} style={{ color: '#22c55e', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>Фактура {invoice.invoice_number}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{invoice.issued_at} · {invoice.amount.toLocaleString()} {invoice.currency}</div>
+                  </div>
+                  <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }}
+                    onClick={() => window.open(`/api/invoices/${invoice.id}`, '_blank')}>
+                    👁 Переглянути
+                  </button>
+                  <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, padding: '4px 8px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={handleReissue} disabled={reissuing}>
+                    {reissuing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    Перевиставити
+                  </button>
+                </div>
+              ) : isPaid ? (
+                <div style={{ marginTop: 8, padding: '10px 14px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 'var(--radius-md)', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Receipt size={14} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1 }}>Інвойс ще не згенеровано</span>
+                  <button className="btn btn-sm btn-primary" style={{ fontSize: 11, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                    onClick={handleReissue} disabled={reissuing}>
+                    {reissuing ? <Loader2 size={12} className="animate-spin" /> : <Receipt size={12} />}
+                    Згенерувати
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
 

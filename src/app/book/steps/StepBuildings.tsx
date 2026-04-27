@@ -102,7 +102,14 @@ export default function StepBuildings({ prices, onNext }: Props) {
           <div style={{ fontSize: 14, fontWeight: 700, margin: '16px 0 8px' }}>Room type</div>
           <div className="kc-options">
             {(['shared', 'non_shared', 'buyout'] as BookingMode[]).map(m => (
-              <button key={m} className={`kc-option ${mode === m ? 'selected' : ''}`} onClick={() => setMode(m)} type="button">
+              <button key={m} className={`kc-option ${mode === m ? 'selected' : ''}`}
+                onClick={() => {
+                  setMode(m);
+                  // Shared requires min 2 adults
+                  if (m === 'shared' && adults < 2) setAdults(2);
+                }}
+                type="button"
+              >
                 {m === 'shared' ? 'Shared beds' : m === 'non_shared' ? 'Private room' : 'Whole building'}
               </button>
             ))}
@@ -112,26 +119,32 @@ export default function StepBuildings({ prices, onNext }: Props) {
           {mode !== 'buyout' && (
             <>
               <div className="kc-form-row">
-                <div className="kc-form-row-label">Adults</div>
+                <div>
+                  <div className="kc-form-row-label">Adults</div>
+                  {mode === 'shared' && <div className="kc-form-row-sub">Min 2 for shared beds</div>}
+                </div>
                 <div className="kc-stepper">
-                  <button className="kc-stepper-btn" onClick={() => setAdults(Math.max(1, adults-1))} disabled={adults <= 1} type="button">−</button>
+                  <button className="kc-stepper-btn"
+                    onClick={() => setAdults(Math.max(mode === 'shared' ? 2 : 1, adults - 1))}
+                    disabled={adults <= (mode === 'shared' ? 2 : 1)}
+                    type="button">−</button>
                   <span className="kc-stepper-val">{adults}</span>
-                  <button className="kc-stepper-btn" onClick={() => setAdults(adults+1)} type="button">+</button>
+                  <button className="kc-stepper-btn" onClick={() => setAdults(adults + 1)} type="button">+</button>
                 </div>
               </div>
               <div className="kc-form-row">
                 <div><div className="kc-form-row-label">Children (under 15)</div><div className="kc-form-row-sub">−10% bed rate</div></div>
                 <div className="kc-stepper">
-                  <button className="kc-stepper-btn" onClick={() => setChildren(Math.max(0, children-1))} disabled={children <= 0} type="button">−</button>
+                  <button className="kc-stepper-btn" onClick={() => setChildren(Math.max(0, children - 1))} disabled={children <= 0} type="button">−</button>
                   <span className="kc-stepper-val">{children}</span>
-                  <button className="kc-stepper-btn" onClick={() => setChildren(children+1)} type="button">+</button>
+                  <button className="kc-stepper-btn" onClick={() => setChildren(children + 1)} type="button">+</button>
                 </div>
               </div>
             </>
           )}
 
-          {/* Sleeping bag toggle */}
-          {mode === 'shared' && (
+          {/* Sleeping bag toggle — shared AND private room */}
+          {(mode === 'shared' || mode === 'non_shared') && (
             <div className="kc-form-row">
               <div><div className="kc-form-row-label">Own sleeping bags?</div><div className="kc-form-row-sub">−100 Kč / person / night</div></div>
               <button className={`kc-toggle ${sleepingBag ? 'on' : ''}`} onClick={() => setSleepingBag(!sleepingBag)} type="button" />
@@ -160,13 +173,57 @@ export default function StepBuildings({ prices, onNext }: Props) {
             </div>
           )}
 
-          {/* Pricing */}
+          {/* Pricing breakdown */}
           {pricing && !pricing.hasHolidayNonShared && (
             <div className="kc-breakdown">
               <div className="kc-breakdown-title">Price breakdown</div>
+
+              {/* Accommodation */}
+              {mode === 'shared' && pricing.accommodationSubtotal != null && (
+                <div className="kc-breakdown-row">
+                  <span>🏠 Accommodation ({pricing.adults} adults{children > 0 ? `, ${children} children` : ''} × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                  <span>{formatPrice(pricing.accommodationSubtotal + (pricing.sleepingBagDiscount ?? 0))} Kč</span>
+                </div>
+              )}
+              {mode === 'non_shared' && pricing.subtotal != null && (
+                <div className="kc-breakdown-row">
+                  <span>🏠 Room × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                  <span>{formatPrice(pricing.subtotal)} Kč</span>
+                </div>
+              )}
+              {mode === 'buyout' && pricing.subtotal != null && (
+                <div className="kc-breakdown-row">
+                  <span>🏠 Whole building × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                  <span>{formatPrice(pricing.subtotal)} Kč</span>
+                </div>
+              )}
+
+              {/* Sleeping bag discount */}
+              {pricing.sleepingBagDiscount != null && pricing.sleepingBagDiscount > 0 && (
+                <div className="kc-breakdown-row" style={{ color: 'var(--kc-green)' }}>
+                  <span>🛌 Own sleeping bags discount</span>
+                  <span>−{formatPrice(pricing.sleepingBagDiscount)} Kč</span>
+                </div>
+              )}
+
+              {/* Tourist tax */}
+              {pricing.touristTax != null && pricing.touristTax > 0 && (
+                <div className="kc-breakdown-row">
+                  <span>🏛️ Tourist tax ({pricing.adults} × {pricing.taxRate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                  <span>{formatPrice(pricing.touristTax)} Kč</span>
+                </div>
+              )}
+
+              {/* Security deposit for groups/buyout */}
+              {pricing.kauce != null && pricing.kauce > 0 && (
+                <div className="kc-breakdown-row">
+                  <span>🔑 Security deposit (returnable)</span>
+                  <span>{formatPrice(pricing.kauce)} Kč</span>
+                </div>
+              )}
+
               <div className="kc-breakdown-divider" />
               <div className="kc-breakdown-total"><span>Total</span><span>{formatPrice(pricing.total)} Kč</span></div>
-              {pricing.isGroup && <div className="kc-breakdown-row"><span>incl. returnable deposit (kauce)</span><span>5 000 Kč</span></div>}
               <div className="kc-breakdown-deposit"><span>Deposit ({pricing.isGroup ? '50%' : '30%'}) — pay now</span><span>{formatPrice(pricing.deposit)} Kč</span></div>
               <div className="kc-breakdown-remaining"><span>Remaining</span><span>{formatPrice(pricing.remaining)} Kč</span></div>
             </div>

@@ -11,6 +11,7 @@ import {
   updateReservationCustomField,
   type HostexReservation,
 } from './hostex';
+import { upsertReceivableForReservation } from '@/modules/finance/data/clearing-engine';
 
 // Public URL of the PMS (used to build guest page links sent to Hostex)
 const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
@@ -239,14 +240,14 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
   const paymentInfo = detectPaymentInfo(res);
   const financialNote = buildFinancialNote(res, result.eurCzkRate, totalEur, commissionEur, netEur, totalCzk);
   const status = mapStatus(res);
-  const paymentStatus = paymentInfo.isPrepaid ? 'prepaid' : 'unpaid';
+  const paymentStatus = paymentInfo.isPrepaid ? 'paid' : 'unpaid';
 
   // Find or create guest
   const guestId = findOrCreateGuest(db, res);
 
   // Check if already in DB
   const existing = db.prepare(
-    'SELECT id, payment_status, guest_page_token FROM reservations WHERE hostex_reservation_code = ?'
+    'SELECT id, status, payment_status, guest_page_token FROM reservations WHERE hostex_reservation_code = ?'
   ).get(res.reservation_code) as any;
 
   const checkIn = normalizeHostexDate(res.check_in_date);
@@ -260,10 +261,20 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       ? generateGuestToken() : null;
     const tokenClause = newToken ? ', guest_page_token = ?' : '';
 
+    // Status priority: don't let sync downgrade a status that was set locally in PMS
+    // e.g. if PMS has checked_in but Hostex still says confirmed → keep checked_in
+    const STATUS_PRIORITY: Record<string, number> = {
+      tentative: 1, confirmed: 2, checked_in: 3, checked_out: 4, cancelled: 5, no_show: 5,
+    };
+    const existingStatus = existing.status as string;
+    const existingPriority = STATUS_PRIORITY[existingStatus] || 0;
+    const incomingPriority = STATUS_PRIORITY[status] || 0;
+    const finalStatus = incomingPriority >= existingPriority ? status : existingStatus;
+
     const params: any[] = [
       checkIn, checkOut, nights,
       res.number_of_adults, res.number_of_children, res.number_of_infants,
-      status, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
+      finalStatus, existing.payment_status === 'paid' ? 'paid' : paymentStatus,
       totalCzk, mapChannelToSource(res.channel_type),
       res.channel_type, res.channel_id, res.listing_id,
       totalEur, commissionEur, netEur,
@@ -289,9 +300,29 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
 
     // Auto-create payment if prepaid and none exists
     if (paymentInfo.isPrepaid && totalCzk > 0) {
-      const hasPay = db.prepare('SELECT id FROM payments WHERE reservation_id = ? AND auto_created = 1').get(existing.id);
+      const hasPay = db.prepare(
+        "SELECT id FROM fin_operations WHERE reservation_id = ? AND source IN ('hostex','booking_widget','teia') LIMIT 1"
+      ).get(existing.id);
       if (!hasPay) createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
     }
+
+    // PR #15: upsert clearing receivable for channel-sourced bookings
+    try {
+      const isEurChannel = ['airbnb', 'vrbo'].includes(mapChannelToSource(res.channel_type));
+      const recvCurrency = isEurChannel || (totalEur && totalEur > 0) ? 'EUR' : 'CZK';
+      const recvAmount = recvCurrency === 'EUR' && totalEur ? totalEur : totalCzk;
+      upsertReceivableForReservation(db, {
+        reservationId: existing.id,
+        organizationId: ORG_ID,
+        hostexChannelType: res.channel_type,
+        externalReservationId: res.channel_id,
+        grossAmount: recvAmount,
+        currency: recvCurrency,
+        checkIn, checkOut,
+        status: finalStatus as any,
+        commissionAmount: commissionEur && commissionEur > 0 ? commissionEur : null,
+      });
+    } catch (e: any) { console.log('[Hostex] receivable upsert error:', e.message); }
 
     // Push guest page URL to Hostex as custom field → use {{cf.guest_page_url}} in message templates
     const activeToken = newToken || existingToken;
@@ -344,6 +375,24 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
     if (paymentInfo.isPrepaid && totalCzk > 0) {
       createAutoPayment(db, newId, totalCzk, res.channel_type, res.booked_at);
     }
+
+    // PR #15: upsert clearing receivable for channel-sourced bookings
+    try {
+      const isEurChannel = ['airbnb', 'vrbo'].includes(mapChannelToSource(res.channel_type));
+      const recvCurrency = isEurChannel || (totalEur && totalEur > 0) ? 'EUR' : 'CZK';
+      const recvAmount = recvCurrency === 'EUR' && totalEur ? totalEur : totalCzk;
+      upsertReceivableForReservation(db, {
+        reservationId: newId,
+        organizationId: ORG_ID,
+        hostexChannelType: res.channel_type,
+        externalReservationId: res.channel_id,
+        grossAmount: recvAmount,
+        currency: recvCurrency,
+        checkIn, checkOut,
+        status: status as any,
+        commissionAmount: commissionEur && commissionEur > 0 ? commissionEur : null,
+      });
+    } catch (e: any) { console.log('[Hostex] receivable upsert error:', e.message); }
 
     if (guestPageToken) {
       const guestPageUrl = `${PMS_BASE_URL}/guest/${guestPageToken}`;
@@ -432,14 +481,25 @@ function findOrCreateGuest(db: any, res: HostexReservation): string {
 
 // ─── Payment auto-creation ────────────────────────────────
 
-function createAutoPayment(db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
-  const payId = `hx_pay_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+function createAutoPayment(_db: any, reservationId: string, amountCzk: number, channelType: string, bookedAt: string) {
   const paidAt = bookedAt ? bookedAt.split('T')[0] : new Date().toISOString().split('T')[0];
   const notes = `Авто-оплата через ${channelType === 'airbnb' ? 'Airbnb' : channelType === 'booking.com' ? 'Booking.com' : channelType}`;
-  db.prepare(`
-    INSERT INTO payments (id, reservation_id, amount, currency, method, type, status, paid_at, notes, auto_created)
-    VALUES (?, ?, ?, 'CZK', 'booking_platform', 'full', 'completed', ?, ?, 1)
-  `).run(payId, reservationId, amountCzk, paidAt, notes);
+  // PR #6: payments table replaced by fin_operations. Use finance bridge.
+  // Lazy-import to avoid circular dependencies in Turbopack.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createPaymentOperation } = require('@/modules/finance/api/payment-bridge');
+  createPaymentOperation({
+    reservationId,
+    amount: amountCzk,
+    currency: 'CZK',
+    method: 'booking_platform',
+    paymentSubtype: 'full',
+    source: 'hostex',
+    paidAt,
+    status: 'completed',
+    comment: notes,
+    sourceRef: `hostex:${reservationId}`,
+  });
 }
 
 // ─── Status mapping ───────────────────────────────────────
@@ -513,9 +573,13 @@ function ensureHostexColumns(db: any) {
 
   db.exec('CREATE INDEX IF NOT EXISTS idx_reservations_hostex_code ON reservations(hostex_reservation_code)');
 
-  const payCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
-  if (!payCols.some((c: any) => c.name === 'auto_created')) {
-    db.exec('ALTER TABLE payments ADD COLUMN auto_created INTEGER DEFAULT 0');
+  // Payments table was replaced by fin_operations in PR #6 — skip legacy ALTER if table is gone.
+  const paymentsTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='payments'").get();
+  if (paymentsTableExists) {
+    const payCols = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[];
+    if (!payCols.some((c: any) => c.name === 'auto_created')) {
+      db.exec('ALTER TABLE payments ADD COLUMN auto_created INTEGER DEFAULT 0');
+    }
   }
 
   db.exec(`

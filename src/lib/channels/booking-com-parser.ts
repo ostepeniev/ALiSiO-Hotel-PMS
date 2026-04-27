@@ -24,8 +24,11 @@ export interface BookingComData {
   categoryType: string | null;      // 'glamping' | 'resort' | 'camping'
   totalGuests: number | null;
   totalRooms: number | null;
+  totalPrice: number | null;        // Numeric price
+  currency: string | null;          // CZK, EUR, etc.
   resId: string | null;             // res_id from URL
   language: string | null;          // Detected from booking email
+  isNewReservation: boolean;        // Specifically a 'New Booking' notification
 }
 
 const EMPTY: BookingComData = {
@@ -33,7 +36,9 @@ const EMPTY: BookingComData = {
   guestMessage: null, guestName: null, firstName: null, lastName: null,
   confirmationId: null, checkIn: null, checkOut: null,
   propertyName: null, categoryType: null,
-  totalGuests: null, totalRooms: null, resId: null, language: null,
+  totalGuests: null, totalRooms: null, totalPrice: null, currency: null,
+  resId: null, language: null,
+  isNewReservation: false,
 };
 
 /**
@@ -49,6 +54,17 @@ export function parseBookingComEmail(textBody: string, fromAddress: string, subj
   if (!isBooking) return EMPTY;
 
   const result: BookingComData = { ...EMPTY, isBookingCom: true };
+
+  // --- Detect if this is a NEW RESERVATION ---
+  const subjectLower = (subject || '').toLowerCase();
+  const isNew = subjectLower.includes('нове бронювання') || 
+                subjectLower.includes('new reservation') || 
+                subjectLower.includes('nova rezervace') || 
+                subjectLower.includes('neue reservierung') ||
+                textBody.includes('Ви отримали нове бронювання') ||
+                textBody.includes('You have received a new reservation');
+  
+  result.isNewReservation = isNew;
 
   // --- Extract confirmation/reservation ID ---
   // From "Номер підтвердження: 6137899120" or "Confirmation number: 6137899120"
@@ -157,23 +173,45 @@ export function parseBookingComEmail(textBody: string, fromAddress: string, subj
     }
   }
 
-  // Detect category type from property name
-  if (result.propertyName) {
-    const nameLower = result.propertyName.toLowerCase();
-    if (nameLower.includes('glamping') || nameLower.includes('stealth') || nameLower.includes('mirror')) {
+  // --- STRICT PROPERTY FILTER ---
+  if (result.propertyName || textBody) {
+    const nameLower = (result.propertyName || '').toLowerCase();
+    const bodyLower = textBody.toLowerCase();
+    
+    // Only process Carlsbad Wellness and Camping Resort (ignore QA Glamping)
+    if (nameLower.includes('qa glamping') || nameLower.includes('quiet anomaly')) {
+      console.log(`[Parser] Ignoring QA Glamping booking: ${result.propertyName}`);
+      return EMPTY; 
+    }
+    
+    // Detect category type from property name or body
+    if (bodyLower.includes('wellness hostel') || nameLower.includes('hostel')) {
+      result.categoryType = 'resort';
+      // Specific building D flag could be added here if needed, but 'resort' is the main type
+    } else if (nameLower.includes('resort') || nameLower.includes('hotel') || nameLower.includes('apartment') || bodyLower.includes('building f')) {
+      result.categoryType = 'resort';
+    } else if (nameLower.includes('glamping') || nameLower.includes('stealth') || nameLower.includes('mirror')) {
       result.categoryType = 'glamping';
     } else if (nameLower.includes('camping') || nameLower.includes('pitch') || nameLower.includes('tent')) {
       result.categoryType = 'camping';
-    } else if (nameLower.includes('resort') || nameLower.includes('hotel') || nameLower.includes('apartment')) {
-      result.categoryType = 'resort';
     } else {
-      // Default based on keywords in property name
-      result.categoryType = 'glamping'; // Most common for ALiSiO
+      // Default for Carlsbad Wellness & Camping Resort emails that aren't camping is usually resort/hostel
+      result.categoryType = 'resort';
     }
   }
 
+  // --- Extract total price and currency ---
+  // Examples: "Ціна: 1 200 CZK", "Price: € 50.00", "Вартість: 3 450,50 CZK"
+  const priceMatch = textBody.match(/(?:Ціна|Price|Cena|Preis|Вартість)[:\s]*\n?\s*(?:[A-Z$€£]{1,3})?\s*([\d\s,.]+)\s*([A-Z$€£]{1,3}|CZK|Kč|€|EUR|USD|GBP)?/i);
+  if (priceMatch) {
+    const rawPrice = priceMatch[1].replace(/\s/g, '').replace(',', '.');
+    result.totalPrice = parseFloat(rawPrice);
+    result.currency = priceMatch[2] || 'CZK';
+    if (result.currency === 'Kč') result.currency = 'CZK';
+  }
+
   // --- Extract total guests ---
-  const guestsMatch = textBody.match(/(?:Усього гостей|Total guests|Celkem hostů|Gesamtzahl der Gäste|Всего гостей)[:\s]*\n?\s*(\d+)/i);
+  const guestsMatch = textBody.match(/(?:Усього гостей|Total guests|Celkem hostů|Gesamzahl der Gäste|Всего гостей)[:\s]*\n?\s*(\d+)/i);
   if (guestsMatch) result.totalGuests = parseInt(guestsMatch[1]);
 
   // --- Extract total rooms ---

@@ -35,8 +35,8 @@ export default function StepGlamping({ prices, onNext }: Props) {
 
   const pricing = useMemo(() => {
     if (!unit || !checkIn || !checkOut) return null;
-    return calcGlampingPrice(unit, checkIn, checkOut, prices);
-  }, [unit, checkIn, checkOut, prices]);
+    return calcGlampingPrice(unit, checkIn, checkOut, prices, adults);
+  }, [unit, checkIn, checkOut, prices, adults]);
 
   const handleDayClick = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
@@ -137,12 +137,23 @@ export default function StepGlamping({ prices, onNext }: Props) {
       {pricing && (
         <div className="kc-breakdown">
           <div className="kc-breakdown-title">Price breakdown</div>
+
+          {/* Night-by-night accommodation */}
           {pricing.breakdown.map((n, i) => (
             <div key={i} className="kc-breakdown-row">
               <span>{n.date} ({n.type === 'holiday' ? '⭐ Holiday/Weekend' : 'Standard'})</span>
               <span>{formatPrice(n.price)} Kč</span>
             </div>
           ))}
+
+          {/* Tourist tax */}
+          {pricing.touristTax > 0 && (
+            <div className="kc-breakdown-row">
+              <span>🏛️ Tourist tax ({pricing.adults} adults × {pricing.taxRate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+              <span>{formatPrice(pricing.touristTax)} Kč</span>
+            </div>
+          )}
+
           <div className="kc-breakdown-divider" />
           <div className="kc-breakdown-total"><span>Total</span><span>{formatPrice(pricing.total)} Kč</span></div>
           <div className="kc-breakdown-deposit"><span>Deposit (30%) — pay now</span><span>{formatPrice(pricing.deposit)} Kč</span></div>

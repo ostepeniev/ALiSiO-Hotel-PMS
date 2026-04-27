@@ -86,21 +86,29 @@ export default function StepCamping({ prices, onNext }: Props) {
       <h1 className="kc-title">Camping</h1>
       <p className="kc-subtitle">Select everything you're bringing</p>
 
-      {/* Equipment multi-select */}
+      {/* Equipment multi-select — 2-column grid */}
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Your setup</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         {CAMPING_ITEMS.map(item => {
           const active = selectedItems.includes(item.code);
           const rateItem = getRate(prices, item.code);
           const rate = rateItem?.rate_standard ?? 0;
           return (
-            <div key={item.code} className={`kc-svc-card ${active ? 'added' : ''}`} onClick={() => toggleItem(item.code)}>
-              <div className="kc-svc-icon">{item.emoji}</div>
-              <div className="kc-svc-info">
-                <div className="kc-svc-name">{item.label}</div>
-                <div className="kc-svc-price">{formatPrice(rate)} Kč / night</div>
-              </div>
-              <div style={{ width: 24, height: 24, borderRadius: 6, border: active ? 'none' : '2px solid var(--kc-border)', background: active ? 'var(--kc-green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>
+            <div
+              key={item.code}
+              className={`kc-svc-card ${active ? 'added' : ''}`}
+              onClick={() => toggleItem(item.code)}
+              style={{ flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '12px 8px', gap: 4 }}
+            >
+              <div style={{ fontSize: 28 }}>{item.emoji}</div>
+              <div className="kc-svc-name" style={{ fontSize: 13 }}>{item.label}</div>
+              <div className="kc-svc-price" style={{ fontSize: 11 }}>{formatPrice(rate)} Kč / night</div>
+              <div style={{
+                width: 20, height: 20, borderRadius: 5, border: active ? 'none' : '2px solid var(--kc-border)',
+                background: active ? 'var(--kc-green)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 13, fontWeight: 700, marginTop: 4,
+              }}>
                 {active ? '✓' : ''}
               </div>
             </div>
@@ -163,11 +171,76 @@ export default function StepCamping({ prices, onNext }: Props) {
       {pricing && (
         <div className="kc-breakdown">
           <div className="kc-breakdown-title">Price breakdown</div>
+
+          {/* Equipment per night */}
           {selectedItems.map(code => {
             const item = CAMPING_ITEMS.find(i => i.code === code);
             const rateItem = getRate(prices, code);
-            return <div key={code} className="kc-breakdown-row"><span>{item?.emoji} {item?.label}</span><span>{formatPrice((rateItem?.rate_standard ?? 0) * pricing.nights)} Kč</span></div>;
+            const rate = rateItem?.rate_standard ?? 0;
+            return (
+              <div key={code} className="kc-breakdown-row">
+                <span>{item?.emoji} {item?.label} × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                <span>{formatPrice(rate * pricing.nights)} Kč</span>
+              </div>
+            );
           })}
+
+          {/* Adults & children */}
+          {adults > 0 && (() => {
+            const adultItem = getRate(prices, 'adult_person');
+            const rate = adultItem?.rate_standard ?? 150;
+            return (
+              <div className="kc-breakdown-row">
+                <span>👤 Adults ({adults} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(adults * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+          {children > 0 && (() => {
+            const childItem = getRate(prices, 'child_person');
+            const rate = childItem?.rate_standard ?? 100;
+            return (
+              <div className="kc-breakdown-row">
+                <span>🧒 Children ({children} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(children * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+
+          {/* Extras */}
+          {electricity && (() => {
+            const elecItem = getRate(prices, 'electricity');
+            const rate = elecItem?.rate_standard ?? 120;
+            return (
+              <div className="kc-breakdown-row">
+                <span>⚡ Electricity × {pricing.nights} night{pricing.nights > 1 ? 's' : ''}</span>
+                <span>{formatPrice(rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+          {pets > 0 && (() => {
+            const petItem = getRate(prices, 'pet');
+            const rate = petItem?.rate_standard ?? 50;
+            return (
+              <div className="kc-breakdown-row">
+                <span>🐾 Pets ({pets} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(pets * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+
+          {/* Tourist tax */}
+          {(() => {
+            const taxItem = getRate(prices, 'tourist_tax');
+            const rate = taxItem?.rate_standard ?? 25;
+            return (
+              <div className="kc-breakdown-row">
+                <span>🏛️ Tourist tax ({adults} × {rate} Kč × {pricing.nights} night{pricing.nights > 1 ? 's' : ''})</span>
+                <span>{formatPrice(adults * rate * pricing.nights)} Kč</span>
+              </div>
+            );
+          })()}
+
           <div className="kc-breakdown-divider" />
           <div className="kc-breakdown-total"><span>Total</span><span>{formatPrice(pricing.total)} Kč</span></div>
           <div className="kc-breakdown-deposit"><span>Deposit (30%) — pay now</span><span>{formatPrice(pricing.deposit)} Kč</span></div>

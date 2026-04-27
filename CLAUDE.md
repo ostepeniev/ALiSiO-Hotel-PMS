@@ -95,3 +95,16 @@ When creating a new module:
 - No docstrings
 - Prefer editing existing files over creating new ones
 - No backwards-compatibility hacks for removed code
+
+---
+
+## Deploy Safety
+
+**This project auto-deploys `main` to production VPS.** A failing build can take the entire system down. Rules:
+
+- NEVER `git push` directly to `main`. Use a feature branch + PR.
+- Before pushing any branch, verify locally: `npx tsc --noEmit` (no TS1xxx errors) and `npm run build` (succeeds).
+- If you see syntax errors after editing (mismatched quotes, broken JSX, missing brackets) — FIX before committing.
+- Activate the pre-commit hook once per clone: `bash scripts/setup-hooks.sh` (or `scripts\setup-hooks.cmd` on Windows).
+- See [docs/DEPLOY_SAFETY.md](docs/DEPLOY_SAFETY.md) for the full pipeline (CI, branch protection, deploy guards).
+- Payments module: see [src/modules/payments/README.md](src/modules/payments/README.md) before touching any Teia logic.

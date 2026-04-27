@@ -22,9 +22,37 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 | `getExpense(req, ctx)` | Отримати витрату |
 | `updateExpense(req, ctx)` | Оновити витрату |
 | `deleteExpense(req, ctx)` | Видалити витрату |
-| `listExpenseCategories()` | Категорії витрат |
-| `createExpenseCategory(req)` | Додати категорію |
-| `listBusinessUnits()` | Бізнес-одиниці |
+| `listExpenseCategories()` | Категорії витрат (legacy — зберігається для сумісності) |
+| `createExpenseCategory(req)` | Додати категорію (legacy) |
+| `listCategories(req)` | Плоский список категорій (?op_type=, ?archived=1) |
+| `getCategoryTree(req)` | Дерево категорій + `byOpType` групування |
+| `createCategory(req)` | Нова категорія/підкатегорія — підкатегорія успадковує `op_type`/`classifier` |
+| `updateCategory(req, ctx)` | Оновлення. `op_type`/`classifier` доступні лише для кореня |
+| `archiveCategory(req, ctx)` | Архівація (каскадом на дітей) |
+| `deleteCategory(req, ctx)` | Видалення (тільки якщо немає дітей і немає зв'язаних операцій) |
+| `moveCategory(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop) |
+| `listBusinessUnits()` | Бізнес-одиниці (legacy — використовується старим UI) |
+| `listProjects(req)` | Проєкти (нова Finmap-термінологія, читає ту саму `business_units`) |
+| `getProjectTree(req)` | Дерево проєктів з `children` |
+| `createProject(req)` | Новий проєкт / підпроєкт (успадковує `is_shared` від батька) |
+| `updateProject(req, ctx)` | Оновлення. `is_shared` доступний тільки для кореня |
+| `archiveProject(req, ctx)` | Архівація (каскадом на дітей) |
+| `deleteProject(req, ctx)` | Видалення (тільки якщо немає дітей і немає зв'язків у 6 таблицях) |
+| `moveProject(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop) |
+| `listCounterparties(req)` | Плоский список контрагентів (?kind=, ?archived=1, ?search=) |
+| `getCounterpartyTree(req)` | Дерево контрагентів + `byKind` групування |
+| `createCounterparty(req)` | Новий контрагент/підконтрагент (успадковує `kind`) |
+| `updateCounterparty(req, ctx)` | Оновлення, `kind` тільки для кореня |
+| `archiveCounterparty(req, ctx)` | Архівація (каскадом на дітей) |
+| `deleteCounterparty(req, ctx)` | Видалення (тільки якщо немає дітей) |
+| `moveCounterparty(req, ctx)` | Зміна `parent_id`/`sort_order` (drag-and-drop, match `kind`) |
+| `matchCounterpartyByText(req)` | Пошук контрагента за підрядком коментаря через `aliases_json` (longest-match, case-insensitive) |
+| `getAliasSuggestions(req)` | Топ-10 часто-вживаних рядків з existing counterparty полів (expenses/income/bank_transactions) |
+| `listTags(req)` | Список тегів (?archived=1) |
+| `createTag(req)` | Новий тег (UNIQUE case-insensitive на `name`) |
+| `updateTag(req, ctx)` | Оновлення |
+| `archiveTag(req, ctx)` | Архівація (is_active) |
+| `deleteTag(req, ctx)` | Видалення (поки без FK-перевірок — буде у PR #6) |
 | `listCapex()` | Список CapEx |
 | `createCapex(req)` | Додати CapEx |
 | `getCapexItem(req, ctx)` | Отримати CapEx-запис |
@@ -39,6 +67,15 @@ import { listPayments, createPayment, getFinanceOverview } from '@finance'
 | `listBankTransactions(req)` | Транзакції виписки |
 | `updateBankTransaction(req, ctx)` | Оновити/зматчити транзакцію |
 | `importBankStatement(req)` | Імпортувати XML виписку |
+| `listAccounts(req)` | Список рахунків з обчисленим залишком (?archived=1 включно з архівними) |
+| `createAccount(req)` | Додати рахунок |
+| `updateAccount(req)` | Оновити рахунок |
+| `archiveAccount(req)` | Архівувати/відновити рахунок (`is_active`) |
+| `deleteAccount(req, ctx)` | Видалити рахунок (тільки якщо немає прив'язаних операцій) |
+| `reconcileAccount(req, ctx)` | Звірка залишку — створює коригуючу операцію за дельтою |
+| `listExchangeRates(req)` | Список курсів валют + поточні діючі |
+| `upsertExchangeRate(req)` | Створити/оновити курс (UNIQUE на пару + дата) |
+| `deleteExchangeRate(req, ctx)` | Видалити курс |
 
 ## Залежності
 

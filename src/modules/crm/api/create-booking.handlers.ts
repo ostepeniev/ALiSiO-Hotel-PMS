@@ -23,7 +23,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
-import { createCheckoutSession } from '@/lib/teya';
+import { createPaymentSession } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
@@ -75,7 +75,7 @@ export async function convertLeadToBooking(
       const existing = db.prepare('SELECT id FROM guests WHERE email = ? AND organization_id = ?').get(email, org.id) as any;
       if (existing) {
         guestId = existing.id;
-        db.prepare('UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime("now") WHERE id = ?')
+        db.prepare('UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime(\'now\') WHERE id = ?')
           .run(first_name, last_name, phone || null, guestId);
       } else {
         guestId = `g_${Date.now()}`;
@@ -181,11 +181,12 @@ export async function convertLeadToBooking(
     let depositSessionId: string | null = null;
 
     try {
-      const session = await createCheckoutSession({
-        amount: depositAmount * 100,
+      const session = await createPaymentSession({
+        kind: 'booking_deposit',
+        amount: depositAmount,
         currency: 'CZK',
         description: `Záloha 30% — ${guestName} · ${unitCodes} · ${check_in_date} – ${check_out_date}`,
-        items: [{ description: `Záloha za pobyt (${check_in_date} – ${check_out_date})`, quantity: 1, unit_price: depositAmount * 100 }],
+        lineItems: [{ description: `Záloha za pobyt (${check_in_date} – ${check_out_date})`, quantity: 1, unitPriceMajor: depositAmount }],
         metadata: {
           lead_id: leadId,
           reservation_ids: reservationIds.join(','),
@@ -193,13 +194,13 @@ export async function convertLeadToBooking(
           source: 'crm_deposit',
           deposit_percent: String(DEPOSIT_PERCENT),
         },
-        success_url: successUrl,
-        cancel_url: cancelUrl,
+        successUrl,
+        cancelUrl,
         expiresAt: expires24h,
       });
 
-      depositSessionId = session.id;
-      depositSessionUrl = session.session_url || null;
+      depositSessionId = session.sessionId;
+      depositSessionUrl = session.sessionUrl || null;
 
       for (const resId of reservationIds) {
         db.prepare(`

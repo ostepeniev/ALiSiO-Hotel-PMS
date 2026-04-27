@@ -12,12 +12,16 @@ interface Props {
   guests: string;
   total: number;
   extras: { id: string; name: string; quantity: number; price: number }[];
+  priceBreakdown: { label: string; amount: number; isDiscount?: boolean }[];
   onPayOnline: (contact: { name: string; email: string; phone: string }) => void;
   onPayAdmin: (contact: { name: string; email: string; phone: string }) => void;
   submitting: boolean;
 }
 
-export default function StepSummary({ accommodationLabel, checkIn, checkOut, nights, guests, total, extras, onPayOnline, onPayAdmin, submitting }: Props) {
+export default function StepSummary({
+  accommodationLabel, checkIn, checkOut, nights, guests,
+  total, extras, priceBreakdown, onPayOnline, onPayAdmin, submitting,
+}: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -38,12 +42,35 @@ export default function StepSummary({ accommodationLabel, checkIn, checkOut, nig
         <div className="kc-summary-row"><span>Nights</span><strong>{nights}</strong></div>
         <div className="kc-summary-row"><span>Guests</span><strong>{guests}</strong></div>
         <div className="kc-summary-divider" />
-        <div className="kc-summary-row"><span>Accommodation</span><strong>{formatPrice(total)} Kč</strong></div>
+
+        {/* Detailed accommodation breakdown — for invoice */}
+        {priceBreakdown.length > 0 ? (
+          priceBreakdown.map((row, i) => (
+            <div key={i} className="kc-summary-row" style={row.isDiscount ? { color: 'var(--kc-green)' } : {}}>
+              <span>{row.label}</span>
+              <strong>{row.isDiscount ? '−' : ''}{formatPrice(Math.abs(row.amount))} Kč</strong>
+            </div>
+          ))
+        ) : (
+          <div className="kc-summary-row">
+            <span>Accommodation</span>
+            <strong>{formatPrice(total)} Kč</strong>
+          </div>
+        )}
+
+        {/* Extras */}
         {extras.map(e => (
-          <div key={e.id} className="kc-summary-row"><span>{e.name} ×{e.quantity}</span><strong>{formatPrice(e.price)} Kč</strong></div>
+          <div key={e.id} className="kc-summary-row">
+            <span>{e.name} ×{e.quantity}</span>
+            <strong>{formatPrice(e.price)} Kč</strong>
+          </div>
         ))}
+
         <div className="kc-summary-divider" />
-        <div className="kc-summary-row" style={{ fontSize: 18 }}><span><strong>Total</strong></span><strong style={{ color: 'var(--kc-green)' }}>{formatPrice(grandTotal)} Kč</strong></div>
+        <div className="kc-summary-row" style={{ fontSize: 18 }}>
+          <span><strong>Total</strong></span>
+          <strong style={{ color: 'var(--kc-green)' }}>{formatPrice(grandTotal)} Kč</strong>
+        </div>
       </div>
 
       {/* Contact form */}
@@ -63,7 +90,7 @@ export default function StepSummary({ accommodationLabel, checkIn, checkOut, nig
         </div>
       </div>
 
-      {/* Two payment buttons */}
+      {/* Payment buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
         <button className="kc-btn kc-btn-primary" disabled={!valid || submitting}
           onClick={() => onPayOnline({ name, email, phone })} type="button">

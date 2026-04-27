@@ -21,6 +21,7 @@ interface BookingState {
   total: number;
   checkIn: string;
   checkOut: string;
+  priceBreakdown: { label: string; amount: number; isDiscount?: boolean }[];
 }
 
 const STEP_LABELS: Record<Step, string> = {
@@ -55,7 +56,7 @@ function getGuestsLabel(state: BookingState): string {
 export default function BookingWizard() {
   const [step, setStep] = useState<Step>('landing');
   const [state, setState] = useState<BookingState>({
-    accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '',
+    accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [],
   });
   const [submitting, setSubmitting] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'success' | 'failed' | 'pending' | 'admin_pending'>('pending');
@@ -110,7 +111,7 @@ export default function BookingWizard() {
   }, []);
 
   const resetAll = useCallback(() => {
-    setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '' });
+    setState({ accommodationType: null, accommodationData: {}, extras: [], contact: null, total: 0, checkIn: '', checkOut: '', priceBreakdown: [] });
     setStep('landing'); setSubmitting(false); setPaymentStatus('pending');
     setReservationId(undefined); setGuestPageToken(undefined); setPaymentUrl(undefined); setQrCodeUrl(undefined);
     sessionStorage.removeItem(STORAGE_KEY);
@@ -144,18 +145,22 @@ export default function BookingWizard() {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
       const { draft, grandTotal } = await createDraft(contact);
+      // Use PMS reservation_id for Teya (server reads amount from DB)
+      const pmsResId = draft.reservation_id || draft.id;
       const desc = `Kemp Carlsbad — ${getAccommodationLabel(state)} — ${contact.name}`;
+      const returnPath = `/book?payment=success&reservation_id=${pmsResId}&token=${draft.guest_page_token || ''}`;
       const checkoutRes = await fetch('/api/booking/checkout-session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: grandTotal, currency: 'CZK', description: desc,
-          reservation_id: draft.id, return_path: `/book?payment=success&reservation_id=${draft.id}`,
+          reservation_id: pmsResId, return_path: returnPath,
         }),
       });
       const checkout = await checkoutRes.json();
       if (!checkoutRes.ok) throw new Error(checkout.error || 'Payment system error');
 
-      setReservationId(draft.id);
+      setReservationId(pmsResId);
+      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
       if (checkout.qr_code_url) setQrCodeUrl(checkout.qr_code_url);
       if (checkout.session_url) {
         setPaymentUrl(checkout.session_url);
@@ -176,7 +181,8 @@ export default function BookingWizard() {
     setSubmitting(true); setState(s => ({ ...s, contact }));
     try {
       const { draft } = await createDraft(contact);
-      setReservationId(draft.id);
+      setReservationId(draft.reservation_id || draft.id);
+      if (draft.guest_page_token) setGuestPageToken(draft.guest_page_token);
       setPaymentStatus('admin_pending'); setStep('success');
       sessionStorage.removeItem(STORAGE_KEY);
     } catch (err: unknown) {
@@ -185,15 +191,20 @@ export default function BookingWizard() {
   };
 
   // ─── Admin Confirm ────────────────────────────────
-  const handleAdminConfirm = async () => {
-    if (!reservationId) return;
+  const handleAdminConfirm = async (pin: string): Promise<{ ok: boolean; adminName?: string; error?: string }> => {
+    if (!reservationId) return { ok: false, error: 'No reservation' };
     try {
-      await fetch('/api/booking/drafts', {
+      const res = await fetch('/api/booking/drafts', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: reservationId, status: 'paid' }),
+        body: JSON.stringify({ id: reservationId, reservation_id: reservationId, status: 'paid', admin_pin: pin }),
       });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Error' };
       setPaymentStatus('success');
-    } catch { /* */ }
+      return { ok: true, adminName: data.admin_name };
+    } catch (err: any) {
+      return { ok: false, error: err.message || 'Network error' };
+    }
   };
 
   const nights = state.checkIn && state.checkOut ? getNightDates(state.checkIn, state.checkOut).length : 0;
@@ -248,13 +259,22 @@ export default function BookingWizard() {
 
         {step === 'accommodation' && state.accommodationType === 'glamping' && (
           <StepGlamping prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
+            const bd = [
+              ...data.breakdown.map((n: {date: string; type: string; price: number}) => ({ label: `🏠 ${n.date} (${n.type === 'holiday' ? '⭐ Holiday' : 'Standard'})`, amount: n.price })),
+              ...(data.touristTax > 0 ? [{ label: `🏛️ Tourist tax (${data.adults} × ${data.taxRate} Kč × ${data.nights} nights)`, amount: data.touristTax }] : []),
+            ];
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut, priceBreakdown: bd }));
             setStep('extras');
           }} />
         )}
         {step === 'accommodation' && state.accommodationType === 'buildings' && (
           <StepBuildings prices={prices} onNext={(data) => {
-            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut }));
+            const bd: { label: string; amount: number; isDiscount?: boolean }[] = [];
+            if (data.accommodationSubtotal != null) bd.push({ label: `🏠 Accommodation`, amount: (data.accommodationSubtotal || 0) + (data.sleepingBagDiscount || 0) });
+            if (data.sleepingBagDiscount != null && data.sleepingBagDiscount > 0) bd.push({ label: `🛌 Own sleeping bags`, amount: -data.sleepingBagDiscount, isDiscount: true });
+            if (data.touristTax != null && data.touristTax > 0) bd.push({ label: `🏛️ Tourist tax (${data.adults} × ${data.taxRate} Kč × ${data.nights} nights)`, amount: data.touristTax });
+            if (data.kauce != null && data.kauce > 0) bd.push({ label: `🔑 Security deposit (returnable)`, amount: data.kauce });
+            setState(s => ({ ...s, accommodationData: data as unknown as Record<string, unknown>, total: data.total, checkIn: data.checkIn, checkOut: data.checkOut, priceBreakdown: bd }));
             setStep('extras');
           }} />
         )}
@@ -281,6 +301,7 @@ export default function BookingWizard() {
             checkIn={state.checkIn} checkOut={state.checkOut}
             nights={nights} guests={getGuestsLabel(state)}
             total={state.total} extras={state.extras}
+            priceBreakdown={state.priceBreakdown}
             onPayOnline={handlePayOnline} onPayAdmin={handlePayAdmin}
             submitting={submitting}
           />
@@ -292,6 +313,7 @@ export default function BookingWizard() {
             accommodationLabel={getAccommodationLabel(state)}
             checkIn={state.checkIn} checkOut={state.checkOut}
             nights={nights} total={state.total}
+            adults={(state.accommodationData.adults as number) || 1}
             guestPageToken={guestPageToken}
             paymentUrl={paymentUrl} qrCodeUrl={qrCodeUrl}
             onReset={resetAll} onAdminConfirm={handleAdminConfirm}

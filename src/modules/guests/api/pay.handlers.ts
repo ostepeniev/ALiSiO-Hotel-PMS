@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import * as actionsRepo from '../data/guest-actions.repo';
-// TODO: replace with @finance eventBus event when finance module is migrated
-import { createCheckoutSession } from '@/lib/teya';
+import { createPaymentSession } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -62,18 +61,19 @@ async function handleSinglePay(
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
-    const session = await createCheckoutSession({
-      amount: Math.round(totalPrice * 100),
+    const session = await createPaymentSession({
+      kind: 'service_standalone',
+      amount: totalPrice,
       currency: service.currency || 'CZK',
       description: `${serviceName} × ${effectiveQty} — ${guestName}`,
-      items: [{ description: serviceName, quantity: effectiveQty, unit_price: Math.round(service.price * 100) }],
+      lineItems: [{ description: serviceName, quantity: effectiveQty, unitPriceMajor: service.price }],
       metadata: { order_ids: orderIds.join(','), reservation_id: reservation.id, service_id: serviceId, source: 'guest_page' },
-      success_url: `${baseUrl}/guest/${token}?payment=success`,
-      cancel_url: `${baseUrl}/guest/${token}?payment=cancel`,
+      successUrl: `${baseUrl}/guest/${token}?payment=success`,
+      cancelUrl: `${baseUrl}/guest/${token}?payment=cancel`,
     });
-    for (const oid of orderIds) actionsRepo.updateOrderPaymentId(oid, session.id);
-    console.log(`[Guest Pay] Teya session created: ${session.id}`);
-    return NextResponse.json({ success: true, orderIds, session_url: session.session_url, session_id: session.id });
+    for (const oid of orderIds) actionsRepo.updateOrderPaymentId(oid, session.sessionId);
+    console.log(`[Guest Pay] Teya session created: ${session.sessionId}`);
+    return NextResponse.json({ success: true, orderIds, session_url: session.sessionUrl, session_id: session.sessionId });
   } catch (teyaError: any) {
     console.error('[Guest Pay] Teya error:', teyaError.message);
     for (const oid of orderIds) actionsRepo.markOrderPaymentFailed(oid);
@@ -140,22 +140,23 @@ async function handleCartPay(token: string, items: CartItemInput[]): Promise<Nex
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://alisio.swipescape.eu';
-    const session = await createCheckoutSession({
-      amount: Math.round(grandTotal * 100),
+    const session = await createPaymentSession({
+      kind: 'service_cart',
+      amount: grandTotal,
       currency,
       description: `Kemp Carlsbad — Cart (${resolvedItems.length} ${resolvedItems.length === 1 ? 'item' : 'items'}) — ${guestName}`,
-      items: resolvedItems.map(({ svc, quantity }) => ({
+      lineItems: resolvedItems.map(({ svc, quantity }) => ({
         description: svc.name_en || svc.name,
         quantity,
-        unit_price: Math.round(svc.price * 100),
+        unitPriceMajor: svc.price,
       })),
       metadata: { order_ids: orderIds.join(','), reservation_id: reservation.id, source: 'guest_cart' },
-      success_url: `${baseUrl}/guest/${token}?payment=success`,
-      cancel_url: `${baseUrl}/guest/${token}?payment=cancel`,
+      successUrl: `${baseUrl}/guest/${token}?payment=success`,
+      cancelUrl: `${baseUrl}/guest/${token}?payment=cancel`,
     });
-    for (const orderId of orderIds) actionsRepo.updateOrderPaymentId(orderId, session.id);
-    console.log(`[Cart Pay] Teya session: ${session.id}`);
-    return NextResponse.json({ success: true, orderIds, session_url: session.session_url, session_id: session.id });
+    for (const orderId of orderIds) actionsRepo.updateOrderPaymentId(orderId, session.sessionId);
+    console.log(`[Cart Pay] Teya session: ${session.sessionId}`);
+    return NextResponse.json({ success: true, orderIds, session_url: session.sessionUrl, session_id: session.sessionId });
   } catch (teyaError: any) {
     console.error('[Cart Pay] Teya error:', teyaError.message);
     for (const orderId of orderIds) actionsRepo.markOrderPaymentFailed(orderId);

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
-import { createCheckoutSession } from '@/lib/teya';
+import { createPaymentSession } from '@payments';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 
 export async function payForBooking(
@@ -62,22 +62,23 @@ export async function payForBooking(
     console.log(`[Guest Pay Booking] ${guestName} | ${description} | remaining: ${remaining} ${reservation.currency}`);
 
     // ── Create Teya session ────────────────────────────────────
-    const session = await createCheckoutSession({
-      amount: Math.round(remaining * 100),
+    const session = await createPaymentSession({
+      kind: 'booking_balance',
+      amount: remaining,
       currency: reservation.currency || 'CZK',
       description,
-      items: [{
+      lineItems: [{
         description,
         quantity: 1,
-        unit_price: Math.round(remaining * 100),
+        unitPriceMajor: remaining,
       }],
       metadata: {
         reservation_id: reservation.id,
         source: 'guest_booking_payment',
         token,
       },
-      success_url: `${baseUrl}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(`/guest/${token}`)}&reservation_id=${reservation.id}`,
-      cancel_url: `${baseUrl}/guest/${token}?payment=cancelled`,
+      successUrl: `${baseUrl}/api/booking/payment-return?session_id={CHECKOUT_SESSION_ID}&status=success&return=${encodeURIComponent(`/guest/${token}`)}&reservation_id=${reservation.id}`,
+      cancelUrl: `${baseUrl}/guest/${token}?payment=cancelled`,
     });
 
     // ── Telegram notification ──────────────────────────────────
@@ -94,8 +95,8 @@ export async function payForBooking(
 
     return NextResponse.json({
       success: true,
-      session_url: session.session_url,
-      session_id: session.id,
+      session_url: session.sessionUrl,
+      session_id: session.sessionId,
       amount: remaining,
       currency: reservation.currency || 'CZK',
     });
