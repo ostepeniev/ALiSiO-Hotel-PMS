@@ -261,3 +261,20 @@ export const deleteAttachment = withPermission('manage_payments', _deleteAttachm
 export { getTeyaSyncStatus, getTeyaCoverage } from './teya-sync.handlers';
 import { syncTeyaTransactions as _syncTeyaTransactions } from './teya-sync.handlers';
 export const syncTeyaTransactions = withPermission('import_bank_data', _syncTeyaTransactions);
+
+// ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
+export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
+import {
+  createReceiptInbox as _createReceiptInbox,
+  updateReceiptInbox as _updateReceiptInbox,
+  deleteReceiptInbox as _deleteReceiptInbox,
+  runReceiptInboxNow as _runReceiptInboxNow,
+  attachPendingReceipt as _attachPendingReceipt,
+  archivePendingReceipt as _archivePendingReceipt,
+} from './receipt-inbox.handlers';
+export const createReceiptInbox    = withPermission('import_bank_data', _createReceiptInbox);
+export const updateReceiptInbox    = withPermission('import_bank_data', _updateReceiptInbox);
+export const deleteReceiptInbox    = withPermission('import_bank_data', _deleteReceiptInbox);
+export const runReceiptInboxNow    = withPermission('import_bank_data', _runReceiptInboxNow);
+export const attachPendingReceipt  = withPermission('manage_payments', _attachPendingReceipt);
+export const archivePendingReceipt = withPermission('manage_payments', _archivePendingReceipt);

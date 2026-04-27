@@ -71,6 +71,15 @@ export function getDb(): any {
     console.log('[Teya] tick-if-due error:', e.message);
   }
 
+  // PR #27: receipt inboxes — IMAP poll for forwarded invoices (15 min)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runReceiptInboxTickIfDue } = require('@/modules/finance/data/receipt-inbox-engine');
+    runReceiptInboxTickIfDue(db);
+  } catch (e: any) {
+    console.log('[ReceiptInbox] tick-if-due error:', e.message);
+  }
+
   return db;
 }
 
@@ -3207,6 +3216,62 @@ function runMigrations(database: any) {
       if (seeded > 0) console.log(`[DB] PR #15: seeded ${seeded} clearing accounts`);
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
+
+  // PR #27: email-forward receipts inbox (separate from bank inbox)
+  // User forwards email with invoice/receipt → IMAP poll extracts attachments
+  // → drops them in fin_pending_receipts pool → user manually links to a
+  // fin_operation. Optionally tries to auto-match by amount in subject/body.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_receipt_inboxes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      imap_host TEXT NOT NULL,
+      imap_port INTEGER NOT NULL DEFAULT 993,
+      imap_user TEXT NOT NULL,
+      imap_password_encrypted TEXT NOT NULL,
+      imap_folder TEXT NOT NULL DEFAULT 'INBOX',
+      use_tls INTEGER NOT NULL DEFAULT 1,
+      sender_filter TEXT,
+      subject_filter TEXT,
+      auto_match_threshold_pct REAL NOT NULL DEFAULT 1.0,
+      last_uid INTEGER,
+      last_synced_at TEXT,
+      last_error TEXT,
+      last_email_at TEXT,
+      emails_processed INTEGER NOT NULL DEFAULT 0,
+      receipts_imported INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_recv_inbox_org ON fin_receipt_inboxes(organization_id)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fin_pending_receipts (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      inbox_id TEXT REFERENCES fin_receipt_inboxes(id) ON DELETE SET NULL,
+      file_name TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes INTEGER,
+      sender_email TEXT,
+      subject TEXT,
+      received_at TEXT,
+      detected_amount REAL,
+      detected_currency TEXT,
+      auto_matched_operation_id TEXT REFERENCES fin_operations(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'matched', 'attached', 'archived')),
+      attached_attachment_id TEXT REFERENCES fin_operation_attachments(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_prec_org ON fin_pending_receipts(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_prec_status ON fin_pending_receipts(status)');
 
   // PR #26: suggested_recurring_id on fin_operations — bank-imported ops
   // get tagged with a candidate recurring template (similar amount + counterparty)
