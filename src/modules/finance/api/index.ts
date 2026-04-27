@@ -265,6 +265,11 @@ export const syncTeyaTransactions = withPermission('import_bank_data', _syncTeya
 // ─── Reconciliation dashboard (PR #28) — read ──────────────────
 export { getReconcileDashboard } from './reconcile-dashboard.handlers';
 
+// ─── Finmap historical import (PR #30) — manage_finance_settings ─
+export { getFinmapImportStatus } from './finmap-import.handlers';
+import { importFinmap as _importFinmap } from './finmap-import.handlers';
+export const importFinmap = withPermission('manage_finance_settings', _importFinmap);
+
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
 import {
