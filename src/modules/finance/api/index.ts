@@ -270,6 +270,27 @@ export { getFinmapImportStatus } from './finmap-import.handlers';
 import { importFinmap as _importFinmap } from './finmap-import.handlers';
 export const importFinmap = withPermission('manage_finance_settings', _importFinmap);
 
+// ─── Investor module (PR #31) — manage_investors permission ─────
+export {
+  listInvestors, listInvestments, listMonthlyMetrics, listPayouts, listInvestorProjects,
+} from './investors.handlers';
+import {
+  createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
+  createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,
+  upsertMonthlyMetric as _upsertMonthlyMetric, deleteMonthlyMetric as _deleteMonthlyMetric,
+  createPayout as _createPayout, deletePayout as _deletePayout,
+} from './investors.handlers';
+export const createInvestor      = withPermission('manage_investors', _createInvestor);
+export const updateInvestor      = withPermission('manage_investors', _updateInvestor);
+export const deleteInvestor      = withPermission('manage_investors', _deleteInvestor);
+export const createInvestment    = withPermission('manage_investors', _createInvestment);
+export const updateInvestment    = withPermission('manage_investors', _updateInvestment);
+export const deleteInvestment    = withPermission('manage_investors', _deleteInvestment);
+export const upsertMonthlyMetric = withPermission('manage_investors', _upsertMonthlyMetric);
+export const deleteMonthlyMetric = withPermission('manage_investors', _deleteMonthlyMetric);
+export const createPayout        = withPermission('manage_investors', _createPayout);
+export const deletePayout        = withPermission('manage_investors', _deletePayout);
+
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
 import {

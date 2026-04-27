@@ -3217,6 +3217,109 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 clearing accounts seed:', e.message); }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // PR #31: Investor module — investors, investments, monthly metrics,
+  // payouts. Adapted from investflow-dashboard architecture but reuses
+  // our business_units (= properties).
+  // ═══════════════════════════════════════════════════════════════════
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investors (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      telegram_chat_id TEXT,
+      portal_token TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_investors_org ON investors(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_investors_token ON investors(portal_token)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_investments (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      investor_id TEXT NOT NULL REFERENCES investors(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES business_units(id) ON DELETE CASCADE,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      equity_pct REAL,
+      invested_at TEXT NOT NULL,
+      model_description TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_invest_org ON investor_investments(organization_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_invest_investor ON investor_investments(investor_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_invest_project ON investor_investments(project_id)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS property_monthly_metrics (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES business_units(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      occupancy_pct REAL,
+      revenue REAL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_id, year_month)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pmm_project ON property_monthly_metrics(project_id, year_month)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS investor_payouts (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      investor_id TEXT NOT NULL REFERENCES investors(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES business_units(id) ON DELETE SET NULL,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      paid_at TEXT NOT NULL,
+      period_year_month TEXT,
+      comment TEXT,
+      fin_operation_id TEXT REFERENCES fin_operations(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_payouts_investor ON investor_payouts(investor_id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_inv_payouts_paid_at ON investor_payouts(paid_at)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS property_monthly_reports (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES business_units(id) ON DELETE CASCADE,
+      year_month TEXT NOT NULL,
+      adr REAL,
+      general_comment TEXT,
+      market_insight TEXT,
+      operational_updates_json TEXT NOT NULL DEFAULT '[]',
+      photo_url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(project_id, year_month)
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pmr_project ON property_monthly_reports(project_id, year_month)');
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS property_work_stages (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      project_id TEXT NOT NULL UNIQUE REFERENCES business_units(id) ON DELETE CASCADE,
+      stages_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   // PR #27: email-forward receipts inbox (separate from bank inbox)
   // User forwards email with invoice/receipt → IMAP poll extracts attachments
   // → drops them in fin_pending_receipts pool → user manually links to a
