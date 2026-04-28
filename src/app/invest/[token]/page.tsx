@@ -24,7 +24,7 @@ interface PortalData {
   }>;
   capital_growth: Array<{ month: string; invested: number; profit_cumulative: number }>;
   occupancy_dynamics: Array<{ month: string; occupancy_pct: number }>;
-  income_by_source: Array<{ source: string; currency: string; total_share: number; reservations: number; basis: 'reconciled' | 'mixed' | 'raw' }>;
+  income_by_source: Array<{ source: string; currency: string; total_share: number; reservations: number }>;
   monthly_reports: Array<{
     project_id: string; project_name: string; year_month: string;
     adr: number | null; general_comment: string | null;
@@ -298,7 +298,7 @@ function CapitalGrowthChart({ data, currency }: { data: { month: string; profit_
   );
 }
 
-function SourceBreakdown({ items }: { items: Array<{ source: string; currency: string; total_share: number; reservations: number; basis: 'reconciled' | 'mixed' | 'raw' }> }) {
+function SourceBreakdown({ items }: { items: Array<{ source: string; currency: string; total_share: number; reservations: number }> }) {
   const total = items.reduce((s, x) => s + x.total_share, 0);
   if (total === 0) return <div style={{ color: '#94a3b8', padding: 20, textAlign: 'center' }}>Поки немає даних</div>;
   return (
@@ -317,14 +317,11 @@ function SourceBreakdown({ items }: { items: Array<{ source: string; currency: s
         {items.map((it, i) => {
           const meta = SOURCE_LABEL[it.source] || { label: it.source, color: '#64748b' };
           const pct = (it.total_share / total) * 100;
-          const basisLabel = it.basis === 'reconciled' ? '✓ звірено' : it.basis === 'mixed' ? '~ частково' : '⏳ очікує';
-          const basisColor = it.basis === 'reconciled' ? '#16a34a' : it.basis === 'mixed' ? '#f59e0b' : '#94a3b8';
           return (
             <div key={`${it.source}-${it.currency}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
               <span style={{ width: 10, height: 10, background: meta.color, borderRadius: 2 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, color: '#0f172a' }}>{meta.label}</div>
-                <div style={{ fontSize: 10, color: basisColor }}>{basisLabel}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontWeight: 600, color: '#0f172a' }}>{it.total_share.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {it.currency}</div>
