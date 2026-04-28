@@ -3238,6 +3238,65 @@ function runMigrations(database: any) {
   addCol('property_monthly_metrics',   'supabase_id', 'TEXT');
   addCol('property_monthly_reports',   'supabase_id', 'TEXT');
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #A: re-introduce unit_id columns on investor tables (the
+  // PR #41 columns were not removed when #41 was reverted, but the
+  // migration routine was — re-adding here so the schema is explicit and
+  // any rows with unit_id IS NULL get name-matched to a real glamping unit
+  // on next boot.
+  //
+  // No code yet reads from these — that comes in cleanup #B.
+  // ═══════════════════════════════════════════════════════════════════
+  addCol('investor_investments',       'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
+  addCol('investor_payouts',           'unit_id', 'TEXT REFERENCES units(id) ON DELETE SET NULL');
+  addCol('property_monthly_metrics',   'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('property_monthly_reports',   'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('property_work_stages',       'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+  addCol('investor_property_details',  'unit_id', 'TEXT REFERENCES units(id) ON DELETE CASCADE');
+
+  try {
+    const norm = (s: string) => (s || '').toLowerCase()
+      .replace(/[іії]/g, 'и').replace(/[єё]/g, 'е').replace(/ґ/g, 'г')
+      .replace(/[\s_\-/]/g, '');
+
+    const unitRows = database.prepare(`
+      SELECT u.id, u.name FROM units u
+      JOIN categories c ON c.id = u.category_id
+      WHERE u.is_active = 1 AND c.type = 'glamping'
+    `).all() as { id: string; name: string }[];
+    const unitByNorm = new Map<string, string>();
+    for (const u of unitRows) unitByNorm.set(norm(u.name), u.id);
+
+    const buRows = database.prepare("SELECT id, name FROM business_units").all() as { id: string; name: string }[];
+    const buToUnit = new Map<string, string>();
+    for (const bu of buRows) {
+      const u = unitByNorm.get(norm(bu.name));
+      if (u) buToUnit.set(bu.id, u);
+    }
+
+    let filled = 0;
+    const tables = [
+      'investor_investments', 'investor_payouts',
+      'property_monthly_metrics', 'property_monthly_reports',
+      'property_work_stages', 'investor_property_details',
+    ];
+    for (const table of tables) {
+      const cols = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (!cols.some((c) => c.name === 'unit_id') || !cols.some((c) => c.name === 'project_id')) continue;
+      const upd = database.prepare(`UPDATE ${table} SET unit_id = ? WHERE project_id = ? AND unit_id IS NULL`);
+      for (const [buId, unitId] of buToUnit.entries()) {
+        const r = upd.run(unitId, buId);
+        filled += r.changes;
+      }
+    }
+    if (filled > 0) console.log(`[DB] Cleanup #A: filled unit_id on ${filled} investor rows by name match`);
+  } catch (e: any) { console.log('[DB] Cleanup #A unit_id name-match:', e.message); }
+
+  try {
+    database.exec('CREATE INDEX IF NOT EXISTS idx_inv_invest_unit ON investor_investments(unit_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_inv_payouts_unit ON investor_payouts(unit_id)');
+  } catch (e: any) { console.log('[DB] Cleanup #A indexes:', e.message); }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
