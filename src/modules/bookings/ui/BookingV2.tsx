@@ -103,7 +103,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (u.maxChildren > 0) {
       return `до ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`;
     }
-    return `до ${u.maxOccupancy} ${t.guestsShort}`;
+    return `до ${u.maxAdults || u.maxOccupancy} ${t.guestsShort}`;
   };
   const [step, setStep] = useState(1);
   const [checkIn, setCheckIn] = useState<string | null>(null);
