@@ -104,13 +104,15 @@ export async function getWidgetServices(request: NextRequest) {
     let services: any[];
 
     if (siteId && hasSiteServices) {
-      // Only services enabled for this booking site
+      // Services enabled for this booking site (defaulting to enabled if no explicit config)
       services = db.prepare(`
-        SELECT s.*, ss.price_override, ss.sort_order as site_sort_order, ss.is_enabled
+        SELECT s.*, ss.price_override, 
+               COALESCE(ss.sort_order, s.sort_order) as site_sort_order, 
+               COALESCE(ss.is_enabled, 1) as is_enabled
         FROM additional_services s
-        JOIN site_services ss ON ss.service_id = s.id
-        WHERE ss.site_id = ? AND ss.is_enabled = 1 AND s.is_active = 1
-        ORDER BY ss.sort_order, s.sort_order
+        LEFT JOIN site_services ss ON ss.service_id = s.id AND ss.site_id = ?
+        WHERE s.is_active = 1 AND COALESCE(ss.is_enabled, 1) = 1
+        ORDER BY COALESCE(ss.sort_order, s.sort_order), s.sort_order
       `).all(siteId) as any[];
 
       // Apply price_override where set
