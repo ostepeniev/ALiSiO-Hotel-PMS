@@ -579,6 +579,27 @@ function ServicesTab({ siteId }: { siteId: string }) {
 
   const [embedSvc, setEmbedSvc] = useState<SiteService | null>(null);
 
+  const uploadPhoto = async (svc: SiteService, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const uRes = await fetch('/api/photos/upload', { method: 'POST', body: formData });
+      const { url } = await uRes.json();
+      if (url) {
+        await fetch(`/api/booking-sites/${siteId}/services`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ service_id: svc.id, photo_override: url, is_enabled: svc.is_enabled }),
+        });
+        fetchServices();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
   return (
@@ -587,13 +608,29 @@ function ServicesTab({ siteId }: { siteId: string }) {
         Оберіть сервіси, що доступні для замовлення на цьому сайті.
       </div>
       <table className="data-table">
-        <thead><tr><th>Сервіс</th><th>Ціна</th><th>Активний</th><th>Embed-код</th></tr></thead>
+        <thead><tr><th>Сервіс</th><th>Фото</th><th>Ціна</th><th>Активний</th><th>Embed-код</th></tr></thead>
         <tbody>
           {services.map(svc => (
             <tr key={svc.id}>
               <td>
                 <span style={{ fontSize: 18, marginRight: 8 }}>{svc.icon}</span>
                 <span style={{ fontWeight: 500 }}>{svc.name}</span>
+              </td>
+              <td>
+                {svc.photo_override ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <img src={svc.photo_override} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6 }} />
+                    <label style={{ cursor: 'pointer', fontSize: 12, color: 'var(--brand-blue)' }}>
+                      Змінити
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadPhoto(svc, e)} />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                    <Upload size={13} /> Додати фото
+                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadPhoto(svc, e)} />
+                  </label>
+                )}
               </td>
               <td style={{ fontSize: 13 }}>{svc.price_override ?? svc.price} {svc.currency}</td>
               <td>

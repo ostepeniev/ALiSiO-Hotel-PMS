@@ -2855,6 +2855,7 @@ function runMigrations(database: any) {
       is_enabled     INTEGER NOT NULL DEFAULT 1,
       price_override REAL,
       sort_order     INTEGER NOT NULL DEFAULT 0,
+      photo_override TEXT,
       created_at     TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(site_id, service_id)
     )
@@ -2873,6 +2874,7 @@ function runMigrations(database: any) {
   try { database.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* */ }
 
   try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
+  try { database.exec('ALTER TABLE site_services ADD COLUMN photo_override TEXT'); } catch { /* */ }
   console.log('[DB] Booking Sites module tables ready');
 
 
