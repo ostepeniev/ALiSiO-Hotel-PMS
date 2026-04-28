@@ -175,8 +175,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const uId = params.get('unitId');
       if (uId) setSelectedUnitId(uId);
 
+      const getBrowserLang = () => {
+        if (typeof navigator !== 'undefined' && navigator.language) {
+          const browserLang = navigator.language.slice(0, 2).toLowerCase();
+          if (['uk', 'en', 'cs', 'de'].includes(browserLang)) return browserLang;
+        }
+        return null;
+      };
+
       const l = params.get('lang')
         || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
+        || getBrowserLang()
         || null;
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
         setLang(l as BookingLang);
