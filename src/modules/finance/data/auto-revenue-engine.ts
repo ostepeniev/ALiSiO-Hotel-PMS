@@ -2,18 +2,22 @@
 //
 // Auto-revenue engine — derives investor monthly revenue per project.
 //
+// Investor's monthly share = equity_pct × GROSS booking price (NOT net).
+// We deliberately do not subtract the channel commission — investor is
+// entitled to a share of what the guest paid for the stay, regardless
+// of what fees the hotel pays Airbnb/Booking afterwards.
+//
 // Two data sources, in priority order:
 //
-//   1. RECONCILED  — `fin_channel_receivables` joined to reservations.
-//      Once a channel statement is uploaded (PR #17) and reconciled with
-//      a bank op (PR #16), the row carries `actual_net` = real money the
-//      hotel received after platform commission. This is the *truthful*
-//      number for investor payout calculations and is the user's preferred
-//      source ("once a month after document upload").
+//   1. RECONCILED  — `fin_channel_receivables.gross_amount` for stays whose
+//      channel statement was uploaded and matched (status='paid' or
+//      'in_statement'). The basis tag tells the UI "this number is verified
+//      against the platform's actual statement", but the AMOUNT used is
+//      always gross (the price the guest paid).
 //
-//   2. RAW reservations — `reservations.total_price` for stays already
-//      checked out. Used as a fallback for direct/walk-in bookings (no
-//      receivable row) and for live previews before reconciliation.
+//   2. RAW reservations — `reservations.total_price` for stays that have
+//      already checked out. Used for direct/walk-in bookings (no receivable
+//      row) and as preview before the statement arrives.
 //
 // Investor module is keyed on `business_units` (project_id, legacy). User
 // renames the relevant business_units to match real `units.name` (A1, A2,
@@ -111,8 +115,7 @@ export function getAutoRevenue(
            r.source        AS res_source,
            r.total_price   AS res_total,
            rc.channel_source AS rc_source,
-           rc.actual_net,
-           rc.expected_net,
+           rc.gross_amount,
            rc.status       AS rc_status
     FROM reservations r
     LEFT JOIN fin_channel_receivables rc ON rc.reservation_id = r.id
@@ -125,35 +128,25 @@ export function getAutoRevenue(
     res_source: string;
     res_total: number;
     rc_source: string | null;
-    actual_net: number | null;
-    expected_net: number | null;
+    gross_amount: number | null;
     rc_status: string | null;
   }>;
 
-  // Aggregate per source, marking reconciled vs raw
+  // Aggregate per source. Always use the GROSS amount — investor's share is
+  // calculated against what the guest paid, not against what the hotel
+  // received after channel commission. The "reconciled" tag only signals
+  // that the platform statement has confirmed this booking; it does not
+  // change the amount used.
   const bySource = new Map<string, { total: number; n: number; basis: 'reconciled' | 'raw' }>();
   for (const r of rows) {
-    let amount = 0;
-    let basis: 'reconciled' | 'raw';
-    let source: string;
-    if (r.rc_status === 'paid' || r.rc_status === 'in_statement') {
-      amount = r.actual_net ?? r.expected_net ?? 0;
-      basis = 'reconciled';
-      source = r.rc_source || r.res_source;
-      result.reconciled_total += amount;
-    } else if (r.rc_status === 'expected') {
-      // Receivable exists but not reconciled yet — show but mark as raw
-      amount = r.expected_net || r.res_total;
-      basis = 'raw';
-      source = r.rc_source || r.res_source;
-      result.raw_total += amount;
-    } else {
-      // No receivable — direct/walk-in/cash
-      amount = r.res_total;
-      basis = 'raw';
-      source = r.res_source;
-      result.raw_total += amount;
-    }
+    // Prefer receivable.gross_amount when present (it's the platform's
+    // confirmed price); otherwise fall back to the reservation's total_price.
+    const amount = (r.gross_amount != null ? r.gross_amount : r.res_total) || 0;
+    const isReconciled = r.rc_status === 'paid' || r.rc_status === 'in_statement';
+    const basis: 'reconciled' | 'raw' = isReconciled ? 'reconciled' : 'raw';
+    const source = r.rc_source || r.res_source;
+    if (isReconciled) result.reconciled_total += amount;
+    else result.raw_total += amount;
     const cell = bySource.get(source) || { total: 0, n: 0, basis };
     cell.total += amount;
     cell.n += 1;
@@ -238,25 +231,18 @@ export function getInvestorIncomeBySource(
 
     const rows = db.prepare(`
       SELECT r.source AS res_source, r.total_price AS res_total,
-             rc.channel_source AS rc_source, rc.actual_net, rc.expected_net, rc.status AS rc_status
+             rc.channel_source AS rc_source, rc.gross_amount, rc.status AS rc_status
       FROM reservations r
       LEFT JOIN fin_channel_receivables rc ON rc.reservation_id = r.id
       WHERE ${where.join(' AND ')}
     `).all(...params) as any[];
 
     for (const r of rows) {
-      let amount = 0; let source: string; let isReconciled = false;
-      if (r.rc_status === 'paid' || r.rc_status === 'in_statement') {
-        amount = r.actual_net ?? r.expected_net ?? 0;
-        source = r.rc_source || r.res_source;
-        isReconciled = true;
-      } else if (r.rc_status === 'expected') {
-        amount = r.expected_net || r.res_total;
-        source = r.rc_source || r.res_source;
-      } else {
-        amount = r.res_total;
-        source = r.res_source;
-      }
+      // Always use gross — investor's equity_pct applies to the price the
+      // guest paid, not to what the hotel netted after channel commission.
+      const amount = (r.gross_amount != null ? r.gross_amount : r.res_total) || 0;
+      const isReconciled = r.rc_status === 'paid' || r.rc_status === 'in_statement';
+      const source = r.rc_source || r.res_source;
       const share = amount * eq;
       const cell = bySource.get(source) || { total: 0, n: 0, reconciledShare: 0 };
       cell.total += share;
