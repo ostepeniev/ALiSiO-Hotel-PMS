@@ -538,10 +538,18 @@ export async function listInvestorProjects(_request: NextRequest): Promise<NextR
 // either has investor data OR is flagged via investor_property_details.
 // Returns work_stages parsed from JSON.
 
-export async function listInvestorProperties(_request: NextRequest): Promise<NextResponse> {
+export async function listInvestorProperties(request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const orgId = getOrgId(db);
+    // Default: show only business_units that actually have investor data
+    // (active investments OR explicitly attached property_details). Set
+    // ?all=1 to see every business_unit (e.g. for picking a new one).
+    const showAll = request.nextUrl.searchParams.get('all') === '1';
+    const where: string[] = ['bu.organization_id = ?'];
+    if (!showAll) {
+      where.push(`EXISTS (SELECT 1 FROM investor_investments WHERE project_id = bu.id AND is_active = 1)`);
+    }
     const rows = db.prepare(`
       SELECT
         bu.id              AS project_id,
@@ -559,7 +567,7 @@ export async function listInvestorProperties(_request: NextRequest): Promise<Nex
       FROM business_units bu
       LEFT JOIN investor_property_details d ON d.project_id = bu.id
       LEFT JOIN property_work_stages ws ON ws.project_id = bu.id
-      WHERE bu.organization_id = ?
+      WHERE ${where.join(' AND ')}
       ORDER BY bu.sort_order, bu.name
     `).all(orgId) as any[];
     const items = rows.map((r) => ({

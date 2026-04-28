@@ -95,9 +95,13 @@ export default function PropertiesTab() {
         </button>
       </div>
 
+      <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8, marginBottom: 12 }}>
+        Показано лише business_units, у які вже є active investments. Фінансові buckets (Ресторан, Сауна тощо без інвесторських лотів) приховано.
+      </p>
+
       {loading ? <div>Завантаження…</div> : items.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-primary)', borderRadius: 8 }}>
-          Об'єктів ще немає.
+          Жоден business_unit не має активних інвестицій. Створіть інвестицію у вкладці «Інвестиції (лоти)» щоб обʼєкт зʼявився тут.
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
