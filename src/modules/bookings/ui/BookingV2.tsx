@@ -93,11 +93,139 @@ interface DesignConfig {
   show_shadow?: boolean;
 }
 
+const tName = (obj: any, key: string, l: string) => {
+  if (!obj) return '';
+  if (l === 'en' && obj[`${key}En`]) return obj[`${key}En`];
+  if (l === 'cs' && obj[`${key}Cs`]) return obj[`${key}Cs`];
+  if (l === 'de' && obj[`${key}De`]) return obj[`${key}De`];
+  return obj[key];
+};
+
+const v3Locales: Record<string, any> = {
+  uk: {
+    waitlistTitle: "Список очікування",
+    waitlistSub: "Ми повідомимо вас, якщо ці дати звільняться.",
+    subscribed: "✅ Ви підписалися!",
+    yourEmail: "Ваш email",
+    subscribe: "Підписатися",
+    viewersNow: "людей дивляться зараз",
+    lastBooking: "Остання бронь",
+    occupancyNotice: "У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊",
+    chooseDatesPrice: "Оберіть дати щоб дізнатись ціну",
+    tryTheseDates: "💡 Спробуйте ці дати:",
+    availFrom: "Вільні місця з",
+    promoError: "Недійсний промокод",
+    serverError: "Помилка підключення",
+    errorReq: "Будь ласка, заповніть всі необхідні поля",
+    clear: "Стерти",
+    fromTime: "з",
+    toTime: "до",
+    chooseDatesShort: "обрати дати",
+    bankTransfer: "Оплата за реквізитами",
+    bankTransferDesc: "Ми надішлемо вам реквізити для оплати на email одразу після підтвердження бронювання.",
+    checkDetails: "Перевірте деталі та продовжуйте бронювання",
+    fromTimeBase: "від",
+    nightBase: "ніч",
+    agoHours: "годин тому",
+    agoHour: "годину тому",
+    agoMinutes: "хвилин тому",
+    connectionError: "Помилка підключення"
+  },
+  en: {
+    waitlistTitle: "Waitlist",
+    waitlistSub: "We will notify you if these dates become available.",
+    subscribed: "✅ Subscribed!",
+    yourEmail: "Your email",
+    subscribe: "Subscribe",
+    viewersNow: "people looking right now",
+    lastBooking: "Last booking",
+    occupancyNotice: "The house has one large bed — ideal for two adults. If you have a child with you, we are happy to make an exception: young guests do not occupy a separate bed 😊",
+    chooseDatesPrice: "Select dates to see price",
+    tryTheseDates: "💡 Try these dates:",
+    availFrom: "Available from",
+    promoError: "Invalid promo code",
+    serverError: "Connection error",
+    errorReq: "Please fill in all required fields",
+    clear: "Clear",
+    fromTime: "from",
+    toTime: "until",
+    chooseDatesShort: "select dates",
+    bankTransfer: "Bank Transfer",
+    bankTransferDesc: "We will email you the payment details immediately after confirming the booking.",
+    checkDetails: "Check details and continue booking",
+    fromTimeBase: "from",
+    nightBase: "night",
+    agoHours: "hours ago",
+    agoHour: "hour ago",
+    agoMinutes: "minutes ago",
+    connectionError: "Connection error"
+  },
+  cs: {
+    waitlistTitle: "Čekací listina",
+    waitlistSub: "Dáme vám vědět, pokud se tyto termíny uvolní.",
+    subscribed: "✅ Přihlášeno!",
+    yourEmail: "Váš email",
+    subscribe: "Odebírat",
+    viewersNow: "lidé si právě prohlížejí",
+    lastBooking: "Poslední rezervace",
+    occupancyNotice: "Dům má jednu velkou postel — ideální pro dva dospělé. Pokud s sebou máte dítě, rádi uděláme výjimku: malí hosté nezabírají samostatné lůžko 😊",
+    chooseDatesPrice: "Vyberte termíny pro zobrazení ceny",
+    tryTheseDates: "💡 Zkuste tyto termíny:",
+    availFrom: "Volné od",
+    promoError: "Neplatný promo kód",
+    serverError: "Chyba připojení",
+    errorReq: "Vyplňte prosím všechna povinná pole",
+    clear: "Smazat",
+    fromTime: "od",
+    toTime: "do",
+    chooseDatesShort: "vybrat termíny",
+    bankTransfer: "Bankovní převod",
+    bankTransferDesc: "Platební údaje vám zašleme e-mailem ihned po potvrzení rezervace.",
+    checkDetails: "Zkontrolujte detaily a pokračujte v rezervaci",
+    fromTimeBase: "od",
+    nightBase: "noc",
+    agoHours: "před hodinami",
+    agoHour: "před hodinou",
+    agoMinutes: "před minutami",
+    connectionError: "Chyba připojení"
+  },
+  de: {
+    waitlistTitle: "Warteliste",
+    waitlistSub: "Wir benachrichtigen Sie, falls diese Daten verfügbar werden.",
+    subscribed: "✅ Abonniert!",
+    yourEmail: "Ihre E-Mail",
+    subscribe: "Abonnieren",
+    viewersNow: "Personen sehen sich das gerade an",
+    lastBooking: "Letzte Buchung",
+    occupancyNotice: "Das Haus hat ein großes Bett — ideal für zwei Erwachsene. Wenn Sie ein Kind dabei haben, machen wir gerne eine Ausnahme: kleine Gäste belegen kein separates Bett 😊",
+    chooseDatesPrice: "Wählen Sie Daten aus, um den Preis zu sehen",
+    tryTheseDates: "💡 Versuchen Sie diese Daten:",
+    availFrom: "Verfügbar ab",
+    promoError: "Ungültiger Promo-Code",
+    serverError: "Verbindungsfehler",
+    errorReq: "Bitte füllen Sie alle erforderlichen Felder aus",
+    clear: "Löschen",
+    fromTime: "ab",
+    toTime: "bis",
+    chooseDatesShort: "Daten auswählen",
+    bankTransfer: "Banküberweisung",
+    bankTransferDesc: "Wir senden Ihnen die Zahlungsdetails sofort nach Bestätigung der Buchung per E-Mail.",
+    checkDetails: "Überprüfen Sie die Details und setzen Sie die Buchung fort",
+    fromTimeBase: "ab",
+    nightBase: "Nacht",
+    agoHours: "Stunden her",
+    agoHour: "Stunde her",
+    agoMinutes: "Minuten her",
+    connectionError: "Verbindungsfehler"
+  }
+};
+
 export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean, lang?: BookingLang }) {
   // ─── State ───
   const [isMounted, setIsMounted] = useState(false);
   const [lang, setLang] = useState<BookingLang>(initialLang || 'uk');
   const t = useMemo(() => getBookingTranslations(lang), [lang]);
+  const v3t = useMemo(() => v3Locales[lang] || v3Locales.uk, [lang]);
 
   const getOccupancyString = (u: any) => {
     if (u.maxChildren > 0) {
@@ -239,7 +367,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const hours = Math.floor(Math.random() * 12) + 1;
       setSocialProof({
         viewers: v,
-        lastBooking: hours < 5 ? `${hours} ${hours === 1 ? 'годину' : 'години'} тому` : 'сьогодні вранці'
+        lastBooking: hours < 5 ? `${hours} ${hours === 1 ? v3t.agoHour : v3t.agoHours}` : `45 ${v3t.agoMinutes}`
       });
     }
   }, []);
@@ -355,7 +483,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
     const interval = setInterval(sendResize, 500);
     sendResize();
-    return () => clearInterval(interval);
+    return () => clearTimeout(interval);
   }, [isMounted]);
 
   // Explicit trigger for state changes
@@ -445,9 +573,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
     // Add selected services
     let servicesTotal = 0;
+    const guestsCount = adults + kids || 1;
     services.forEach(s => {
       if (selectedServiceIds.has(s.id)) {
-        servicesTotal += (s.price || 0);
+        servicesTotal += (s.price || 0) * guestsCount;
       }
     });
 
@@ -573,10 +702,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         setStep(5); // Go forward from guest info to payment
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+    } else {
+      setStep(s);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    setStep(s);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
     // Notify parent of resize if in iframe
     if (typeof window !== 'undefined' && window.parent !== window) {
       setTimeout(() => {
@@ -597,14 +726,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
         setShowPromo(false);
       } else {
-        setPromoError(data.error || 'Невірний промокод');
+        setPromoError(data.error || v3t.promoError);
       }
-    } catch { setPromoError('Помилка підключення'); }
+    } catch { setPromoError(v3t.serverError); }
     setApplyingPromo(false);
   };
 
   const submitBooking = async () => {
-    if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) return;
+    if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) {
+      setError(v3t.errorReq);
+      return;
+    }
 
     if (isPreview) {
       setSubmitting(true);
@@ -686,7 +818,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             action: 'book-toggle',
             serviceId: id,
             reservationId: reservation.reservationId,
-            site_id: siteId
+            siteSlug,
+            quantity: adults + kids || 1
           })
         });
       } catch (e) { console.error('Toggle service error:', e); }
@@ -850,14 +983,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
               </div>
               <div className="v3-house-lock-info">
                 <div className="v3-house-lock-label">{t.accommodation}</div>
-                <div className="v3-house-lock-name">{selectedUnit.name}</div>
+                <div className="v3-house-lock-name">{tName(selectedUnit, 'name', lang)}</div>
                 <div className="v3-house-lock-feat">
                   {getOccupancyString(selectedUnit)} · {selectedUnit.typeName}
                 </div>
                 <div className="v3-house-times">
-                  <span>{t.checkInShort || 'Заїзд'} з 15:00</span>
+                  <span>{t.checkInShort || 'Заїзд'} {v3t.fromTime} 15:00</span>
                   <span className="v3-house-times-sep">·</span>
-                  <span>{t.checkOutShort || 'Виїзд'} до 11:00</span>
+                  <span>{t.checkOutShort || 'Виїзд'} {v3t.toTime} 11:00</span>
                 </div>
               </div>
             </div>
@@ -880,14 +1013,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             <div className={`v3-date-cell ${(checkIn && checkOut) || !selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(false); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkIn}</div>
               <div className="v3-date-cell-value">{checkIn ? formatDisplayDate(checkIn, lang) : '—'}</div>
-              <div className="v3-date-cell-sub">{t.from} 15:00</div>
+              <div className="v3-date-cell-sub">{v3t.fromTime} 15:00</div>
             </div>
             <div className="v3-date-div"></div>
             <div className={`v3-date-cell ${(checkIn && checkOut) || selectingCheckOut ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); setSelectingCheckOut(true); setCalOpen(true); }}>
               <div className="v3-date-cell-label">{t.checkOut}</div>
               <div className="v3-date-cell-value">{checkOut ? formatDisplayDate(checkOut, lang) : '—'}</div>
               <div className="v3-date-cell-sub">
-                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} · {t.to} 11:00
+                {nights > 0 ? `${nights} ${t.nightsShort}` : ''} · {v3t.toTime} 11:00
               </div>
             </div>
             <div className="v3-dates-cal-icon">
@@ -983,14 +1116,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   setAvailability(null);
                 }}
               >
-                Стерти
+                {v3t.clear}
               </button>
               <button
                 className={`v3-cal-footer-btn ok ${(checkIn && checkOut) ? 'active' : ''}`}
                 disabled={!checkIn || !checkOut}
                 onClick={() => setCalOpen(false)}
               >
-                OK · {nights > 0 ? `${nights} ${t.nightsShort}` : 'обрати дати'}
+                OK · {nights > 0 ? `${nights} ${t.nightsShort}` : v3t.chooseDatesShort}
               </button>
             </div>
           </div>
@@ -1073,7 +1206,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         {/* STEP 2: HOUSE LIST / DETAILS */}
         <div className={`v3-step ${step === 2 ? 'visible' : ''}`}>
           <h1 className="v3-step-title">{selectedUnitId ? (t.yourSelection || 'Ваш вибір') : t.selectAccommodation}</h1>
-          <p className="v3-step-sub">{selectedUnitId ? ('Перевірте деталі та продовжуйте бронювання') : t.availableForDates}</p>
+          <p className="v3-step-sub">{selectedUnitId ? v3t.checkDetails : t.availableForDates}</p>
 
           {/* Loading skeleton — only when no unit info available yet */}
           {loadingAvail && !selectedUnit && (
@@ -1102,7 +1235,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
                   {nextAvailable && (
                     <div className="v3-flex-dates">
-                      <div className="v3-flex-dates-label">💡 Спробуйте ці дати:</div>
+                      <div className="v3-flex-dates-label">{v3t.tryTheseDates}</div>
                       <button className="v3-flex-dates-btn" onClick={() => {
                         setCheckIn(nextAvailable);
                         setCheckOut(null);
@@ -1110,21 +1243,21 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                         setStep(1);
                         setCalOpen(true);
                       }}>
-                        Вільні місця з {formatDisplayDate(nextAvailable, lang)}
+                        {v3t.availFrom} {formatDisplayDate(nextAvailable, lang)}
                       </button>
                     </div>
                   )}
 
                   <div className="v3-waitlist">
-                    <div className="v3-waitlist-title">Список очікування</div>
-                    <p>Ми повідомимо вас, якщо ці дати звільняться.</p>
+                    <div className="v3-waitlist-title">{v3t.waitlistTitle}</div>
+                    <p>{v3t.waitlistSub}</p>
                     {waitlistStatus === 'success' ? (
-                      <div className="v3-waitlist-done">✅ Ви підписалися!</div>
+                      <div className="v3-waitlist-done">{v3t.subscribed}</div>
                     ) : (
                       <div className="v3-waitlist-form">
-                        <input className="v3-waitlist-input" placeholder="Ваш email" value={email} onChange={e => setEmail(e.target.value)} />
+                        <input className="v3-waitlist-input" placeholder={v3t.yourEmail} value={email} onChange={e => setEmail(e.target.value)} />
                         <button className="v3-waitlist-btn" onClick={joinWaitlist} disabled={waitlistStatus === 'submitting'}>
-                          {waitlistStatus === 'submitting' ? '...' : 'Підписатися'}
+                          {waitlistStatus === 'submitting' ? '...' : v3t.subscribe}
                         </button>
                       </div>
                     )}
@@ -1149,8 +1282,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                           </svg>
                         </div>
                         <div className="v3-house-lock-info">
-                          <div className="v3-house-lock-label">{u.typeName}</div>
-                          <div className="v3-house-lock-name">{u.name}</div>
+                          <div className="v3-house-lock-label">{tName(u, 'typeName', lang)}</div>
+                          <div className="v3-house-lock-name">{tName(u, 'name', lang)}</div>
                           <div className="v3-house-lock-feat">
                             {getOccupancyString(u)} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
                           </div>
@@ -1170,10 +1303,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-social-badges">
                   <div className="v3-badge viewers">
                     <span className="v3-badge-dot pulse"></span>
-                    {socialProof.viewers} людей дивляться зараз
+                    {socialProof.viewers} {v3t.viewersNow}
                   </div>
                   <div className="v3-badge last-book">
-                    ⏱ Остання бронь: {socialProof.lastBooking}
+                    ⏱ {v3t.lastBooking}: {socialProof.lastBooking}
                   </div>
                 </div>
               )}
@@ -1234,13 +1367,13 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   <div className="v3-gallery-count">{(currentImgIndex % selectedUnit.photos.length) + 1} / {selectedUnit.photos.length}</div>
                 )}
               </div>
-              <h1 className="v3-house-detail-name">{selectedUnit.name}</h1>
-              <div className="v3-house-detail-meta">{selectedUnit.typeName} · {getOccupancyString(selectedUnit)}</div>
+              <h1 className="v3-house-detail-name">{tName(selectedUnit, 'name', lang)}</h1>
+              <div className="v3-house-detail-meta">{tName(selectedUnit, 'typeName', lang)} · {getOccupancyString(selectedUnit)}</div>
               <div className="v3-amenities">
-                {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a, i) => (
+                {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a: any, i: number) => (
                   <div key={i} className="v3-amenity">
                     <span className="v3-amenity-icon">{a.icon || '✓'}</span>
-                    {a.name}
+                    {tName(a, 'name', lang)}
                   </div>
                 )) : (
                   <>
@@ -1335,10 +1468,11 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             >
               <span>
                 {selectedServiceIds.size > 0 ? (() => {
+                  const guestsCount = adults + kids || 1;
                   const servicesTotal = services
                     .filter(s => selectedServiceIds.has(s.id))
-                    .reduce((sum, s) => sum + (s.price || 0), 0);
-                  return `Підтвердити вибір (${selectedServiceIds.size}) · +${formatPrice(servicesTotal, siteCurrency)}`;
+                    .reduce((sum, s) => sum + (s.price || 0) * guestsCount, 0);
+                  return `${t.confirmSelection || 'Підтвердити вибір'} (${selectedServiceIds.size}) · +${formatPrice(servicesTotal, siteCurrency)}`;
                 })() : 'Перейти до оплати'}
               </span>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -1368,12 +1502,15 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 </div>
               )}
             </div>
-            {services.filter(s => selectedServiceIds.has(s.id)).map(s => (
-              <div key={s.id} className="v3-breakdown-row">
-                <span>{s.name}</span>
-                <span className="v3-breakdown-val">{formatPrice(s.price, siteCurrency)}</span>
-              </div>
-            ))}
+            {services.filter(s => selectedServiceIds.has(s.id)).map(s => {
+              const guestsCount = adults + kids || 1;
+              return (
+                <div key={s.id} className="v3-breakdown-row">
+                  <span>{tName(s, 'name', lang)} × {guestsCount}</span>
+                  <span className="v3-breakdown-val">{formatPrice(s.price * guestsCount, siteCurrency)}</span>
+                </div>
+              );
+            })}
             <div className="v3-breakdown-row total">
               <span>{t.total}</span>
               <span className="v3-breakdown-val">{formatPrice(totalWithDiscount, siteCurrency)}</span>
@@ -1397,8 +1534,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             <div className="v3-invoice-notice">
               <div className="v3-invoice-notice-icon">📬</div>
               <div className="v3-invoice-notice-text">
-                <strong>Оплата за реквізитами</strong>
-                <p>Ми надішлемо вам реквізити для оплати на email одразу після підтвердження бронювання.</p>
+                <strong>{v3t.bankTransfer}</strong>
+                <p>{v3t.bankTransferDesc}</p>
               </div>
             </div>
           )}
@@ -1437,9 +1574,9 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                   ) : nights > 0 && totalWithDiscount > 0 ? (
                     formatPrice(totalWithDiscount, siteCurrency)
                   ) : nights > 0 && selectedUnit ? (
-                    `${t.from || 'від'} ${formatPrice(selectedUnit.avgPricePerNight, siteCurrency)} / ${t.night || 'ніч'}`
+                    `${v3t.fromTimeBase} ${formatPrice(selectedUnit.avgPricePerNight, siteCurrency)} / ${v3t.nightBase}`
                   ) : (
-                    <span style={{ fontSize: 12, opacity: 0.7 }}>Оберіть дати щоб дізнатись ціну</span>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>{v3t.chooseDatesPrice}</span>
                   )}
                 </div>
               </div>
