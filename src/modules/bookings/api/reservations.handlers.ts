@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
+import { notifyReservationCreated } from '../domain/reservation-tg-notify';
 
 export async function listReservations(request: NextRequest) {
   try {
@@ -192,6 +193,8 @@ export async function createReservation(request: NextRequest) {
     } catch (linkErr) {
       console.error('[Booking] CRM link error (non-fatal):', linkErr);
     }
+
+    notifyReservationCreated(resId, { sourceLabel: `Ручне додавання · ${source || 'direct'}` });
 
     return NextResponse.json({ id: resId, guestId, guestPageToken }, { status: 201 });
   } catch (error) {

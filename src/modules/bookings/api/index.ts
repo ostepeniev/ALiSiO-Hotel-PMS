@@ -25,3 +25,4 @@ export { fixServiceOrderPayment, getPendingOrders } from './fix-payment.handlers
 export { previewBookingComImport, confirmBookingComImport } from './import-bookingcom.handlers';
 export type { PreviewRow, PreviewResponse, ConfirmRequest, ConfirmResponse } from './import-bookingcom.handlers';
 export type { BookingComRow } from '../domain/booking-com-excel';
+export { notifyReservationCreated, notifyGroupBookingCreated } from '../domain/reservation-tg-notify';

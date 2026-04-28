@@ -8,6 +8,7 @@ import { parseVrboEmail } from '@/lib/channels/vrbo-parser';
 import { generateAutoResponse } from '@/lib/ai/auto-response';
 import { findOrCreateGuestForLead } from '@/lib/sync/guest-lead-sync';
 import { onInboundMessage } from '@/lib/crm/stage-transitions';
+import { notifyReservationCreated } from '@bookings';
 import crypto from 'crypto';
 
 export async function pollEmails(req: NextRequest) {
@@ -464,6 +465,12 @@ function autoCreateReservationForResort(db: any, leadId: string, data: any, emai
     // 6. Link lead to reservation
     db.prepare("UPDATE crm_leads SET reservation_id = ?, stage = 'booked', updated_at = datetime('now') WHERE id = ?")
       .run(resId, leadId);
+
+    notifyReservationCreated(resId, {
+      sourceLabel: `${data.source || 'Booking.com'} (email parser)`,
+      emoji: '📧',
+      extraFooter: `🔖 #${data.confirmationId}`,
+    });
 
     console.log(`[AutoRes] Created reservation ${resId} for lead ${leadId} in unit ${unit.name} (Building ${buildingCode})`);
   } catch (err: any) {
