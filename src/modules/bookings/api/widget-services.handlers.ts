@@ -106,7 +106,7 @@ export async function getWidgetServices(request: NextRequest) {
     if (siteId && hasSiteServices) {
       // Services enabled for this booking site (defaulting to enabled if no explicit config)
       services = db.prepare(`
-        SELECT s.*, ss.price_override, 
+        SELECT s.*, ss.price_override, ss.photo_override,
                COALESCE(ss.sort_order, s.sort_order) as site_sort_order, 
                COALESCE(ss.is_enabled, 1) as is_enabled
         FROM additional_services s
@@ -115,10 +115,11 @@ export async function getWidgetServices(request: NextRequest) {
         ORDER BY COALESCE(ss.sort_order, s.sort_order), s.sort_order
       `).all(siteId) as any[];
 
-      // Apply price_override where set
+      // Apply price_override and photo_override where set
       services = services.map(s => ({
         ...s,
         price: s.price_override != null ? s.price_override : s.price,
+        photo_url: s.photo_override ? s.photo_override : s.photo_url,
       }));
     } else {
       // Fallback: all active glamping services (desktop /booking page)

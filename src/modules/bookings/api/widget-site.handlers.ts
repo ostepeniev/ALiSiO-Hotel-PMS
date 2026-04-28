@@ -46,6 +46,7 @@ export async function getWidgetSiteConfig(req: NextRequest) {
       currency: site.currency || 'CZK',
       siteUrl: site.site_url,
       hasPayment,
+      payment_config: payCfg,
     }, { headers: CORS_HEADERS });
   } catch (error: any) {
     console.error('GET /api/booking/site-config error:', error?.message || error);

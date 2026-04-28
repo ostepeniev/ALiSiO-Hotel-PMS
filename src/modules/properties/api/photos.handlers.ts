@@ -14,14 +14,15 @@ export async function uploadPhoto(request: NextRequest) {
     const file = formData.get('file') as File;
     const unitTypeId = formData.get('unit_type_id') as string;
     const propertyId = formData.get('property_id') as string;
+    const miscId = formData.get('misc_id') as string;
     const caption = formData.get('caption') as string || '';
     const sortOrder = parseInt(formData.get('sort_order') as string || '0');
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
-    if (!unitTypeId && !propertyId) {
-      return NextResponse.json({ error: 'unit_type_id or property_id is required' }, { status: 400 });
+    if (!unitTypeId && !propertyId && !miscId) {
+      return NextResponse.json({ error: 'unit_type_id, property_id, or misc_id is required' }, { status: 400 });
     }
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json({ error: 'Invalid file type. Allowed: JPEG, PNG, WebP, AVIF' }, { status: 400 });
@@ -31,14 +32,16 @@ export async function uploadPhoto(request: NextRequest) {
     }
 
     const db = getDb();
-    const entityId = unitTypeId || propertyId;
-    const entityType = unitTypeId ? 'unit_type' : 'property';
+    const entityId = unitTypeId || propertyId || miscId;
+    const entityType = unitTypeId ? 'unit_type' : propertyId ? 'property' : 'misc';
 
-    const table = entityType === 'unit_type' ? 'unit_type_photos' : 'property_photos';
-    const fkCol = entityType === 'unit_type' ? 'unit_type_id' : 'property_id';
-    const count = (db.prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE ${fkCol} = ?`).get(entityId) as any)?.cnt || 0;
-    if (count >= 10) {
-      return NextResponse.json({ error: 'Max 10 photos per entity' }, { status: 400 });
+    if (entityType !== 'misc') {
+      const table = entityType === 'unit_type' ? 'unit_type_photos' : 'property_photos';
+      const fkCol = entityType === 'unit_type' ? 'unit_type_id' : 'property_id';
+      const count = (db.prepare(`SELECT COUNT(*) as cnt FROM ${table} WHERE ${fkCol} = ?`).get(entityId) as any)?.cnt || 0;
+      if (count >= 10) {
+        return NextResponse.json({ error: 'Max 10 photos per entity' }, { status: 400 });
+      }
     }
 
     const dir = path.join(DATA_DIR, entityType, entityId);
@@ -52,14 +55,19 @@ export async function uploadPhoto(request: NextRequest) {
     fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
 
     const url = `/api/photos/${entityType}/${entityId}/${fileName}`;
-    db.prepare(`INSERT INTO ${table} (${fkCol}, url, caption, sort_order) VALUES (?, ?, ?, ?)`)
-      .run(entityId, url, caption, sortOrder);
+    
+    if (entityType !== 'misc') {
+      const table = entityType === 'unit_type' ? 'unit_type_photos' : 'property_photos';
+      const fkCol = entityType === 'unit_type' ? 'unit_type_id' : 'property_id';
+      db.prepare(`INSERT INTO ${table} (${fkCol}, url, caption, sort_order) VALUES (?, ?, ?, ?)`)
+        .run(entityId, url, caption, sortOrder);
 
-    // Sync with unit_types table if it's a unit_type photo
-    if (entityType === 'unit_type') {
-      const allPhotos = db.prepare(`SELECT url FROM unit_type_photos WHERE unit_type_id = ? ORDER BY sort_order ASC, created_at ASC`).all(entityId) as any[];
-      const photosCsv = allPhotos.map(p => p.url).join(',');
-      db.prepare(`UPDATE unit_types SET photos = ? WHERE id = ?`).run(photosCsv, entityId);
+      // Sync with unit_types table if it's a unit_type photo
+      if (entityType === 'unit_type') {
+        const allPhotos = db.prepare(`SELECT url FROM unit_type_photos WHERE unit_type_id = ? ORDER BY sort_order ASC, created_at ASC`).all(entityId) as any[];
+        const photosCsv = allPhotos.map(p => p.url).join(',');
+        db.prepare(`UPDATE unit_types SET photos = ? WHERE id = ?`).run(photosCsv, entityId);
+      }
     }
 
     return NextResponse.json({ success: true, url });

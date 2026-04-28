@@ -23,7 +23,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         COALESCE(ss.is_enabled, 1)    AS is_enabled,
         ss.price_override,
         COALESCE(ss.sort_order, s.sort_order) AS sort_order,
-        ss.id AS site_service_id
+        ss.id AS site_service_id,
+        ss.photo_override
       FROM additional_services s
       LEFT JOIN site_services ss ON ss.service_id = s.id AND ss.site_id = ?
       WHERE s.is_active = 1
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id } = await params;
     const db = getDb();
     const body = await request.json();
-    const { service_id, is_enabled, price_override } = body;
+    const { service_id, is_enabled, price_override, photo_override } = body;
 
     if (!service_id) {
       return NextResponse.json({ error: 'service_id обовʼязковий' }, { status: 400 });
@@ -59,12 +60,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!service) return NextResponse.json({ error: 'Service not found' }, { status: 404 });
 
     db.prepare(`
-      INSERT INTO site_services (site_id, service_id, is_enabled, price_override)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO site_services (site_id, service_id, is_enabled, price_override, photo_override)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(site_id, service_id) DO UPDATE SET
         is_enabled     = excluded.is_enabled,
-        price_override = excluded.price_override
-    `).run(id, service_id, is_enabled !== false ? 1 : 0, price_override ?? null);
+        price_override = excluded.price_override,
+        photo_override = COALESCE(excluded.photo_override, site_services.photo_override)
+    `).run(
+      id, service_id, is_enabled !== false ? 1 : 0, price_override ?? null, 
+      photo_override !== undefined ? (photo_override || null) : null
+    );
+
+    // If photo_override was explicitly passed as null, we need a separate update because COALESCE ignores nulls
+    if (photo_override === null || photo_override === '') {
+      db.prepare('UPDATE site_services SET photo_override = NULL WHERE site_id = ? AND service_id = ?').run(id, service_id);
+    }
 
     const updated = db.prepare(
       'SELECT * FROM site_services WHERE site_id = ? AND service_id = ?'
