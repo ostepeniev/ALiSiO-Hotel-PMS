@@ -158,6 +158,9 @@ export async function getInvoiceHtml(
         COALESCE(NULLIF(g.address,''), rg.address) as guest_address,
         COALESCE(NULLIF(g.city,''),    rg.city)    as guest_city,
         COALESCE(NULLIF(g.country,''),rg.country)  as guest_country,
+        r.invoice_company_name, r.invoice_company_ico, r.invoice_company_dic,
+        r.invoice_company_address, r.invoice_company_city, r.invoice_company_country,
+        r.invoice_company_email,
         p.method as payment_method, p.comment as payment_notes
       FROM invoices i
       JOIN reservations r ON i.reservation_id = r.id
