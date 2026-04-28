@@ -12,6 +12,7 @@ import {
   type HostexReservation,
 } from './hostex';
 import { upsertReceivableForReservation } from '@/modules/finance/data/clearing-engine';
+import { notifyReservationCreated } from '@/modules/bookings/domain/reservation-tg-notify';
 
 // Public URL of the PMS (used to build guest page links sent to Hostex)
 const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
@@ -399,6 +400,11 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       // Write to Hostex custom field — use {{cf.guest_page_url}} in Hostex message templates
       updateReservationCustomField(res.stay_code, { guest_page_url: guestPageUrl }).catch(() => {});
     }
+
+    notifyReservationCreated(newId, {
+      sourceLabel: `Hostex · ${res.channel_type || 'channel'}`,
+      emoji: '🔄',
+    });
 
     result.created++;
   }

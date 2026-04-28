@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { notifyGroupBookingCreated } from '../domain/reservation-tg-notify';
 
 export async function listGroupBookings() {
   try {
@@ -88,10 +89,22 @@ export async function createGroupBooking(request: NextRequest) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const createdResIds: string[] = [];
     for (let i = 0; i < finalUnitIds.length; i++) {
       const resId = `r_${Date.now()}_${i}`;
       insertRes.run(resId, firstUnit.property_id, finalUnitIds[i], guestId, groupId, checkIn, checkOut, nights, 1, 0, 'confirmed', 'unpaid', source || 'direct', pricePerUnit);
+      createdResIds.push(resId);
     }
+
+    notifyGroupBookingCreated({
+      reservationIds: createdResIds,
+      sourceLabel: `Групове · ${source || 'direct'}`,
+      guestName: `${firstName} ${lastName}`,
+      checkIn,
+      checkOut,
+      totalPrice: totalPrice || 0,
+      currency: 'CZK',
+    });
 
     return NextResponse.json({ id: groupId, guestId, roomCount: finalUnitIds.length }, { status: 201 });
   } catch (e: any) {

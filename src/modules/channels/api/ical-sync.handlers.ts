@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
 import { parseICal, extractGuestName } from '@/lib/ical'; // TODO: move to @core/ical
+import { notifyReservationCreated } from '@bookings';
 
 export async function syncIcal(request: NextRequest) {
   try {
@@ -105,6 +106,14 @@ async function syncChannel(db: any, channel: any) {
           guestPageToken, externalUid,
           `iCal import: ${event.summary}`,
         );
+
+        // Skip TG for "Blocked" iCal entries (no guest name) — those are owner closures, not real bookings
+        if (guestName) {
+          notifyReservationCreated(resId, {
+            sourceLabel: `iCal · ${channel.source_code || 'channel'}`,
+            emoji: '📆',
+          });
+        }
 
         eventsCreated++;
       }

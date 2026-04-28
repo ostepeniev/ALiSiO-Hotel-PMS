@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { notifyReservationCreated } from '../domain/reservation-tg-notify';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -199,6 +200,8 @@ export async function createWidgetReservation(request: NextRequest) {
       checkIn, checkOut, nights, adults, children,
       'tentative', 'unpaid', 'direct', finalPrice, null
     );
+
+    notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
 
     return NextResponse.json({
       success: true,
