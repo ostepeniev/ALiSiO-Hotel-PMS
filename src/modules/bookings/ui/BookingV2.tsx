@@ -364,10 +364,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
 
-      const urlPromo = params.get('promo');
-      if (urlPromo) {
-        setPromoCode(urlPromo);
-      }
+
 
       const payStatus = params.get('payment_status');
       const resId = params.get('res_id');
@@ -428,13 +425,6 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
       if (urlPromo) {
         setPromoCode(urlPromo);
-        fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(urlPromo.trim().toUpperCase())}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.valid) {
-              setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
-            }
-          }).catch(() => {});
       }
 
       // Pre-fill from localStorage
