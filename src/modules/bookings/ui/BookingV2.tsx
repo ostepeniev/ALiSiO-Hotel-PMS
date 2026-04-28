@@ -98,6 +98,13 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const [isMounted, setIsMounted] = useState(false);
   const [lang, setLang] = useState<BookingLang>('uk');
   const t = useMemo(() => getBookingTranslations(lang), [lang]);
+
+  const getOccupancyString = (u: any) => {
+    if (u.maxChildren > 0) {
+      return `до ${u.maxAdults} ${t.adults.toLowerCase()} (+${u.maxChildren} ${t.children.toLowerCase()})`;
+    }
+    return `до ${u.maxOccupancy} ${t.guestsShort}`;
+  };
   const [step, setStep] = useState(1);
   const [checkIn, setCheckIn] = useState<string | null>(null);
   const [checkOut, setCheckOut] = useState<string | null>(null);
@@ -544,7 +551,11 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const goToStep = (s: number) => {
     // Skip Step 4 if no services
     if (s === 4 && services.length === 0 && !loadingServices) {
-      setStep(5);
+      if (step === 5) {
+        setStep(3); // Go back from payment to guest info
+      } else {
+        setStep(5); // Go forward from guest info to payment
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -620,7 +631,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         goToStep(4);
       } else {
         const err = await res.json();
-        setError(err.error || 'Failed to book');
+        if (res.status === 409) {
+          setError(null);
+          alert('Вибачте, ці дати для цього будиночка вже заброньовані. Оберіть інший будиночок або дати.');
+          setCheckIn(null);
+          setCheckOut(null);
+          setSelectedUnitId(null);
+          setAvailability(null);
+          goToStep(1);
+        } else {
+          setError(err.error || 'Failed to book');
+        }
       }
     } catch (e) { setError('Connection error'); }
     setSubmitting(false);
@@ -815,7 +836,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <div className="v3-house-lock-label">{t.accommodation}</div>
                 <div className="v3-house-lock-name">{selectedUnit.name}</div>
                 <div className="v3-house-lock-feat">
-                  {selectedUnit.baseOccupancy} {t.guestsShort} · {selectedUnit.typeName}
+                  {getOccupancyString(selectedUnit)} · {selectedUnit.typeName}
                 </div>
                 <div className="v3-house-times">
                   <span>{t.checkInShort || 'Заїзд'} з 15:00</span>
@@ -920,7 +941,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                           }}>
                             <span className="v3-cal-day-num">{d}</span>
                             {dayPrice && !isBusy && !isPast && (
-                              <span className="v3-cal-day-price" style={{ fontSize: '9px', opacity: 0.8, marginTop: '2px', fontWeight: 500 }}>
+                              <span className="v3-cal-day-price">
                                 {Math.round(dayPrice)}
                               </span>
                             )}
@@ -1115,7 +1136,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                           <div className="v3-house-lock-label">{u.typeName}</div>
                           <div className="v3-house-lock-name">{u.name}</div>
                           <div className="v3-house-lock-feat">
-                            до {u.maxOccupancy} {t.guestsShort} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
+                            {getOccupancyString(u)} · <strong>{formatPrice(u.totalPrice, siteCurrency)}</strong>
                           </div>
                         </div>
                         {isSelected && (
@@ -1198,7 +1219,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 )}
               </div>
               <h1 className="v3-house-detail-name">{selectedUnit.name}</h1>
-              <div className="v3-house-detail-meta">{selectedUnit.typeName} · до {selectedUnit.maxOccupancy} {t.guestsShort}</div>
+              <div className="v3-house-detail-meta">{selectedUnit.typeName} · {getOccupancyString(selectedUnit)}</div>
               <div className="v3-amenities">
                 {(selectedUnit.amenities && selectedUnit.amenities.length > 0) ? selectedUnit.amenities.map((a, i) => (
                   <div key={i} className="v3-amenity">
@@ -1320,12 +1341,16 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           <p className="v3-step-sub">{siteConfig?.hasPayment ? t.securePaymentNote : t.paymentSubtitle}</p>
 
           <div className="v3-breakdown">
-            <div className="v3-breakdown-row">
-              <span>
-                {selectedUnit?.name} · {nights} {t.nightsShort}
-                {checkIn && checkOut && ` (${formatDisplayDate(checkIn, lang)} – ${formatDisplayDate(checkOut, lang)})`}
-              </span>
-              <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
+            <div className="v3-breakdown-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
+                <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
+              </div>
+              {checkIn && checkOut && (
+                <div style={{ fontSize: 13, color: 'var(--ink-2)', background: 'rgba(0,0,0,0.03)', padding: '6px 10px', borderRadius: 6, marginTop: 4, width: '100%' }}>
+                  {formatDisplayDate(checkIn, lang)} з 15:00 – {formatDisplayDate(checkOut, lang)} до 11:00
+                </div>
+              )}
             </div>
             {services.filter(s => selectedServiceIds.has(s.id)).map(s => (
               <div key={s.id} className="v3-breakdown-row">
