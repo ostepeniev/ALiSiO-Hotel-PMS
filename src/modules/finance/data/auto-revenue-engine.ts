@@ -27,7 +27,8 @@
 
 export interface AutoRevenuePerSource {
   source: string;       // 'direct' | 'booking' | 'airbnb' | ...
-  total: number;        // sum (already net of commission for reconciled rows)
+  currency: string;     // 'CZK' / 'EUR' — native currency of the reservation
+  total: number;        // sum in `currency`
   reservations: number;
   basis: 'reconciled' | 'raw';   // where this number came from
 }
@@ -37,10 +38,10 @@ export interface AutoRevenueResult {
   unit_id: string | null;      // matched units.id (null when no name match)
   unit_name: string | null;
   year_month: string;
-  total: number;               // sum across sources
+  totals_by_currency: Record<string, number>;  // { CZK: 29314, EUR: 0 } etc
   reservations: number;
-  reconciled_total: number;    // portion that came from reconciled receivables
-  raw_total: number;           // portion that came from raw reservations
+  reconciled_total_by_currency: Record<string, number>;
+  raw_total_by_currency: Record<string, number>;
   by_source: AutoRevenuePerSource[];
 }
 
@@ -121,8 +122,10 @@ export function getAutoRevenue(
     unit_id: unit?.id || null,
     unit_name: unit?.name || null,
     year_month: yearMonth,
-    total: 0, reservations: 0, by_source: [],
-    reconciled_total: 0, raw_total: 0,
+    totals_by_currency: {},
+    reservations: 0, by_source: [],
+    reconciled_total_by_currency: {},
+    raw_total_by_currency: {},
   };
   if (!unit) return result;
 
@@ -130,12 +133,16 @@ export function getAutoRevenue(
 
   // One row per reservation that departed this month, with its receivable
   // (when present). LEFT JOIN so direct bookings still appear.
+  // Each reservation carries its own currency (CZK/EUR) — we keep them
+  // separated so the UI can decide whether to convert or display side-by-side.
   const rows = db.prepare(`
     SELECT r.id            AS reservation_id,
            r.source        AS res_source,
            r.total_price   AS res_total,
+           r.currency      AS res_currency,
            rc.channel_source AS rc_source,
            rc.gross_amount,
+           rc.currency     AS rc_currency,
            rc.status       AS rc_status
     FROM reservations r
     LEFT JOIN fin_channel_receivables rc ON rc.reservation_id = r.id
@@ -147,41 +154,46 @@ export function getAutoRevenue(
     reservation_id: string;
     res_source: string;
     res_total: number;
+    res_currency: string;
     rc_source: string | null;
     gross_amount: number | null;
+    rc_currency: string | null;
     rc_status: string | null;
   }>;
 
-  // Aggregate per source. Always use the GROSS amount — investor's share is
-  // calculated against what the guest paid, not against what the hotel
-  // received after channel commission. The "reconciled" tag only signals
-  // that the platform statement has confirmed this booking; it does not
-  // change the amount used.
-  const bySource = new Map<string, { total: number; n: number; basis: 'reconciled' | 'raw' }>();
+  // Aggregate per (source, currency). Always use the GROSS amount — investor's
+  // share is calculated against what the guest paid (NOT after channel
+  // commission). The "reconciled" tag only signals statement confirmation;
+  // it does not change the amount used.
+  const bySource = new Map<string, { source: string; total: number; n: number; currency: string; basis: 'reconciled' | 'raw' }>();
   for (const r of rows) {
-    // Prefer receivable.gross_amount when present (it's the platform's
-    // confirmed price); otherwise fall back to the reservation's total_price.
     const amount = (r.gross_amount != null ? r.gross_amount : r.res_total) || 0;
+    const currency = r.rc_currency || r.res_currency || 'CZK';
     const isReconciled = r.rc_status === 'paid' || r.rc_status === 'in_statement';
     const basis: 'reconciled' | 'raw' = isReconciled ? 'reconciled' : 'raw';
     const source = r.rc_source || r.res_source;
-    if (isReconciled) result.reconciled_total += amount;
-    else result.raw_total += amount;
-    const cell = bySource.get(source) || { total: 0, n: 0, basis };
+
+    const cur = (bucket: Record<string, number>) => { bucket[currency] = (bucket[currency] || 0) + amount; };
+    cur(result.totals_by_currency);
+    if (isReconciled) cur(result.reconciled_total_by_currency);
+    else cur(result.raw_total_by_currency);
+
+    const key = `${source}|${currency}`;
+    const cell = bySource.get(key) || { source, total: 0, n: 0, currency, basis };
     cell.total += amount;
     cell.n += 1;
-    if (basis === 'reconciled') cell.basis = 'reconciled';   // upgrade if any reconciled
-    bySource.set(source, cell);
-    result.total += amount;
+    if (basis === 'reconciled') cell.basis = 'reconciled';
+    bySource.set(key, cell);
     result.reservations += 1;
   }
 
-  result.by_source = [...bySource.entries()]
-    .map(([source, c]) => ({ source, total: +c.total.toFixed(2), reservations: c.n, basis: c.basis }))
+  result.by_source = [...bySource.values()]
+    .map((c) => ({ source: c.source, total: +c.total.toFixed(2), reservations: c.n, currency: c.currency, basis: c.basis }))
     .sort((a, b) => b.total - a.total);
-  result.total = +result.total.toFixed(2);
-  result.reconciled_total = +result.reconciled_total.toFixed(2);
-  result.raw_total = +result.raw_total.toFixed(2);
+  // round per-currency totals
+  for (const k of Object.keys(result.totals_by_currency)) result.totals_by_currency[k] = +result.totals_by_currency[k].toFixed(2);
+  for (const k of Object.keys(result.reconciled_total_by_currency)) result.reconciled_total_by_currency[k] = +result.reconciled_total_by_currency[k].toFixed(2);
+  for (const k of Object.keys(result.raw_total_by_currency)) result.raw_total_by_currency[k] = +result.raw_total_by_currency[k].toFixed(2);
   return result;
 }
 
@@ -207,7 +219,8 @@ export function getAutoRevenueAllProjects(
 
 export interface InvestorSourceBreakdown {
   source: string;
-  total_share: number;        // investor's share (after equity_pct)
+  currency: string;           // native currency of the bookings
+  total_share: number;        // investor's share (equity_pct × gross), in `currency`
   reservations: number;
   basis: 'reconciled' | 'mixed' | 'raw';
 }
@@ -236,7 +249,8 @@ export function getInvestorIncomeBySource(
   const map = buildProjectToUnitMap(db, investorRow.organization_id);
 
   const today = new Date().toISOString().substring(0, 10);
-  const bySource = new Map<string, { total: number; n: number; reconciledShare: number }>();
+  // Key by source + currency so CZK and EUR don't get summed together.
+  const bySource = new Map<string, { source: string; currency: string; total: number; n: number; reconciledShare: number }>();
 
   for (const inv of investments) {
     const unit = map.get(inv.project_id);
@@ -250,8 +264,9 @@ export function getInvestorIncomeBySource(
     if (toMonth)   { where.push("substr(r.check_out, 1, 7) <= ?"); params.push(toMonth); }
 
     const rows = db.prepare(`
-      SELECT r.source AS res_source, r.total_price AS res_total,
-             rc.channel_source AS rc_source, rc.gross_amount, rc.status AS rc_status
+      SELECT r.source AS res_source, r.total_price AS res_total, r.currency AS res_currency,
+             rc.channel_source AS rc_source, rc.gross_amount, rc.currency AS rc_currency,
+             rc.status AS rc_status
       FROM reservations r
       LEFT JOIN fin_channel_receivables rc ON rc.reservation_id = r.id
       WHERE ${where.join(' AND ')}
@@ -261,23 +276,25 @@ export function getInvestorIncomeBySource(
       // Always use gross — investor's equity_pct applies to the price the
       // guest paid, not to what the hotel netted after channel commission.
       const amount = (r.gross_amount != null ? r.gross_amount : r.res_total) || 0;
+      const currency = r.rc_currency || r.res_currency || 'CZK';
       const isReconciled = r.rc_status === 'paid' || r.rc_status === 'in_statement';
       const source = r.rc_source || r.res_source;
       const share = amount * eq;
-      const cell = bySource.get(source) || { total: 0, n: 0, reconciledShare: 0 };
+      const key = `${source}|${currency}`;
+      const cell = bySource.get(key) || { source, currency, total: 0, n: 0, reconciledShare: 0 };
       cell.total += share;
       cell.n += 1;
       if (isReconciled) cell.reconciledShare += share;
-      bySource.set(source, cell);
+      bySource.set(key, cell);
     }
   }
 
-  return [...bySource.entries()]
-    .map(([source, c]) => {
+  return [...bySource.values()]
+    .map((c) => {
       let basis: 'reconciled' | 'mixed' | 'raw' = 'raw';
       if (c.reconciledShare === c.total && c.total > 0) basis = 'reconciled';
       else if (c.reconciledShare > 0) basis = 'mixed';
-      return { source, total_share: +c.total.toFixed(2), reservations: c.n, basis };
+      return { source: c.source, currency: c.currency, total_share: +c.total.toFixed(2), reservations: c.n, basis };
     })
     .sort((a, b) => b.total_share - a.total_share);
 }

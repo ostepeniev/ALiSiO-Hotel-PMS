@@ -18,14 +18,20 @@ interface AutoRevenue {
   unit_id: string | null;
   unit_name: string | null;
   year_month: string;
-  total: number;
+  totals_by_currency: Record<string, number>;
   reservations: number;
-  reconciled_total: number;
-  raw_total: number;
-  by_source: { source: string; total: number; reservations: number; basis: 'reconciled' | 'raw' }[];
+  reconciled_total_by_currency: Record<string, number>;
+  raw_total_by_currency: Record<string, number>;
+  by_source: { source: string; currency: string; total: number; reservations: number; basis: 'reconciled' | 'raw' }[];
 }
 
-interface Project { id: string; name: string }
+interface Project { id: string; name: string; is_active?: number }
+
+function fmtCurrencies(by: Record<string, number>): string {
+  const entries = Object.entries(by).filter(([, v]) => v > 0);
+  if (entries.length === 0) return '0';
+  return entries.map(([cur, v]) => `${v.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`).join(' + ');
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   direct: 'Direct', phone: 'Phone', whatsapp: 'WhatsApp',
@@ -50,12 +56,15 @@ export default function MetricsTab() {
       if (filter) params.set('project_id', filter);
       const [mRes, pRes, aRes] = await Promise.all([
         fetch(`/api/finance/investor-monthly-metrics?${params}`),
-        fetch('/api/finance/investor-projects'),
+        // investor-properties returns ONLY BUs that have an active
+        // investor_investment — i.e. the 6 houses (A1..B6), not the 5-6
+        // finance buckets. Exactly what the dropdown should show.
+        fetch('/api/finance/investor-properties'),
         fetch(`/api/finance/investor-auto-revenue?year_month=${autoMonth}`),
       ]);
       const [mJ, pJ, aJ] = await Promise.all([mRes.json(), pRes.json(), aRes.json()]);
       setItems(mJ.items || []);
-      setProjects(pJ.items || []);
+      setProjects(((pJ.items || []) as Array<{ project_id: string; name: string }>).map((p) => ({ id: p.project_id, name: p.name })));
       const map = new Map<string, AutoRevenue>();
       for (const a of (aJ.items || []) as AutoRevenue[]) map.set(a.project_id, a);
       setAutoForMonth(map);
@@ -77,16 +86,21 @@ export default function MetricsTab() {
     const auto = autoForMonth.get(projectId);
     if (!auto) return;
     if (!auto.unit_id) {
-      alert(`Не знайдено glamping-юніт з назвою business_unit. Перейменуйте business_unit щоб збігався з units.name (A1, B2 тощо).`);
+      alert(`Не знайдено glamping-юніт з назвою business_unit. Перейменуйте business_unit щоб збігався з units.name (A1, B2 тощо), або зматчіть вручну на сторінці audit.`);
       return;
     }
-    if (!confirm(`Записати auto-revenue ${auto.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} EUR за ${autoMonth} як метрику для цього проєкту?`)) return;
+    // Pick the dominant currency (largest sum). User can override via manual.
+    const currencies = Object.entries(auto.totals_by_currency).sort(([, a], [, b]) => b - a);
+    if (currencies.length === 0) { alert('Жодного бронювання за цей місяць.'); return; }
+    const [topCurrency, topAmount] = currencies[0];
+    const fmtSum = fmtCurrencies(auto.totals_by_currency);
+    if (!confirm(`Записати ${fmtSum} за ${autoMonth} як метрику?\n(зберігаємо ${topAmount.toFixed(2)} ${topCurrency} — основна валюта)`)) return;
     const res = await fetch('/api/finance/investor-monthly-metrics', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         project_id: projectId, year_month: autoMonth,
-        occupancy_pct: null, revenue: auto.total,
-        notes: `Авто з ${auto.reservations} бронювань (${auto.unit_name}) станом на ${new Date().toISOString().substring(0,10)}`,
+        occupancy_pct: null, revenue: topAmount,
+        notes: `Авто з ${auto.reservations} бронювань (${auto.unit_name}) — ${fmtSum} · ${new Date().toISOString().substring(0,10)}`,
       }),
     });
     if (!res.ok) { const j = await res.json(); alert(`Помилка: ${j.error}`); return; }
@@ -143,39 +157,41 @@ export default function MetricsTab() {
                     {!a.unit_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>⚠ юніт не зматчено</span>}
                   </div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>
-                    {a.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} EUR
+                    {fmtCurrencies(a.totals_by_currency)}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                     {a.reservations} бронювань
                     {a.unit_name && <> · юніт: {a.unit_name}</>}
                   </div>
-                  {(a.reconciled_total > 0 || a.raw_total > 0) && (
-                    <div style={{ display: 'flex', gap: 8, fontSize: 10, marginTop: 2 }}>
-                      {a.reconciled_total > 0 && <span style={{ color: '#16a34a' }}>✓ reconciled: {a.reconciled_total.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}</span>}
-                      {a.raw_total > 0 && <span style={{ color: '#f59e0b' }}>⏳ raw: {a.raw_total.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}</span>}
+                  {(Object.keys(a.reconciled_total_by_currency).length > 0 || Object.keys(a.raw_total_by_currency).length > 0) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10, marginTop: 2 }}>
+                      {Object.keys(a.reconciled_total_by_currency).length > 0 &&
+                        <span style={{ color: '#16a34a' }}>✓ reconciled: {fmtCurrencies(a.reconciled_total_by_currency)}</span>}
+                      {Object.keys(a.raw_total_by_currency).length > 0 &&
+                        <span style={{ color: '#f59e0b' }}>⏳ raw: {fmtCurrencies(a.raw_total_by_currency)}</span>}
                     </div>
                   )}
                   {a.by_source.length > 0 && (
                     <details style={{ marginTop: 4 }}>
                       <summary style={{ fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer' }}>За джерелами</summary>
                       <div style={{ fontSize: 11, marginTop: 4 }}>
-                        {a.by_source.map((s) => (
-                          <div key={s.source} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                        {a.by_source.map((s, i) => (
+                          <div key={`${s.source}-${s.currency}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                             <span>
                               {SOURCE_LABEL[s.source] || s.source}
                               <span style={{ fontSize: 9, marginLeft: 4, padding: '0 4px', borderRadius: 3, background: s.basis === 'reconciled' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)', color: s.basis === 'reconciled' ? '#16a34a' : '#92400e' }}>
                                 {s.basis === 'reconciled' ? '✓' : '⏳'}
                               </span>
                             </span>
-                            <span>{s.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} ({s.reservations})</span>
+                            <span>{s.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} {s.currency} ({s.reservations})</span>
                           </div>
                         ))}
                       </div>
                     </details>
                   )}
                   <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                    <button onClick={() => applyAuto(a.project_id)} disabled={!a.unit_id || a.total === 0}
-                            style={{ ...btn, fontSize: 11, padding: '4px 8px', background: '#16a34a', color: '#fff', border: 'none', opacity: a.unit_id && a.total > 0 ? 1 : 0.5 }}>
+                    <button onClick={() => applyAuto(a.project_id)} disabled={!a.unit_id || Object.keys(a.totals_by_currency).length === 0}
+                            style={{ ...btn, fontSize: 11, padding: '4px 8px', background: '#16a34a', color: '#fff', border: 'none', opacity: (a.unit_id && Object.keys(a.totals_by_currency).length > 0) ? 1 : 0.5 }}>
                       <Zap size={11} /> {matched ? 'Перезаписати' : 'Застосувати'}
                     </button>
                     {matched && (
