@@ -308,6 +308,7 @@ export {
   listInvestorProperties, listMonthlyReports, getMonthlyDigest, getTelegramStatus,
   getAutoRevenueForMonth,
 } from './investors.handlers';
+export { getInvestorAudit } from './investor-audit.handlers';
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
   createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,
