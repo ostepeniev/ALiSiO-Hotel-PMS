@@ -76,6 +76,48 @@ export default function BookingViewModal({
   const [invoice, setInvoice] = useState<{ id: string; invoice_number: string; issued_at: string; amount: number; currency: string } | null>(null);
   const [reissuing, setReissuing] = useState(false);
 
+  // Invoice-to-company override (rendered as Odberatel block in faktura HTML).
+  const bAny = b as any;
+  const [companyMode, setCompanyMode] = useState(!!bAny.invoice_company_name);
+  const [company, setCompany] = useState({
+    name: bAny.invoice_company_name || '',
+    ico: bAny.invoice_company_ico || '',
+    dic: bAny.invoice_company_dic || '',
+    address: bAny.invoice_company_address || '',
+    city: bAny.invoice_company_city || '',
+    country: bAny.invoice_company_country || '',
+    email: bAny.invoice_company_email || '',
+  });
+  const [savingCompany, setSavingCompany] = useState(false);
+
+  const persistCompany = async (mode: boolean, fields: typeof company) => {
+    setSavingCompany(true);
+    try {
+      const payload = mode
+        ? {
+            invoice_company_name: fields.name || null,
+            invoice_company_ico: fields.ico || null,
+            invoice_company_dic: fields.dic || null,
+            invoice_company_address: fields.address || null,
+            invoice_company_city: fields.city || null,
+            invoice_company_country: fields.country || null,
+            invoice_company_email: fields.email || null,
+          }
+        : {
+            invoice_company_name: null, invoice_company_ico: null, invoice_company_dic: null,
+            invoice_company_address: null, invoice_company_city: null, invoice_company_country: null,
+            invoice_company_email: null,
+          };
+      const res = await fetch(`/api/bookings/${b.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) showToast('❌ Не вдалося зберегти');
+    } catch { showToast('❌ Помилка'); }
+    finally { setSavingCompany(false); }
+  };
+
   // Load current invoice whenever modal opens or booking changes
   useEffect(() => {
     if (!b?.id) return;
@@ -355,6 +397,84 @@ export default function BookingViewModal({
                 onClick={async () => { const ns = b.payment_status === 'payment_requested' ? 'unpaid' : 'payment_requested'; await fetch(`/api/bookings/${b.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_status: ns }) }); setBooking({ ...b, payment_status: ns }); onFetchBookings(); showToast(ns === 'payment_requested' ? 'Запит надіслано' : 'Скасовано'); }}>
                 ✉ Запит оплати
               </button>
+
+              {/* ── Invoice-to-company override ── */}
+              <div style={{ marginTop: 8, padding: '10px 14px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={companyMode}
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      setCompanyMode(next);
+                      await persistCompany(next, company);
+                      if (invoice) {
+                        showToast('ℹ️ Натисни "Перевиставити" щоб оновити фактуру');
+                      }
+                    }}
+                  />
+                  🏢 Виставити фактуру на компанію
+                  {savingCompany && <Loader2 size={12} className="animate-spin" style={{ marginLeft: 'auto' }} />}
+                </label>
+                {companyMode && (
+                  <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input
+                      placeholder="Назва компанії *"
+                      value={company.name}
+                      onChange={(e) => setCompany({ ...company, name: e.target.value })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ gridColumn: 'span 2', padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    <input
+                      placeholder="IČO"
+                      value={company.ico}
+                      onChange={(e) => setCompany({ ...company, ico: e.target.value })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    <input
+                      placeholder="DIČ (опціонально)"
+                      value={company.dic}
+                      onChange={(e) => setCompany({ ...company, dic: e.target.value })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    <input
+                      placeholder="Адреса"
+                      value={company.address}
+                      onChange={(e) => setCompany({ ...company, address: e.target.value })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ gridColumn: 'span 2', padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    <input
+                      placeholder="Місто"
+                      value={company.city}
+                      onChange={(e) => setCompany({ ...company, city: e.target.value })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    <input
+                      placeholder="Країна (CZ, SK, DE, …)"
+                      value={company.country}
+                      onChange={(e) => setCompany({ ...company, country: e.target.value.toUpperCase() })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    <input
+                      placeholder="Email"
+                      value={company.email}
+                      onChange={(e) => setCompany({ ...company, email: e.target.value })}
+                      onBlur={() => persistCompany(true, company)}
+                      style={{ gridColumn: 'span 2', padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 4 }}
+                    />
+                    {invoice && (
+                      <div style={{ gridColumn: 'span 2', fontSize: 11, color: 'var(--text-tertiary)' }}>
+                        ℹ️ Після зміни — натисни "Перевиставити" в блоці фактури нижче, щоб оновити документ.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* ── Invoice block ── */}
               {invoice ? (

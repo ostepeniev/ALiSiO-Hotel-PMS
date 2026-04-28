@@ -2926,7 +2926,25 @@ function runMigrations(database: any) {
     if (!resCols.includes('group_lead_id'))
       database.exec("ALTER TABLE reservations ADD COLUMN group_lead_id TEXT");
     database.exec('CREATE INDEX IF NOT EXISTS idx_reservations_deposit_session ON reservations(deposit_session_id)');
-    console.log('[DB] Camping + deposit columns migrated');
+    // Invoice-to-company override: when invoice_company_name is set, the
+    // generated faktura uses these fields instead of the personal guest data
+    // for the Odberatel block. Other reservations keep rendering as physical-
+    // person invoices.
+    if (!resCols.includes('invoice_company_name'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_name TEXT");
+    if (!resCols.includes('invoice_company_ico'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_ico TEXT");
+    if (!resCols.includes('invoice_company_dic'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_dic TEXT");
+    if (!resCols.includes('invoice_company_address'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_address TEXT");
+    if (!resCols.includes('invoice_company_city'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_city TEXT");
+    if (!resCols.includes('invoice_company_country'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_country TEXT");
+    if (!resCols.includes('invoice_company_email'))
+      database.exec("ALTER TABLE reservations ADD COLUMN invoice_company_email TEXT");
+    console.log('[DB] Camping + deposit + invoice-company columns migrated');
     // Waitlist table
     database.exec(`
       CREATE TABLE IF NOT EXISTS waitlist (
