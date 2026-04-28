@@ -2,17 +2,21 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Users, Briefcase, BarChart3, DollarSign, ArrowLeft, Database, Building2, FileText, Send } from 'lucide-react';
+import { Users, Briefcase, BarChart3, DollarSign, ArrowLeft, Building2, FileText, Send } from 'lucide-react';
 import InvestorsTab from './_components/InvestorsTab';
 import InvestmentsTab from './_components/InvestmentsTab';
 import MetricsTab from './_components/MetricsTab';
 import PayoutsTab from './_components/PayoutsTab';
-import SupabaseImportTab from './_components/SupabaseImportTab';
 import PropertiesTab from './_components/PropertiesTab';
 import MonthlyReportsTab from './_components/MonthlyReportsTab';
 import MonthlyDigestTab from './_components/MonthlyDigestTab';
 
-type TabId = 'properties' | 'investors' | 'investments' | 'metrics' | 'reports' | 'payouts' | 'digest' | 'supabase';
+// Supabase import tab was a one-off bootstrap (PR #36/#37). Hidden from
+// nav after successful import. The SupabaseImportTab component, route
+// /finance/investors/supabase-import, and importFromSupabase handler
+// remain in code so the data path is still exercised by tests, but no
+// new users are funneled there.
+type TabId = 'properties' | 'investors' | 'investments' | 'metrics' | 'reports' | 'payouts' | 'digest';
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'properties',  label: 'Об\'єкти',             icon: <Building2 size={16} /> },
@@ -22,7 +26,6 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'reports',     label: 'Місячні звіти',       icon: <FileText size={16} /> },
   { id: 'payouts',     label: 'Виплати',             icon: <DollarSign size={16} /> },
   { id: 'digest',      label: 'Зведення місяця',     icon: <Send size={16} /> },
-  { id: 'supabase',    label: 'Import з Supabase',   icon: <Database size={16} /> },
 ];
 
 export default function InvestorsAdminPage() {
@@ -59,7 +62,6 @@ export default function InvestorsAdminPage() {
       {tab === 'reports' && <MonthlyReportsTab />}
       {tab === 'payouts' && <PayoutsTab />}
       {tab === 'digest' && <MonthlyDigestTab />}
-      {tab === 'supabase' && <SupabaseImportTab />}
     </div>
   );
 }
