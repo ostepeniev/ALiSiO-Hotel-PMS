@@ -93,10 +93,10 @@ interface DesignConfig {
   show_shadow?: boolean;
 }
 
-export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean }) {
+export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPreview, lang: initialLang }: { siteId?: string, siteSlug?: string, thankYouUrl?: string, design?: DesignConfig, isPreview?: boolean, lang?: BookingLang }) {
   // ─── State ───
   const [isMounted, setIsMounted] = useState(false);
-  const [lang, setLang] = useState<BookingLang>('uk');
+  const [lang, setLang] = useState<BookingLang>(initialLang || 'uk');
   const t = useMemo(() => getBookingTranslations(lang), [lang]);
 
   const getOccupancyString = (u: any) => {
@@ -192,6 +192,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
       const l = params.get('lang')
         || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
+        || initialLang
         || getBrowserLang()
         || null;
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
@@ -531,6 +532,21 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const handleDayClick = (dateStr: string) => {
     const clickedDate = parseDate(dateStr);
     if (clickedDate < today) return;
+
+    // Toggle off if clicking the only selected date
+    if (dateStr === checkIn && !checkOut) {
+      setCheckIn(null);
+      setSelectingCheckOut(false);
+      return;
+    }
+    
+    // Toggle off everything if clicking either end of a selected range
+    if (checkIn && checkOut && (dateStr === checkIn || dateStr === checkOut)) {
+      setCheckIn(null);
+      setCheckOut(null);
+      setSelectingCheckOut(false);
+      return;
+    }
 
     if (!checkIn || (checkIn && checkOut) || !selectingCheckOut) {
       setCheckIn(dateStr);
@@ -1347,7 +1363,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
               </div>
               {checkIn && checkOut && (
-                <div style={{ fontSize: 13, color: 'var(--ink-2)', background: 'rgba(0,0,0,0.03)', padding: '6px 10px', borderRadius: 6, marginTop: 4, width: '100%' }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4, width: '100%' }}>
                   {formatDisplayDate(checkIn, lang)} з 15:00 – {formatDisplayDate(checkOut, lang)} до 11:00
                 </div>
               )}
