@@ -36,6 +36,15 @@ export interface InvoiceData {
   guest_country?: string | null;
   payment_method?: string | null;
   payment_notes?: string | null;
+  // Optional invoice-to-company override. When invoice_company_name is non-empty,
+  // the Odberatel block renders these fields instead of the personal guest data.
+  invoice_company_name?: string | null;
+  invoice_company_ico?: string | null;
+  invoice_company_dic?: string | null;
+  invoice_company_address?: string | null;
+  invoice_company_city?: string | null;
+  invoice_company_country?: string | null;
+  invoice_company_email?: string | null;
 }
 
 const SUPPLIER = {
@@ -112,6 +121,33 @@ export function renderInvoiceHtml(data: InvoiceData): string {
   if (data.guest_address) guestAddressLines.push(data.guest_address);
   if (data.guest_city) guestAddressLines.push(data.guest_city);
   if (data.guest_country) guestAddressLines.push(formatCountry(data.guest_country));
+
+  // Buyer (Odberatel) — when invoice_company_name is set, render company
+  // identity per § 29 Zákona č. 235/2004 Sb. (IČO required, DIČ optional).
+  const isCompanyInvoice = !!(data.invoice_company_name && data.invoice_company_name.trim());
+  let buyerLabel: string;
+  let buyerHtml: string;
+  if (isCompanyInvoice) {
+    const companyAddrLines: string[] = [];
+    if (data.invoice_company_address) companyAddrLines.push(data.invoice_company_address);
+    if (data.invoice_company_city) companyAddrLines.push(data.invoice_company_city);
+    if (data.invoice_company_country) companyAddrLines.push(formatCountry(data.invoice_company_country));
+    buyerLabel = 'Odběratel';
+    buyerHtml = [
+      `<strong>${data.invoice_company_name}</strong>`,
+      ...companyAddrLines,
+      data.invoice_company_ico ? `IČO: ${data.invoice_company_ico}` : null,
+      data.invoice_company_dic ? `DIČ: ${data.invoice_company_dic}` : null,
+      data.invoice_company_email ? data.invoice_company_email : null,
+    ].filter(Boolean).join('<br>');
+  } else {
+    buyerLabel = 'Odběratel (host)';
+    buyerHtml = [
+      `<strong>${guestName}</strong>`,
+      guestAddressLines.length > 0 ? guestAddressLines.join('<br>') : '<span style="color:#9ca3af">Adresa neuvedena</span>',
+      data.guest_email ? data.guest_email : null,
+    ].filter(Boolean).join('<br>');
+  }
 
   return `<!DOCTYPE html>
 <html lang="cs">
@@ -533,12 +569,8 @@ export function renderInvoiceHtml(data: InvoiceData): string {
           </div>
         </div>
         <div class="meta-block">
-          <div class="label">Odběratel (host)</div>
-          <div class="value">
-            <strong>${guestName}</strong><br>
-            ${guestAddressLines.join('<br>') || '<span style="color:#9ca3af">Adresa neuvedena</span>'}
-            ${data.guest_email ? `<br>${data.guest_email}` : ''}
-          </div>
+          <div class="label">${buyerLabel}</div>
+          <div class="value">${buyerHtml}</div>
         </div>
       </div>
 

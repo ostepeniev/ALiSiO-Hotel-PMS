@@ -41,7 +41,16 @@ export async function updateReservation(request: NextRequest, { params }: { para
 
     console.log('[PATCH] booking id:', id, 'body:', JSON.stringify(body));
 
-    const allowed = ['unit_id', 'check_in', 'check_out', 'nights', 'adults', 'children', 'infants', 'status', 'payment_status', 'source', 'total_price', 'commission_amount', 'notes', 'internal_notes', 'city_tax_amount', 'city_tax_included', 'city_tax_paid', 'registration_status'];
+    const allowed = [
+      'unit_id', 'check_in', 'check_out', 'nights', 'adults', 'children', 'infants',
+      'status', 'payment_status', 'source', 'total_price', 'commission_amount',
+      'notes', 'internal_notes',
+      'city_tax_amount', 'city_tax_included', 'city_tax_paid', 'registration_status',
+      // Invoice-to-company override fields (PATCH from BookingViewModal)
+      'invoice_company_name', 'invoice_company_ico', 'invoice_company_dic',
+      'invoice_company_address', 'invoice_company_city', 'invoice_company_country',
+      'invoice_company_email',
+    ];
     const sets: string[] = [];
     const values: (string | number)[] = [];
 
