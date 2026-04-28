@@ -356,7 +356,7 @@ export async function bookWidgetService(request: NextRequest) {
       return NextResponse.json({ success: true, items: orderDetails, totalPrice }, { status: 201, headers: CORS_HEADERS });
 
     } else if (action === 'book-toggle') {
-      const { serviceId, reservationId } = body;
+      const { serviceId, reservationId, quantity: reqQuantity } = body;
 
       if (!serviceId || !reservationId) {
         return NextResponse.json({ error: 'serviceId and reservationId required' }, { status: 400, headers: CORS_HEADERS });
@@ -367,6 +367,7 @@ export async function bookWidgetService(request: NextRequest) {
         return NextResponse.json({ error: 'Service not found' }, { status: 404, headers: CORS_HEADERS });
       }
 
+      const qty = reqQuantity || 1;
       const existingTables = new Set(
         (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
           .map(t => t.name)
@@ -383,8 +384,8 @@ export async function bookWidgetService(request: NextRequest) {
           const orderId = `bso_${Date.now()}_${serviceId}`;
           db.prepare(`
             INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, unit_price, total_price, status)
-            VALUES (?, ?, ?, 1, ?, ?, 'confirmed')
-          `).run(orderId, reservationId, serviceId, service.price, service.price);
+            VALUES (?, ?, ?, ?, ?, ?, 'confirmed')
+          `).run(orderId, reservationId, serviceId, qty, service.price, service.price * qty);
         }
       }
 
