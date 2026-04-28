@@ -103,6 +103,7 @@ export interface BookingTranslations {
   earlyCheckinTitle: string;
   // Step 5
   paymentTitle: string;
+  paymentSubtitle: string;
   securePaymentNote: string;
   additionalServices: string;
   total: string;
@@ -110,14 +111,54 @@ export interface BookingTranslations {
   processing: string;
   including: string;
   extraPersonCharge: string;
+  redirectingToPayment: string;
+  paymentFailed: string;
+  paymentFailedDesc: string;
+  tryAgain: string;
+  paymentSuccess: string;
+  paymentSuccessDesc: string;
   // Step 6
   bookedSuccess: string;
+  bookingSuccess: string;
+  bookingSuccessDesc: string;
   bookingNumber: string;
+  bookingId: string;
   accommodation: string;
+  houseName: string;
+  nights: string;
+  discount: string;
+  serviceTotal: string;
+  weWillContact: string;
+  purchasedServicesTitle: string;
+  backToStart: string;
   supportContactNote: string;
+  finishBooking: string;
+  poweredBy: string;
   // CTA
   guestsShort: string;
+  // Error / messages
+  errorOccurred: string;
+  promoApplied: string;
+  // Step 2 extras
+  yourChoice: string;
+  yourHouse: string;
+  bookingDetails: string;
+  // Step 4 extras
+  breakfastInfo: string;
+  wantButton: string;
+  servicesEmpty: string;
+  tubDesc: string;
+  tubPerHour: string;
+  tubAddToBooking: string;
+  lateCheckoutDesc: string;
+  earlyCheckinDesc: string;
+  skipToThankYou: string;
+  confirmServices: string;
   // Additional (for V3 and others)
+  checkInShort: string;
+  checkOutShort: string;
+  yourSelection: string;
+  night: string;
   youSelected?: string;
   checkDetailsBelow?: string;
   from?: string;
@@ -214,11 +255,49 @@ const translations: Record<BookingLang, any> = {
     processing: 'Обробка...',
     including: 'Включаючи всі податки',
     extraPersonCharge: 'Доплата за додаткову людину',
+    redirectingToPayment: 'Перенаправлення на оплату...',
+    paymentFailed: 'Оплата не пройшла',
+    paymentFailedDesc: 'Сталась помилка при обробці платежу. Спробуйте ще раз.',
+    tryAgain: 'Спробувати знову',
+    paymentSuccess: 'Оплата успішна!',
+    paymentSuccessDesc: 'Ваш платіж прийнято.',
     bookedSuccess: 'Заброньовано!',
+    bookingSuccess: 'Бронювання підтверджено!',
+    bookingSuccessDesc: 'Дякуємо за бронювання. Ми надіслали підтвердження на ваш email.',
     bookingNumber: 'Номер бронювання',
+    bookingId: 'ID бронювання',
     accommodation: 'Будинок',
+    houseName: 'Будинок',
+    nights: 'Ночей',
+    discount: 'Знижка',
+    serviceTotal: 'Сума за сервіси',
+    weWillContact: 'Ми звʼяжемося з вами незабаром.',
+    purchasedServicesTitle: 'Придбані сервіси',
+    backToStart: 'На початок',
     supportContactNote: "Якщо щось — пиши на hello@qa-glamping.eu або +420 773 708 849",
+    finishBooking: 'Завершити',
+    poweredBy: 'Powered by ALiSiO',
     guestsShort: 'гостей',
+    errorOccurred: 'Сталась помилка. Спробуйте ще раз.',
+    promoApplied: 'Промокод застосовано!',
+    yourChoice: 'Ваш вибір',
+    yourHouse: 'Ваш будинок',
+    bookingDetails: 'Деталі бронювання',
+    breakfastInfo: 'Сніданок включено',
+    wantButton: 'Хочу',
+    servicesEmpty: 'Немає доступних сервісів',
+    tubDesc: 'Дерев\'яний чан з підігрівом на вулиці',
+    tubPerHour: 'год',
+    tubAddToBooking: 'Додати чан',
+    lateCheckoutDesc: 'Виїзд до 14:00 замість 11:00',
+    earlyCheckinDesc: 'Заїзд з 12:00 замість 15:00',
+    skipToThankYou: 'Пропустити і завершити',
+    confirmServices: 'Підтвердити сервіси',
+    paymentSubtitle: 'Обери спосіб оплати',
+    checkInShort: 'Заїзд',
+    checkOutShort: 'Виїзд',
+    yourSelection: 'Ваш вибір',
+    night: 'ніч',
     youSelected: 'Ти обрав',
     checkDetailsBelow: 'Перевір деталі нижче.',
     from: 'з',
@@ -313,11 +392,49 @@ const translations: Record<BookingLang, any> = {
     processing: 'Processing...',
     including: 'Including all taxes',
     extraPersonCharge: 'Extra person charge',
+    redirectingToPayment: 'Redirecting to payment...',
+    paymentFailed: 'Payment failed',
+    paymentFailedDesc: 'An error occurred while processing your payment. Please try again.',
+    tryAgain: 'Try again',
+    paymentSuccess: 'Payment successful!',
+    paymentSuccessDesc: 'Your payment has been accepted.',
     bookedSuccess: 'Booked!',
+    bookingSuccess: 'Booking confirmed!',
+    bookingSuccessDesc: 'Thank you for your booking. We sent a confirmation to your email.',
     bookingNumber: 'Booking Number',
+    bookingId: 'Booking ID',
     accommodation: 'House',
+    houseName: 'House',
+    nights: 'Nights',
+    discount: 'Discount',
+    serviceTotal: 'Services total',
+    weWillContact: 'We will contact you shortly.',
+    purchasedServicesTitle: 'Purchased services',
+    backToStart: 'Back to start',
     supportContactNote: "If any questions — contact hello@qa-glamping.eu or +420 773 708 849",
+    finishBooking: 'Finish',
+    poweredBy: 'Powered by ALiSiO',
     guestsShort: 'guests',
+    errorOccurred: 'An error occurred. Please try again.',
+    promoApplied: 'Promo code applied!',
+    yourChoice: 'Your choice',
+    yourHouse: 'Your house',
+    bookingDetails: 'Booking details',
+    breakfastInfo: 'Breakfast included',
+    wantButton: 'I want it',
+    servicesEmpty: 'No services available',
+    tubDesc: 'Outdoor heated wooden hot tub',
+    tubPerHour: 'hr',
+    tubAddToBooking: 'Add hot tub',
+    lateCheckoutDesc: 'Check-out by 14:00 instead of 11:00',
+    earlyCheckinDesc: 'Check-in from 12:00 instead of 15:00',
+    skipToThankYou: 'Skip and finish',
+    confirmServices: 'Confirm services',
+    paymentSubtitle: 'Choose payment method',
+    checkInShort: 'Check-in',
+    checkOutShort: 'Check-out',
+    yourSelection: 'Your selection',
+    night: 'night',
     youSelected: 'You selected',
     checkDetailsBelow: 'Check details below.',
     from: 'from',
@@ -412,11 +529,49 @@ const translations: Record<BookingLang, any> = {
     processing: 'Zpracování...',
     including: 'Včetně všech daní',
     extraPersonCharge: 'Příplatek za další osobu',
+    redirectingToPayment: 'Přesměrování na platbu...',
+    paymentFailed: 'Platba se nezdařila',
+    paymentFailedDesc: 'Při zpracování platby nastala chyba. Zkuste to prosím znovu.',
+    tryAgain: 'Zkusit znovu',
+    paymentSuccess: 'Platba proběhla úspěšně!',
+    paymentSuccessDesc: 'Vaše platba byla přijata.',
     bookedSuccess: 'Rezervováno!',
+    bookingSuccess: 'Rezervace potvrzena!',
+    bookingSuccessDesc: 'Děkujeme za rezervaci. Potvrzení jsme zaslali na váš e-mail.',
     bookingNumber: 'Číslo rezervace',
+    bookingId: 'ID rezervace',
     accommodation: 'Dům',
+    houseName: 'Dům',
+    nights: 'Nocí',
+    discount: 'Sleva',
+    serviceTotal: 'Celkem za služby',
+    weWillContact: 'Brzy vás kontaktujeme.',
+    purchasedServicesTitle: 'Zakoupené služby',
+    backToStart: 'Na začátek',
     supportContactNote: "V případě dotazů pište na hello@qa-glamping.eu nebo volejte +420 773 708 849",
+    finishBooking: 'Dokončit',
+    poweredBy: 'Powered by ALiSiO',
     guestsShort: 'hostů',
+    errorOccurred: 'Nastala chyba. Zkuste to prosím znovu.',
+    promoApplied: 'Slevový kód byl použit!',
+    yourChoice: 'Váš výběr',
+    yourHouse: 'Váš dům',
+    bookingDetails: 'Detaily rezervace',
+    breakfastInfo: 'Snídaně v ceně',
+    wantButton: 'Chci',
+    servicesEmpty: 'Žádné dostupné služby',
+    tubDesc: 'Venkovní vyhřívaný dřevěný koupací sud',
+    tubPerHour: 'hod',
+    tubAddToBooking: 'Přidat koupací sud',
+    lateCheckoutDesc: 'Odjezd do 14:00 místo 11:00',
+    earlyCheckinDesc: 'Příjezd od 12:00 místo 15:00',
+    skipToThankYou: 'Přeskočit a dokončit',
+    confirmServices: 'Potvrdit služby',
+    paymentSubtitle: 'Vyberte způsob platby',
+    checkInShort: 'Příjezd',
+    checkOutShort: 'Odjezd',
+    yourSelection: 'Váš výběr',
+    night: 'noc',
     youSelected: 'Vybrali jste',
     checkDetailsBelow: 'Zkontrolujte podrobnosti níže.',
     from: 'od',
@@ -511,11 +666,49 @@ const translations: Record<BookingLang, any> = {
     processing: 'Verarbeitung...',
     including: 'Inklusive aller Steuern',
     extraPersonCharge: 'Aufpreis für zusätzliche Person',
+    redirectingToPayment: 'Weiterleitung zur Zahlung...',
+    paymentFailed: 'Zahlung fehlgeschlagen',
+    paymentFailedDesc: 'Bei der Zahlungsabwicklung ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.',
+    tryAgain: 'Erneut versuchen',
+    paymentSuccess: 'Zahlung erfolgreich!',
+    paymentSuccessDesc: 'Ihre Zahlung wurde akzeptiert.',
     bookedSuccess: 'Gebucht!',
+    bookingSuccess: 'Buchung bestätigt!',
+    bookingSuccessDesc: 'Vielen Dank für Ihre Buchung. Wir haben eine Bestätigung an Ihre E-Mail gesendet.',
     bookingNumber: 'Buchungsnummer',
+    bookingId: 'Buchungs-ID',
     accommodation: 'Haus',
+    houseName: 'Haus',
+    nights: 'Nächte',
+    discount: 'Rabatt',
+    serviceTotal: 'Gesamtbetrag Leistungen',
+    weWillContact: 'Wir werden uns in Kürze bei Ihnen melden.',
+    purchasedServicesTitle: 'Gebuchte Leistungen',
+    backToStart: 'Zum Anfang',
     supportContactNote: "Bei Fragen — schreiben Sie an hello@qa-glamping.eu oder +420 773 708 849",
+    finishBooking: 'Abschließen',
+    poweredBy: 'Powered by ALiSiO',
     guestsShort: 'Gäste',
+    errorOccurred: 'Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.',
+    promoApplied: 'Gutscheincode angewendet!',
+    yourChoice: 'Ihre Wahl',
+    yourHouse: 'Ihr Haus',
+    bookingDetails: 'Buchungsdetails',
+    breakfastInfo: 'Frühstück inklusive',
+    wantButton: 'Ich möchte es',
+    servicesEmpty: 'Keine verfügbaren Leistungen',
+    tubDesc: 'Beheizter Holzbadezuber im Freien',
+    tubPerHour: 'Std',
+    tubAddToBooking: 'Badezuber hinzufügen',
+    lateCheckoutDesc: 'Check-out bis 14:00 statt 11:00',
+    earlyCheckinDesc: 'Check-in ab 12:00 statt 15:00',
+    skipToThankYou: 'Überspringen und abschließen',
+    confirmServices: 'Leistungen bestätigen',
+    paymentSubtitle: 'Zahlungsmethode wählen',
+    checkInShort: 'Anreise',
+    checkOutShort: 'Abreise',
+    yourSelection: 'Ihre Auswahl',
+    night: 'Nacht',
     youSelected: 'Ausgewählt',
     checkDetailsBelow: 'Details unten prüfen.',
     from: 'ab',

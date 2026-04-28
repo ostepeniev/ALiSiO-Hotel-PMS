@@ -23,6 +23,7 @@ export async function createWidgetReservation(request: NextRequest) {
       hasPet = false,
       firstName, lastName, email, phone,
       promoCode, certificateCode,
+      siteId,
     } = body;
 
     if (!unitId || !checkIn || !checkOut || !firstName || !lastName || !phone) {
@@ -52,6 +53,13 @@ export async function createWidgetReservation(request: NextRequest) {
       JOIN categories c ON u.category_id = c.id
       WHERE u.id = ? AND u.is_active = 1 AND u.room_status = 'available' AND c.type = 'glamping'
     `).get(unitId) as any;
+
+    if (unit && siteId && existingTables.has('site_listings')) {
+      const allowed = db.prepare('SELECT 1 FROM site_listings WHERE site_id = ? AND unit_id = ?').get(siteId, unitId);
+      if (!allowed) {
+        return NextResponse.json({ error: 'Unit not available for this site' }, { status: 403, headers: CORS_HEADERS });
+      }
+    }
 
     if (!unit) {
       return NextResponse.json({ error: 'Unit not found or not available' }, { status: 404, headers: CORS_HEADERS });
@@ -128,23 +136,25 @@ export async function createWidgetReservation(request: NextRequest) {
     }
 
     let promoDiscount = 0;
-    if (promoCode && hasPromotions) {
-      const promo = db.prepare(`
-        SELECT * FROM promotions
-        WHERE promo_code = ? AND is_active = 1
-          AND (date_from IS NULL OR date_from <= ?)
-          AND (date_to IS NULL OR date_to >= ?)
-          AND (usage_limit IS NULL OR usage_count < usage_limit)
-      `).get(promoCode, checkOut, checkIn) as any;
+    if (promoCode) {
+      try {
+        const promo = db.prepare(`
+          SELECT * FROM promo_codes
+          WHERE code = ? AND is_active = 1
+            AND (valid_from IS NULL OR valid_from <= ?)
+            AND (valid_until IS NULL OR valid_until >= ?)
+            AND (max_uses IS NULL OR current_uses < max_uses)
+        `).get(String(promoCode).toUpperCase().trim(), checkOut, checkIn) as any;
 
-      if (promo) {
-        if (promo.discount_type === 'percentage') {
-          promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
-        } else {
-          promoDiscount = promo.discount_value;
+        if (promo) {
+          if (promo.discount_type === 'percentage') {
+            promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
+          } else {
+            promoDiscount = promo.discount_value;
+          }
+          db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
         }
-        db.prepare('UPDATE promotions SET usage_count = usage_count + 1 WHERE id = ?').run(promo.id);
-      }
+      } catch { /* promo lookup failed — continue without discount */ }
     }
 
     let certificateDiscount = 0;
@@ -204,8 +214,12 @@ export async function createWidgetReservation(request: NextRequest) {
       currency: 'CZK',
     }, { status: 201, headers: CORS_HEADERS });
   } catch (error: any) {
-    console.error('POST /api/booking/reserve error:', error?.message || error);
-    return NextResponse.json({ error: 'Failed to create reservation' }, { status: 500, headers: CORS_HEADERS });
+    const msg = error?.message || String(error);
+    console.error('POST /api/booking/reserve error:', msg);
+    const clientMsg = process.env.NODE_ENV === 'development'
+      ? `Failed to create reservation: ${msg}`
+      : 'Failed to create reservation';
+    return NextResponse.json({ error: clientMsg }, { status: 500, headers: CORS_HEADERS });
   }
 }
 

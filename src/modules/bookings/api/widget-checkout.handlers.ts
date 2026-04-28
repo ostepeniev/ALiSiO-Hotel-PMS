@@ -17,15 +17,15 @@ export async function createCheckoutSessionOptions() {
 export async function createWidgetCheckoutSession(req: Request) {
   try {
     const body = await req.json();
-    const { 
-      reservation_id, 
+    const {
+      reservation_id,
       site_slug,
       site_id: clientSiteId,
       return_path,
-      service_id, 
-      service_date, 
-      start_hour, 
-      hours, 
+      service_id,
+      service_date,
+      start_hour,
+      hours,
       addons,
       // Legacy fields from booking/page.tsx (glamping flow)
       amount: clientAmount,
@@ -68,14 +68,14 @@ export async function createWidgetCheckoutSession(req: Request) {
       // Service-only order (e.g. Sauna/Tub from Guest Page widget)
       const svc = db.prepare('SELECT name, name_en, price, currency FROM additional_services WHERE id = ?').get(service_id) as any;
       if (!svc) return NextResponse.json({ error: 'Service not found' }, { status: 404, headers: CORS_HEADERS });
-      
+
       const h = hours || 1;
       let basePrice = svc.price;
-      
+
       // Apply promo code discount if provided
       if (body.promoCode) {
         try {
-          const promo = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND active = 1").get(body.promoCode) as any;
+          const promo = db.prepare("SELECT discount_type, discount_value FROM promo_codes WHERE code = ? AND is_active = 1").get(body.promoCode) as any;
           if (promo) {
             if (promo.discount_type === 'fixed_price') {
               basePrice = promo.discount_value;
@@ -108,10 +108,6 @@ export async function createWidgetCheckoutSession(req: Request) {
         }
       }
 
-      // If client sent amount and it differs (promo applied on client), trust client if lower
-      if (clientAmount && typeof clientAmount === 'number' && clientAmount > 0 && clientAmount < amount) {
-        amount = clientAmount;
-      }
     } else if (reservation_id) {
       // Main Reservation payment
       const res = db.prepare('SELECT total_price, currency FROM reservations WHERE id = ?').get(reservation_id) as any;
@@ -144,12 +140,6 @@ export async function createWidgetCheckoutSession(req: Request) {
       return NextResponse.json({ error: 'reservation_id or service_id is required' }, { status: 400, headers: CORS_HEADERS });
     }
 
-    // Fallback: if DB amount is 0 but client sent a valid amount, use client amount
-    if (amount <= 0 && clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
-      amount = clientAmount;
-      if (clientCurrency) currency = clientCurrency;
-      if (clientDescription) description = clientDescription;
-    }
 
     const esc = (s: string) => s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
 
@@ -198,8 +188,8 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       const sHour = start_hour || 14;
       const h = hours || 2;
-      const timeRange = service_id ? `${String(sHour).padStart(2,'0')}:00–${String(sHour + h).padStart(2,'0')}:00` : '';
-      
+      const timeRange = service_id ? `${String(sHour).padStart(2, '0')}:00–${String(sHour + h).padStart(2, '0')}:00` : '';
+
       const lines = [
         `📦 <b>Нове замовлення: ${esc(description)}</b>`,
         '',
@@ -211,7 +201,7 @@ export async function createWidgetCheckoutSession(req: Request) {
       if (body.promoCode) lines.push(`🏷️ Промокод: ${esc(body.promoCode)}`);
       lines.push(`💳 Очікує оплати`);
 
-      sendTelegramMessage(lines.join('\n')).catch(() => {});
+      sendTelegramMessage(lines.join('\n')).catch(() => { });
     } catch { /* */ }
 
 
@@ -222,13 +212,13 @@ export async function createWidgetCheckoutSession(req: Request) {
     // Validate returnTo for security (prevent open redirects)
     let returnTo = return_path || (reservation_id ? `/guest/${reservation_id}` : '/');
     if (returnTo.startsWith('http') && site?.site_url) {
-       try {
-         const allowedHost = new URL(site.site_url).hostname;
-         const targetHost = new URL(returnTo).hostname;
-         if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
-            returnTo = site.site_url;
-         }
-       } catch { /* invalid URL — keep returnTo */ }
+      try {
+        const allowedHost = new URL(site.site_url).hostname;
+        const targetHost = new URL(returnTo).hostname;
+        if (allowedHost !== targetHost && !targetHost.includes('alisio.eu')) {
+          returnTo = site.site_url;
+        }
+      } catch { /* invalid URL — keep returnTo */ }
     }
 
     try {

@@ -1,3 +1,4 @@
+// Bookings module public API — v2
 export { listReservations, createReservation } from './reservations.handlers';
 export { getReservation, updateReservation, deleteReservation } from './reservation.handlers';
 export { listActivity, createActivity } from './reservation-activity.handlers';
@@ -18,5 +19,6 @@ export { listAdditionalServices, createAdditionalService, updateAdditionalServic
 export { listAvailabilityBlocks, deleteAvailabilityBlock } from './availability-blocks.handlers';
 export { listServiceOrders, updateServiceOrder } from './service-orders.handlers';
 export { getWidgetCalendar, getWidgetCalendarOptions } from './widget-calendar-public.handlers';
+export { getWidgetSiteConfig, getWidgetSiteConfigOptions } from './widget-site.handlers';
 export { createBookingDraft, getBookingDraft, deleteBookingDraft, createBookingDraftOptions } from './booking-drafts.handlers';
 export { fixServiceOrderPayment, getPendingOrders } from './fix-payment.handlers';

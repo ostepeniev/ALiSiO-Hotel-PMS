@@ -9,7 +9,11 @@ import {
   LayoutList, Sparkles, Palette, Code2, Tag, CreditCard, Percent,
   ToggleRight, ToggleLeft, ChevronDown, ChevronUp, Save, Pencil, Eye, Image as ImageIcon, Upload,
 } from 'lucide-react';
-import BookingV3 from '@/app/booking/BookingV3';
+import dynamic from 'next/dynamic';
+const BookingV2 = dynamic(() => import('@/modules/bookings/ui/BookingV2'), {
+  ssr: false,
+  loading: () => <div style={{ height: 680, background: '#FAFAF7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 13 }}>Завантаження...</div>,
+});
 
 /* ════════════════════════════════════════════════
    TYPES
@@ -47,61 +51,62 @@ interface WidgetConfig {
   search_result_url?: string;
   enable_prefill?: boolean;
   default_lang?: string;
+  supportContact?: string;
 }
 interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; unit_type_photos?: string; photos?: string; actual_unit_type_id?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
 interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; }
-interface RatePlan { id: string; name: string; is_default: number; cancellation_policy: string; payment_schedule: {percent:number;trigger:string}[]; meals_included: string[]; min_stay: number; max_stay: number; min_days_before_checkin: number; pricing_mode: string; applied_listings: string[]; }
+interface RatePlan { id: string; name: string; is_default: number; cancellation_policy: string; payment_schedule: { percent: number; trigger: string }[]; meals_included: string[]; min_stay: number; max_stay: number; min_days_before_checkin: number; pricing_mode: string; applied_listings: string[]; }
 
 const TABS = [
-  { id: 'listings',     label: 'Оголошення',      icon: <LayoutList size={16} /> },
-  { id: 'services',     label: 'Сервіси',          icon: <Sparkles size={16} /> },
-  { id: 'design',       label: 'Дизайн',           icon: <Palette size={16} /> },
-  { id: 'widget',       label: 'Віджет пошуку',    icon: <Code2 size={16} /> },
-  { id: 'rate-plans',   label: 'Тарифні плани',    icon: <Tag size={16} /> },
-  { id: 'payments',     label: 'Платежі',          icon: <CreditCard size={16} /> },
-  { id: 'promo-codes',  label: 'Промокоди',        icon: <Percent size={16} /> },
+  { id: 'listings', label: 'Оголошення', icon: <LayoutList size={16} /> },
+  { id: 'services', label: 'Сервіси', icon: <Sparkles size={16} /> },
+  { id: 'design', label: 'Дизайн', icon: <Palette size={16} /> },
+  { id: 'widget', label: 'Віджет пошуку', icon: <Code2 size={16} /> },
+  { id: 'rate-plans', label: 'Тарифні плани', icon: <Tag size={16} /> },
+  { id: 'payments', label: 'Платежі', icon: <CreditCard size={16} /> },
+  { id: 'promo-codes', label: 'Промокоди', icon: <Percent size={16} /> },
 ];
 
-const CANCEL_LABELS: Record<string,string> = {
+const CANCEL_LABELS: Record<string, string> = {
   non_refundable: '❌ Без повернення',
-  full_refund:    '✅ Повне повернення',
-  flexible:       '⚡ Гнучке',
+  full_refund: '✅ Повне повернення',
+  flexible: '⚡ Гнучке',
 };
-const THEME_CONFIGS: Record<string,{color:string;bg:string;card:string;text:string;sub:string;border:string}> = {
-  Classical: { color:'#8B6914', bg:'#fdf8f0', card:'#fff8ec', text:'#2d1f0a', sub:'#8b7355', border:'#e8d5b0' },
-  Modern:    { color:'#2563eb', bg:'#f8faff', card:'#ffffff', text:'#0f172a', sub:'#64748b', border:'#e2e8f0' },
-  Minimal:   { color:'#374151', bg:'#ffffff', card:'#f9fafb', text:'#111827', sub:'#9ca3af', border:'#f3f4f6' },
-  Nature:    { color:'#16a34a', bg:'#f0fdf4', card:'#dcfce7', text:'#14532d', sub:'#4ade80', border:'#bbf7d0' },
-  Luxury:    { color:'#d4af37', bg:'#0d0d1a', card:'#1a1628', text:'#f5efe6', sub:'#c9a84c', border:'#2d2540' },
-  Ocean:     { color:'#0891b2', bg:'#ecfeff', card:'#cffafe', text:'#164e63', sub:'#0e7490', border:'#a5f3fc' },
-  Sunset:    { color:'#ea580c', bg:'#fff7ed', card:'#ffedd5', text:'#431407', sub:'#c2410c', border:'#fed7aa' },
-  Nordic:    { color:'#4f81bd', bg:'#f2f6fb', card:'#ffffff', text:'#1e3a5f', sub:'#7a9bbf', border:'#c8daf0' },
-  Dark:      { color:'#22d3ee', bg:'#0f172a', card:'#1e293b', text:'#f1f5f9', sub:'#94a3b8', border:'#334155' },
+const THEME_CONFIGS: Record<string, { color: string; bg: string; card: string; text: string; sub: string; border: string }> = {
+  Classical: { color: '#8B6914', bg: '#fdf8f0', card: '#fff8ec', text: '#2d1f0a', sub: '#8b7355', border: '#e8d5b0' },
+  Modern: { color: '#2563eb', bg: '#f8faff', card: '#ffffff', text: '#0f172a', sub: '#64748b', border: '#e2e8f0' },
+  Minimal: { color: '#374151', bg: '#ffffff', card: '#f9fafb', text: '#111827', sub: '#9ca3af', border: '#f3f4f6' },
+  Nature: { color: '#16a34a', bg: '#f0fdf4', card: '#dcfce7', text: '#14532d', sub: '#4ade80', border: '#bbf7d0' },
+  Luxury: { color: '#d4af37', bg: '#0d0d1a', card: '#1a1628', text: '#f5efe6', sub: '#c9a84c', border: '#2d2540' },
+  Ocean: { color: '#0891b2', bg: '#ecfeff', card: '#cffafe', text: '#164e63', sub: '#0e7490', border: '#a5f3fc' },
+  Sunset: { color: '#ea580c', bg: '#fff7ed', card: '#ffedd5', text: '#431407', sub: '#c2410c', border: '#fed7aa' },
+  Nordic: { color: '#4f81bd', bg: '#f2f6fb', card: '#ffffff', text: '#1e3a5f', sub: '#7a9bbf', border: '#c8daf0' },
+  Dark: { color: '#22d3ee', bg: '#0f172a', card: '#1e293b', text: '#f1f5f9', sub: '#94a3b8', border: '#334155' },
 };
 const THEMES = Object.keys(THEME_CONFIGS);
 const BUTTON_STYLES = [
-  { value:'rounded_filled',  label:'Rounded Filled' },
-  { value:'rounded_outline', label:'Rounded Outline' },
-  { value:'sharp_filled',    label:'Sharp Filled' },
-  { value:'sharp_outline',   label:'Sharp Outline' },
-  { value:'pill_filled',     label:'Pill Filled' },
-  { value:'pill_outline',    label:'Pill Outline' },
+  { value: 'rounded_filled', label: 'Rounded Filled' },
+  { value: 'rounded_outline', label: 'Rounded Outline' },
+  { value: 'sharp_filled', label: 'Sharp Filled' },
+  { value: 'sharp_outline', label: 'Sharp Outline' },
+  { value: 'pill_filled', label: 'Pill Filled' },
+  { value: 'pill_outline', label: 'Pill Outline' },
 ];
 
 /* ════════════════════════════════════════════════
    HELPERS
    ════════════════════════════════════════════════ */
 function Modal({ open, onClose, title, children, footer, size }: {
-  open:boolean; onClose:()=>void; title:string; children:React.ReactNode; footer?:React.ReactNode; size?:'lg'|'xl';
+  open: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode; size?: 'lg' | 'xl';
 }) {
   if (!open) return null;
-  const w = size==='xl' ? 900 : size==='lg' ? 640 : 480;
+  const w = size === 'xl' ? 900 : size === 'lg' ? 640 : 480;
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: w, width: '95vw' }} onClick={e=>e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: w, width: '95vw' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">{title}</h3>
-          <button className="modal-close" onClick={onClose}><X size={18}/></button>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
@@ -112,10 +117,10 @@ function Modal({ open, onClose, title, children, footer, size }: {
 
 function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(()=>setCopied(false),2000); };
+  const copy = () => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   return (
-    <button className="btn btn-ghost" onClick={copy} style={{ padding:'4px 10px', fontSize:12 }}>
-      {copied ? <Check size={14} style={{color:'#22c55e'}}/> : <Copy size={14}/>}
+    <button className="btn btn-ghost" onClick={copy} style={{ padding: '4px 10px', fontSize: 12 }}>
+      {copied ? <Check size={14} style={{ color: '#22c55e' }} /> : <Copy size={14} />}
       {copied ? 'Скопійовано' : 'Копіювати'}
     </button>
   );
@@ -123,7 +128,7 @@ function CopyBtn({ text }: { text: string }) {
 
 /* ── Check indicator ── */
 const Chk = ({ val }: { val?: string | null }) =>
-  val ? <span style={{color:'#22c55e',fontSize:16}}>✓</span> : <span style={{color:'var(--text-tertiary)',fontSize:14}}>—</span>;
+  val ? <span style={{ color: '#22c55e', fontSize: 16 }}>✓</span> : <span style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>—</span>;
 
 /* ── ListingRow: click → edit modal ── */
 function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, onEmbed }: {
@@ -136,36 +141,36 @@ function ListingRow({ listing, siteId, siteSlug, onDelete, onRefresh, onEdit, on
 }) {
   const unitName = listing.unit_name || listing.unit_type_name || listing.id;
   return (
-    <tr style={{cursor:'pointer'}} onClick={() => onEdit(listing)}>
+    <tr style={{ cursor: 'pointer' }} onClick={() => onEdit(listing)}>
       <td>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
-            width:40, height:40, borderRadius:8, overflow:'hidden', 
-            background:'var(--surface-secondary)', border:'1px solid var(--border-primary)',
-            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0
+            width: 40, height: 40, borderRadius: 8, overflow: 'hidden',
+            background: 'var(--surface-secondary)', border: '1px solid var(--border-primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
           }}>
             {listing.photos || listing.unit_type_photos ? (
-              <img 
-                src={(listing.photos || listing.unit_type_photos || '').split(',')[0]} 
-                alt="" 
-                style={{width:'100%',height:'100%',objectFit:'cover'}} 
+              <img
+                src={(listing.photos || listing.unit_type_photos || '').split(',')[0]}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
-              <ImageIcon size={18} style={{color:'var(--text-tertiary)',opacity:0.5}} />
+              <ImageIcon size={18} style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
             )}
           </div>
-          <div style={{fontWeight:600}}>{unitName}</div>
+          <div style={{ fontWeight: 600 }}>{unitName}</div>
         </div>
       </td>
-      <td style={{fontSize:12,color:'var(--text-secondary)'}}>{listing.unit_id ? 'Юніт' : 'Тип юніту'}</td>
-      <td style={{fontSize:13}}>{listing.price_override ? `${listing.price_override} CZK` : 'За прайсом'}</td>
-      <td style={{textAlign:'center'}}><Chk val={listing.external_url}/></td>
-      <td style={{textAlign:'center'}}><Chk val={listing.thank_you_url}/></td>
-      <td style={{textAlign:'right'}} onClick={e => e.stopPropagation()}>
-        <div style={{display:'flex',justifyContent:'flex-end',gap:4}}>
-          <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}}
+      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{listing.unit_id ? 'Юніт' : 'Тип юніту'}</td>
+      <td style={{ fontSize: 13 }}>{listing.price_override ? `${listing.price_override} CZK` : 'За прайсом'}</td>
+      <td style={{ textAlign: 'center' }}><Chk val={listing.external_url} /></td>
+      <td style={{ textAlign: 'center' }}><Chk val={listing.thank_you_url} /></td>
+      <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+          <button className="btn btn-ghost" style={{ padding: '4px 8px', color: '#ef4444' }}
             onClick={() => onDelete(listing.id)}>
-            <Trash2 size={14}/>
+            <Trash2 size={14} />
           </button>
         </div>
       </td>
@@ -197,12 +202,12 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
   useEffect(() => {
     if (listing) {
       setForm({
-        external_url:  listing.external_url  || '',
+        external_url: listing.external_url || '',
         thank_you_url: listing.thank_you_url || '',
-        default_lang:  listing.default_lang  || '',
+        default_lang: listing.default_lang || '',
       });
       const photoStr = listing.photos || listing.unit_type_photos || '';
-      setPhotoUrls(photoStr ? photoStr.split(',').map(s=>s.trim()).filter(Boolean) : []);
+      setPhotoUrls(photoStr ? photoStr.split(',').map(s => s.trim()).filter(Boolean) : []);
     }
   }, [listing]);
 
@@ -215,9 +220,9 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        external_url:  form.external_url.trim()  || null,
+        external_url: form.external_url.trim() || null,
         thank_you_url: form.thank_you_url.trim() || null,
-        default_lang:  form.default_lang  || null,
+        default_lang: form.default_lang || null,
         photos: photoUrls.length > 0 ? photoUrls.join(',') : null,
       }),
     });
@@ -245,12 +250,12 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       const formData = new FormData();
       formData.append('file', file);
       formData.append('unit_type_id', listing.actual_unit_type_id!);
-      
+
       const res = await fetch('/api/photos/upload', {
         method: 'POST',
         body: formData,
       });
-      
+
       const data = await res.json();
       if (res.ok && data.url) {
         setPhotoUrls(prev => [...prev, data.url]);
@@ -269,7 +274,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
     setPhotoUrls(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const LANGS = ['uk','cs','en','de'];
+  const LANGS = ['uk', 'cs', 'en', 'de'];
   const unitName = listing.unit_name || listing.unit_type_name || listing.id;
 
   return (
@@ -278,60 +283,60 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
         <>
           <button className="btn btn-ghost" onClick={onClose}>Скасувати</button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? <Loader2 size={14} className="spin"/> : <Check size={14}/>} Зберегти
+            {saving ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Зберегти
           </button>
         </>
       }>
       <div className="form-group">
         <label className="form-label">URL сторінки об&apos;єкта</label>
         <input className="form-input" placeholder="https://yoursite.com/cabin-b3"
-          value={form.external_url} onChange={e => setForm(f => ({...f, external_url: e.target.value}))} />
+          value={form.external_url} onChange={e => setForm(f => ({ ...f, external_url: e.target.value }))} />
       </div>
       <div className="form-group">
         <label className="form-label">URL сторінки подяки</label>
         <input className="form-input" placeholder="https://yoursite.com/thank-you"
-          value={form.thank_you_url} onChange={e => setForm(f => ({...f, thank_you_url: e.target.value}))} />
+          value={form.thank_you_url} onChange={e => setForm(f => ({ ...f, thank_you_url: e.target.value }))} />
       </div>
 
-      <div className="form-group" style={{marginTop:24}}>
-        <label className="form-label" style={{display:'flex', alignItems:'center', gap:8}}>
+      <div className="form-group" style={{ marginTop: 24 }}>
+        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <ImageIcon size={16} /> Фотографії об&apos;єкта
         </label>
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(100px, 1fr))', gap:12, marginTop:12}}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 12, marginTop: 12 }}>
           {photoUrls.map((url, idx) => (
-            <div key={idx} style={{position:'relative', aspectRatio:'4/3', borderRadius:8, overflow:'hidden', border:'1px solid var(--border-primary)'}}>
-              <img src={url} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}} />
-              <button onClick={() => removePhoto(idx)} style={{position:'absolute', top:4, right:4, background:'rgba(0,0,0,0.5)', color:'#fff', border:'none', cursor:'pointer', borderRadius:'50%', width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center'}}>
+            <div key={idx} style={{ position: 'relative', aspectRatio: '4/3', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+              <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <button onClick={() => removePhoto(idx)} style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', cursor: 'pointer', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <X size={12} />
               </button>
             </div>
           ))}
-          <label style={{aspectRatio:'4/3', border:'2px dashed var(--border-primary)', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', cursor:'pointer', gap:4, color:'var(--text-secondary)'}}>
+          <label style={{ aspectRatio: '4/3', border: '2px dashed var(--border-primary)', borderRadius: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 4, color: 'var(--text-secondary)' }}>
             {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-            <span style={{fontSize:11}}>{uploading ? '...' : 'Завантажити'}</span>
+            <span style={{ fontSize: 11 }}>{uploading ? '...' : 'Завантажити'}</span>
             <input type="file" accept="image/*" hidden onChange={handleUpload} disabled={uploading} />
           </label>
         </div>
       </div>
 
-      <div style={{marginTop:32, borderTop:'1px solid var(--border-primary)', paddingTop:24}}>
-        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:12}}>
-          <Code2 size={18} style={{color:'var(--accent-primary)'}} />
-          <h4 style={{margin:0, fontSize:15, fontWeight:700}}>Код для вставки (Embed)</h4>
+      <div style={{ marginTop: 32, borderTop: '1px solid var(--border-primary)', paddingTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <Code2 size={18} style={{ color: 'var(--accent-primary)' }} />
+          <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Код для вставки (Embed)</h4>
         </div>
-        <div style={{fontSize:13, color:'var(--text-secondary)', marginBottom:16}}>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
           Використовуйте цей код, щоб додати віджет бронювання саме для цього об&apos;єкта на ваш сайт.
         </div>
-        
-        <div style={{marginBottom:12}}>
-          <div style={{display:'flex', gap:6}}>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
             {LANGS.map(l => (
               <button key={l} type="button" onClick={() => setEmbedLang(l)}
                 style={{
-                  padding:'5px 14px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
-                  border:`2px solid ${embedLang===l?'var(--accent-primary)':'var(--border-primary)'}`,
-                  background:embedLang===l?'var(--accent-primary)':'var(--surface-secondary)',
-                  color:embedLang===l?'#fff':'var(--text-secondary)',
+                  padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  border: `2px solid ${embedLang === l ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  background: embedLang === l ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+                  color: embedLang === l ? '#fff' : 'var(--text-secondary)',
                 }}>
                 {l.toUpperCase()}
               </button>
@@ -339,21 +344,21 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
           </div>
         </div>
 
-        <div style={{position:'relative'}}>
+        <div style={{ position: 'relative' }}>
           <pre style={{
-            background:'var(--surface-secondary)', borderRadius:8, padding:16, 
-            fontSize:12, overflowX:'auto', fontFamily:'monospace', lineWeight:1.5,
-            border:'1px solid var(--border-primary)'
+            background: 'var(--surface-secondary)', borderRadius: 8, padding: 16,
+            fontSize: 12, overflowX: 'auto', fontFamily: 'monospace', lineWeight: 1.5,
+            border: '1px solid var(--border-primary)'
           }}>
-{`<div id="alisio-booking-widget"
-  data-site="${siteSlug}"
-  data-unit="${listing.unit_id || listing.unit_type_id}"
+            {`<script 
+  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" 
+  data-site="${siteSlug}" 
+  data-unit="${listing.unit_id || listing.unit_type_id}" 
   data-lang="${embedLang}">
-</div>
-<script src="${origin || 'https://alisio.swipescape.eu'}/widget/embed.v2.js"></script>`}
+</script>`}
           </pre>
-          <div style={{position:'absolute', top:8, right:8}}>
-            <CopyBtn text={`<div id="alisio-booking-widget" data-site="${siteSlug}" data-unit="${listing.unit_id || listing.unit_type_id}" data-lang="${embedLang}"></div><script src="${origin || 'https://alisio.swipescape.eu'}/widget/embed.v2.js"></script>`}/>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}>
+            <CopyBtn text={`<script src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" data-site="${siteSlug}" data-unit="${listing.unit_id || listing.unit_type_id}" data-lang="${embedLang}"></script>`} />
           </div>
         </div>
       </div>
@@ -380,7 +385,7 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
   const [units, setUnits] = useState<any[]>([]);
   const [activeUt, setActiveUt] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [addMode, setAddMode] = useState<'unit'|'unit_type'>('unit');
+  const [addMode, setAddMode] = useState<'unit' | 'unit_type'>('unit');
   const [adding, setAdding] = useState(false);
 
   const fetchListings = useCallback(async () => {
@@ -395,10 +400,10 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
   useEffect(() => {
     if (!showAdd) return;
     Promise.all([
-      fetch('/api/unit-types').then(r=>r.json()),
-      fetch('/api/units').then(r=>r.json()),
+      fetch('/api/unit-types').then(r => r.json()),
+      fetch('/api/units').then(r => r.json()),
     ]).then(([uts, us]) => {
-      if (Array.isArray(uts)) { setUnitTypes(uts); setActiveUt(uts[0]?.id||''); }
+      if (Array.isArray(uts)) { setUnitTypes(uts); setActiveUt(uts[0]?.id || ''); }
       if (Array.isArray(us)) setUnits(us);
     });
   }, [showAdd]);
@@ -424,22 +429,22 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
 
   const handleDelete = async (id: string) => {
     if (!confirm('Видалити оголошення?')) return;
-    await fetch(`/api/booking-sites/${siteId}/listings/${id}`, { method:'DELETE' });
+    await fetch(`/api/booking-sites/${siteId}/listings/${id}`, { method: 'DELETE' });
     fetchListings();
   };
 
-  if (loading) return <div style={{padding:40,textAlign:'center'}}><Loader2 size={24} className="spin" /></div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
   return (
     <div>
-      <div className="table-toolbar" style={{marginBottom:12}}>
-        <div style={{fontSize:14,color:'var(--text-secondary)'}}>{listings.length} оголошень</div>
-        <button className="btn btn-primary" onClick={()=>setShowAdd(true)}><Plus size={16}/> Додати оголошення</button>
+      <div className="table-toolbar" style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{listings.length} оголошень</div>
+        <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Додати оголошення</button>
       </div>
 
       {listings.length === 0 ? (
-        <div style={{textAlign:'center',padding:'60px 20px',color:'var(--text-secondary)'}}>
-          <LayoutList size={40} style={{margin:'0 auto 12px',opacity:0.3}}/>
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+          <LayoutList size={40} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
           <div>Додайте юніти або типи, які будуть доступні на цьому сайті</div>
         </div>
       ) : (
@@ -448,8 +453,8 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
             <th>Назва</th>
             <th>Тип</th>
             <th>Ціна</th>
-            <th style={{textAlign:'center'}}>URL сторінки</th>
-            <th style={{textAlign:'center'}}>URL подяки</th>
+            <th style={{ textAlign: 'center' }}>URL сторінки</th>
+            <th style={{ textAlign: 'center' }}>URL подяки</th>
             <th></th>
           </tr></thead>
           <tbody>
@@ -464,53 +469,55 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
       <ListingEditModal open={!!editingListing} listing={editingListing} siteId={siteId} siteSlug={siteSlug} onClose={() => setEditingListing(null)} onRefresh={fetchListings} />
 
       {/* Add Modal */}
-      <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Додати оголошення" size="lg"
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Додати оголошення" size="lg"
         footer={
           <>
-            <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Скасувати</button>
-            <button className="btn btn-primary" onClick={handleAdd} disabled={adding||!selected.size}>
-              {adding ? <Loader2 size={14} className="spin"/> : <Plus size={14}/>}
+            <button className="btn btn-ghost" onClick={() => setShowAdd(false)}>Скасувати</button>
+            <button className="btn btn-primary" onClick={handleAdd} disabled={adding || !selected.size}>
+              {adding ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
               Додати вибране ({selected.size})
             </button>
           </>
         }
       >
         {/* Mode toggle */}
-        <div style={{display:'flex',gap:8,marginBottom:16}}>
-          {(['unit','unit_type'] as const).map(m => (
-            <button key={m} className={`btn ${addMode===m?'btn-primary':'btn-ghost'}`} onClick={()=>{setAddMode(m);setSelected(new Set());}}>
-              {m==='unit' ? '🏠 Конкретні юніти' : '📦 Типи юнітів'}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {(['unit', 'unit_type'] as const).map(m => (
+            <button key={m} className={`btn ${addMode === m ? 'btn-primary' : 'btn-ghost'}`} onClick={() => { setAddMode(m); setSelected(new Set()); }}>
+              {m === 'unit' ? '🏠 Конкретні юніти' : '📦 Типи юнітів'}
             </button>
           ))}
         </div>
 
         {addMode === 'unit' && (
-          <div style={{display:'grid',gridTemplateColumns:'200px 1fr',gap:16,minHeight:300}}>
+          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, minHeight: 300 }}>
             {/* Left: unit types */}
-            <div style={{borderRight:'1px solid var(--border-primary)',paddingRight:16}}>
-              <div style={{fontSize:12,fontWeight:600,color:'var(--text-tertiary)',marginBottom:8}}>ТИП ЮНІТУ</div>
+            <div style={{ borderRight: '1px solid var(--border-primary)', paddingRight: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 8 }}>ТИП ЮНІТУ</div>
               {unitTypes.map(ut => (
-                <div key={ut.id} onClick={()=>setActiveUt(ut.id)}
-                  style={{padding:'8px 10px',borderRadius:6,cursor:'pointer',fontWeight:activeUt===ut.id?600:400,
-                    background:activeUt===ut.id?'var(--accent-primary-dim)':'transparent',
-                    color:activeUt===ut.id?'var(--accent-primary)':'var(--text-primary)',fontSize:13}}>
+                <div key={ut.id} onClick={() => setActiveUt(ut.id)}
+                  style={{
+                    padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: activeUt === ut.id ? 600 : 400,
+                    background: activeUt === ut.id ? 'var(--accent-primary-dim)' : 'transparent',
+                    color: activeUt === ut.id ? 'var(--accent-primary)' : 'var(--text-primary)', fontSize: 13
+                  }}>
                   {ut.name}
                 </div>
               ))}
             </div>
             {/* Right: units */}
             <div>
-              <div style={{fontSize:12,fontWeight:600,color:'var(--text-tertiary)',marginBottom:8}}>ЮНІТИ</div>
-              {unitsByType.length === 0 && <div style={{fontSize:13,color:'var(--text-secondary)'}}>Немає юнітів</div>}
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 8 }}>ЮНІТИ</div>
+              {unitsByType.length === 0 && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Немає юнітів</div>}
               {unitsByType.map(u => {
                 const chk = selected.has(u.id);
                 const alreadyAdded = listings.some(l => l.unit_id === u.id);
                 return (
-                  <label key={u.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 4px',cursor:alreadyAdded?'not-allowed':'pointer',opacity:alreadyAdded?0.5:1}}>
+                  <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px', cursor: alreadyAdded ? 'not-allowed' : 'pointer', opacity: alreadyAdded ? 0.5 : 1 }}>
                     <input type="checkbox" checked={chk} disabled={alreadyAdded}
-                      onChange={() => { const s=new Set(selected); chk?s.delete(u.id):s.add(u.id); setSelected(s); }} />
-                    <span style={{fontSize:13}}>{u.name} <span style={{color:'var(--text-tertiary)'}}>({u.code})</span></span>
-                    {alreadyAdded && <span style={{fontSize:11,color:'var(--accent-primary)'}}>вже додано</span>}
+                      onChange={() => { const s = new Set(selected); chk ? s.delete(u.id) : s.add(u.id); setSelected(s); }} />
+                    <span style={{ fontSize: 13 }}>{u.name} <span style={{ color: 'var(--text-tertiary)' }}>({u.code})</span></span>
+                    {alreadyAdded && <span style={{ fontSize: 11, color: 'var(--accent-primary)' }}>вже додано</span>}
                   </label>
                 );
               })}
@@ -520,16 +527,16 @@ function ListingsTab({ siteId, siteSlug }: { siteId: string, siteSlug: string })
 
         {addMode === 'unit_type' && (
           <div>
-            <div style={{fontSize:12,fontWeight:600,color:'var(--text-tertiary)',marginBottom:8}}>ТИПИ ЮНІТІВ</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 8 }}>ТИПИ ЮНІТІВ</div>
             {unitTypes.map(ut => {
               const chk = selected.has(ut.id);
               const alreadyAdded = listings.some(l => l.unit_type_id === ut.id);
               return (
-                <label key={ut.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 4px',cursor:alreadyAdded?'not-allowed':'pointer',opacity:alreadyAdded?0.5:1}}>
+                <label key={ut.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 4px', cursor: alreadyAdded ? 'not-allowed' : 'pointer', opacity: alreadyAdded ? 0.5 : 1 }}>
                   <input type="checkbox" checked={chk} disabled={alreadyAdded}
-                    onChange={() => { const s=new Set(selected); chk?s.delete(ut.id):s.add(ut.id); setSelected(s); }} />
-                  <span style={{fontSize:13,fontWeight:500}}>{ut.name}</span>
-                  {alreadyAdded && <span style={{fontSize:11,color:'var(--accent-primary)'}}>вже додано</span>}
+                    onChange={() => { const s = new Set(selected); chk ? s.delete(ut.id) : s.add(ut.id); setSelected(s); }} />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{ut.name}</span>
+                  {alreadyAdded && <span style={{ fontSize: 11, color: 'var(--accent-primary)' }}>вже додано</span>}
                 </label>
               );
             })}
@@ -572,11 +579,11 @@ function ServicesTab({ siteId }: { siteId: string }) {
 
   const [embedSvc, setEmbedSvc] = useState<SiteService | null>(null);
 
-  if (loading) return <div style={{padding:40,textAlign:'center'}}><Loader2 size={24} className="spin"/></div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
   return (
     <div>
-      <div style={{marginBottom:16,fontSize:13,color:'var(--text-secondary)'}}>
+      <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
         Оберіть сервіси, що доступні для замовлення на цьому сайті.
       </div>
       <table className="data-table">
@@ -585,38 +592,38 @@ function ServicesTab({ siteId }: { siteId: string }) {
           {services.map(svc => (
             <tr key={svc.id}>
               <td>
-                <span style={{fontSize:18,marginRight:8}}>{svc.icon}</span>
-                <span style={{fontWeight:500}}>{svc.name}</span>
+                <span style={{ fontSize: 18, marginRight: 8 }}>{svc.icon}</span>
+                <span style={{ fontWeight: 500 }}>{svc.name}</span>
               </td>
-              <td style={{fontSize:13}}>{svc.price_override ?? svc.price} {svc.currency}</td>
+              <td style={{ fontSize: 13 }}>{svc.price_override ?? svc.price} {svc.currency}</td>
               <td>
-                <button className="btn btn-ghost" style={{padding:'4px 6px'}} onClick={()=>toggle(svc)}>
+                <button className="btn btn-ghost" style={{ padding: '4px 6px' }} onClick={() => toggle(svc)}>
                   {svc.is_enabled
-                    ? <ToggleRight size={22} style={{color:'#22c55e'}}/>
-                    : <ToggleLeft size={22} style={{color:'var(--text-tertiary)'}}/>}
+                    ? <ToggleRight size={22} style={{ color: '#22c55e' }} />
+                    : <ToggleLeft size={22} style={{ color: 'var(--text-tertiary)' }} />}
                 </button>
               </td>
               <td>
-                <button className="btn btn-ghost" style={{fontSize:12,padding:'4px 8px'}} onClick={()=>setEmbedSvc(svc)}>
-                  <Code2 size={13}/> Код
+                <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setEmbedSvc(svc)}>
+                  <Code2 size={13} /> Код
                 </button>
               </td>
             </tr>
           ))}
-          {services.length===0 && <tr><td colSpan={4} style={{textAlign:'center',color:'var(--text-secondary)'}}>Немає сервісів. Додайте їх у Налаштування → Послуги.</td></tr>}
+          {services.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>Немає сервісів. Додайте їх у Налаштування → Послуги.</td></tr>}
         </tbody>
       </table>
 
       {/* Embed modal */}
-      <Modal open={!!embedSvc} onClose={()=>setEmbedSvc(null)} title={`Embed-код: ${embedSvc?.name}`} size="lg">
-        <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>
+      <Modal open={!!embedSvc} onClose={() => setEmbedSvc(null)} title={`Embed-код: ${embedSvc?.name}`} size="lg">
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
           Вставте цей код на ваш сайт для відображення кнопки замовлення сервісу.
         </div>
-        <div style={{position:'relative'}}>
-          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>
+        <div style={{ position: 'relative' }}>
+          <pre style={{ background: 'var(--surface-secondary)', borderRadius: 8, padding: 16, fontSize: 12, overflowX: 'auto', margin: 0 }}>
             {embedSvc ? embedCode(embedSvc.id) : ''}
           </pre>
-          <div style={{position:'absolute',top:8,right:8}}>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}>
             <CopyBtn text={embedSvc ? embedCode(embedSvc.id) : ''} />
           </div>
         </div>
@@ -648,10 +655,10 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
 
   // Use theme palette for preview
   const themeCfg = THEME_CONFIGS[cfg.theme || 'Classical'] || THEME_CONFIGS['Classical'];
-  const color       = cfg.primary_color || themeCfg.color;
-  const previewBg   = themeCfg.bg;
+  const color = cfg.primary_color || themeCfg.color;
+  const previewBg = themeCfg.bg;
   const previewText = themeCfg.text;
-  const previewSub  = themeCfg.sub;
+  const previewSub = themeCfg.sub;
   const previewCard = themeCfg.card;
   const previewBorder = themeCfg.border;
 
@@ -668,16 +675,20 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
       {/* ── Settings column ── */}
       <div style={{ flex: '0 0 400px', minWidth: 0 }}>
         {/* Themes */}
-        <div style={{marginBottom:28}}>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Тема</div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:8}}>
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Тема</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 8 }}>
             {THEMES.map(t => (
-              <button key={t} onClick={()=>setCfg(c=>({...c, theme:t, primary_color: THEME_CONFIGS[t].color }))}
-                style={{padding:'10px 8px',borderRadius:8,fontSize:12,fontWeight:cfg.theme===t?700:400,
-                  border:`2px solid ${cfg.theme===t?'var(--accent-primary)':'var(--border-primary)'}`,
-                  background:cfg.theme===t?'var(--accent-primary-dim)':'var(--surface-secondary)',
-                  cursor:'pointer',color:'var(--text-primary)',transition:'all .15s',
-                  borderLeft:`4px solid ${THEME_CONFIGS[t].color}`}}>
+              <button key={t} onClick={() => setCfg(c => ({ ...c, theme: t, primary_color: THEME_CONFIGS[t].color }))}
+                style={{
+                  padding: '10px 8px', borderRadius: 8, fontSize: 12, fontWeight: cfg.theme === t ? 700 : 400,
+                  borderTop: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderRight: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderBottom: `2px solid ${cfg.theme === t ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  borderLeft: `4px solid ${THEME_CONFIGS[t].color}`,
+                  background: cfg.theme === t ? 'var(--accent-primary-dim)' : 'var(--surface-secondary)',
+                  cursor: 'pointer', color: 'var(--text-primary)', transition: 'all .15s',
+                }}>
                 {t}
               </button>
             ))}
@@ -685,43 +696,43 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
         </div>
 
         {/* Primary color */}
-        <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24}}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
           <div>
-            <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.05em'}}>Основний колір</div>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <input type="color" value={cfg.primary_color||'#A2845E'} onChange={e=>setCfg(c=>({...c,primary_color:e.target.value}))}
-                style={{width:44,height:44,border:'none',borderRadius:8,cursor:'pointer',padding:2}} />
-              <input className="form-input" value={cfg.primary_color||'#A2845E'}
-                onChange={e=>setCfg(c=>({...c,primary_color:e.target.value}))}
-                style={{width:120,fontFamily:'monospace',fontSize:13}} />
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Основний колір</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="color" value={cfg.primary_color || '#A2845E'} onChange={e => setCfg(c => ({ ...c, primary_color: e.target.value }))}
+                style={{ width: 44, height: 44, border: 'none', borderRadius: 8, cursor: 'pointer', padding: 2 }} />
+              <input className="form-input" value={cfg.primary_color || '#A2845E'}
+                onChange={e => setCfg(c => ({ ...c, primary_color: e.target.value }))}
+                style={{ width: 120, fontFamily: 'monospace', fontSize: 13 }} />
             </div>
           </div>
         </div>
 
         {/* Button style */}
-        <div style={{marginBottom:24}}>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',marginBottom:12,textTransform:'uppercase',letterSpacing:'0.05em'}}>Стиль кнопок та елементів</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Стиль кнопок та елементів</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {BUTTON_STYLES.map(bs => {
               const isPill = bs.value.includes('pill');
               const isSharp = bs.value.includes('sharp');
               const isOutline = bs.value.includes('outline');
               return (
-                <button key={bs.value} onClick={()=>setCfg(c=>({...c,button_style:bs.value}))}
+                <button key={bs.value} onClick={() => setCfg(c => ({ ...c, button_style: bs.value }))}
                   style={{
-                    padding:'12px', borderRadius:12, textAlign:'left',
-                    fontSize:12, border:`2px solid ${cfg.button_style===bs.value?'var(--accent-primary)':'var(--border-primary)'}`,
-                    background:cfg.button_style===bs.value?'var(--accent-primary-dim)':'var(--surface-secondary)',
-                    cursor:'pointer', color:'var(--text-primary)', transition:'all .15s'
+                    padding: '12px', borderRadius: 12, textAlign: 'left',
+                    fontSize: 12, border: `2px solid ${cfg.button_style === bs.value ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                    background: cfg.button_style === bs.value ? 'var(--accent-primary-dim)' : 'var(--surface-secondary)',
+                    cursor: 'pointer', color: 'var(--text-primary)', transition: 'all .15s'
                   }}>
-                  <div style={{fontSize:11,fontWeight:600,marginBottom:8,color:cfg.button_style===bs.value?'var(--accent-primary)':'var(--text-secondary)'}}>{bs.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: cfg.button_style === bs.value ? 'var(--accent-primary)' : 'var(--text-secondary)' }}>{bs.label}</div>
                   <div style={{
-                    height:32, width:'100%', display:'flex', alignItems:'center', justifyContent:'center',
+                    height: 32, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     borderRadius: isPill ? 16 : isSharp ? 0 : 6,
                     background: isOutline ? 'transparent' : (cfg.primary_color || '#A2845E'),
                     color: isOutline ? (cfg.primary_color || '#A2845E') : '#fff',
                     border: isOutline ? `1.5px solid ${cfg.primary_color || '#A2845E'}` : 'none',
-                    fontSize:11, fontWeight:700
+                    fontSize: 11, fontWeight: 700
                   }}>
                     Кнопка
                   </div>
@@ -732,15 +743,15 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
         </div>
 
         {/* Shadow */}
-        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:24}}>
-          <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-            <input type="checkbox" checked={!!cfg.show_shadow} onChange={e=>setCfg(c=>({...c,show_shadow:e.target.checked}))} />
-            <span style={{fontSize:13}}>Показувати тінь (shadow)</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!cfg.show_shadow} onChange={e => setCfg(c => ({ ...c, show_shadow: e.target.checked }))} />
+            <span style={{ fontSize: 13 }}>Показувати тінь (shadow)</span>
           </label>
         </div>
 
         <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? <Loader2 size={16} className="spin"/> : saved ? <Check size={16}/> : <Save size={16}/>}
+          {saving ? <Loader2 size={16} className="spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
           {saved ? 'Збережено!' : 'Зберегти дизайн'}
         </button>
       </div>
@@ -748,32 +759,32 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
       {/* ── Live preview column ── */}
       <div style={{ flex: 1, minWidth: 0, position: 'sticky', top: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--text-secondary)',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Мобільний вигляд (Smartphone)
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}>
             <Eye size={12} /> Попередній перегляд
           </div>
         </div>
-        
+
         {/* Smartphone Frame Mockup */}
-        <div style={{ 
-          width: 340, margin: '0 auto', 
-          border: '14px solid #1a1a1a', borderRadius: 50, 
-          boxShadow: '0 30px 60px rgba(0,0,0,0.3)', 
+        <div style={{
+          width: 340, margin: '0 auto',
+          border: '14px solid #1a1a1a', borderRadius: 50,
+          boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
           background: '#000', position: 'relative',
           overflow: 'hidden'
         }}>
           {/* Speaker/Camera notch */}
           <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 140, height: 28, background: '#1a1a1a', borderBottomLeftRadius: 18, borderBottomRightRadius: 18, zIndex: 10 }} />
-          
+
           <div style={{ height: 680, background: 'var(--bg-primary)', overflow: 'hidden', position: 'relative' }}>
-            <div style={{ 
+            <div style={{
               height: '100%', overflowY: 'auto', overflowX: 'hidden',
               scrollbarWidth: 'none'
             }}>
-              <BookingV3 
-                siteSlug={site.slug} 
+              <BookingV2
+                siteSlug={site.slug}
                 isPreview={true}
                 design={{
                   theme: cfg.theme,
@@ -784,7 +795,7 @@ function DesignTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: DesignConfi
               />
             </div>
           </div>
-          
+
           {/* Home indicator */}
           <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', width: 100, height: 4, background: 'rgba(255,255,255,0.2)', borderRadius: 2 }} />
         </div>
@@ -813,9 +824,12 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
   const lang = cfg.default_lang || 'uk';
 
   const widgetUrl = site.site_url || origin || 'https://YOUR_DOMAIN';
-  
-  const scriptTag = `<div id="alisio-booking-widget" data-site="${site.slug}"></div>
-<script src="${origin || 'https://YOUR_PMS_DOMAIN'}/widget/embed.v2.js"></script>`;
+
+  const scriptTag = `<script 
+  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" 
+  data-site="${site.slug}" 
+  data-lang="${lang}">
+</script>`;
 
   const iframeEmbed = `<iframe
   src="${origin || 'https://YOUR_PMS_DOMAIN'}/booking?site=${site.slug}&lang=${lang}"
@@ -825,11 +839,11 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   // Dynamic locale injection example
   const dynamicLocaleSnippet = `<!-- Передайте мову сайту у віджет динамічно -->
-<script>
-  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
-</script>
-<div id="alisio-booking-widget" data-site="${site.slug}" data-lang-from="window.__BOOKING_LANG__"></div>
-<script src="${origin || 'https://YOUR_PMS_DOMAIN'}/widget/embed.v2.js"></script>`;
+<script 
+  src="${origin || 'http://localhost:3000'}/widget/embed.v2.js" 
+  data-site="${site.slug}" 
+  data-lang="${lang}">
+</script>`;
 
   const save = async () => {
     setSaving(true);
@@ -846,9 +860,9 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 
   const Step = ({ n, title, children }: { n: number; title: string; children: React.ReactNode }) => (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ display:'flex',alignItems:'center',gap:10,marginBottom:10 }}>
-        <div style={{ width:28,height:28,borderRadius:'50%',background:'var(--accent-primary)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,flexShrink:0 }}>{n}</div>
-        <div style={{ fontSize:14,fontWeight:600 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{n}</div>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
       </div>
       {children}
     </div>
@@ -857,63 +871,63 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
   return (
     <div style={{ maxWidth: 740 }}>
       <Step n={1} title="Налаштуйте URL результатів">
-        <div style={{marginBottom:8,fontSize:13,color:'var(--text-secondary)'}}>Сторінка вашого сайту, на яку будуть потрапляти гості після вибору дат:</div>
-        <input className="form-input" placeholder="https://yoursite.com/booking" value={cfg.search_result_url||''} onChange={e=>setCfg(c=>({...c,search_result_url:e.target.value}))} />
-        <label style={{display:'flex',alignItems:'center',gap:8,marginTop:8,cursor:'pointer'}}>
-          <input type="checkbox" checked={!!cfg.enable_prefill} onChange={e=>setCfg(c=>({...c,enable_prefill:e.target.checked}))} />
-          <span style={{fontSize:13}}>Автоматично підставляти дати в URL (prefill)</span>
+        <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--text-secondary)' }}>Сторінка вашого сайту, на яку будуть потрапляти гості після вибору дат:</div>
+        <input className="form-input" placeholder="https://yoursite.com/booking" value={cfg.search_result_url || ''} onChange={e => setCfg(c => ({ ...c, search_result_url: e.target.value }))} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!cfg.enable_prefill} onChange={e => setCfg(c => ({ ...c, enable_prefill: e.target.checked }))} />
+          <span style={{ fontSize: 13 }}>Автоматично підставляти дати в URL (prefill)</span>
         </label>
       </Step>
 
       <Step n={2} title="Мова віджета за замовчуванням">
-        <div style={{marginBottom:10,fontSize:13,color:'var(--text-secondary)'}}>
+        <div style={{ marginBottom: 10, fontSize: 13, color: 'var(--text-secondary)' }}>
           Ця мова буде використана якщо сторінка не передає локаль.
         </div>
-        <div style={{display:'flex',gap:8}}>
-          {(['uk','cs','en','de'] as const).map(l => (
+        <div style={{ display: 'flex', gap: 8 }}>
+          {(['uk', 'cs', 'en', 'de'] as const).map(l => (
             <button key={l} type="button"
-              onClick={() => setCfg(c => ({...c, default_lang: l}))}
+              onClick={() => setCfg(c => ({ ...c, default_lang: l }))}
               style={{
-                padding:'6px 16px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
-                border:`2px solid ${lang===l?'var(--accent-primary)':'var(--border-primary)'}`,
-                background:lang===l?'var(--accent-primary)':'var(--surface-secondary)',
-                color:lang===l?'#fff':'var(--text-secondary)', transition:'all .15s',
+                padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                border: `2px solid ${lang === l ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                background: lang === l ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+                color: lang === l ? '#fff' : 'var(--text-secondary)', transition: 'all .15s',
               }}>
               {l.toUpperCase()}
             </button>
           ))}
         </div>
-        <div style={{marginTop:12,fontSize:12,color:'var(--text-tertiary)',lineHeight:1.6}}>
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
           Щоб передати локаль з батьківського сайту динамічно, вставте перед тегом скрипта:
         </div>
-        <div style={{position:'relative',marginTop:6}}>
-          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:12,fontSize:11,overflowX:'auto',margin:0}}>
-{`<script>
+        <div style={{ position: 'relative', marginTop: 6 }}>
+          <pre style={{ background: 'var(--surface-secondary)', borderRadius: 8, padding: 12, fontSize: 11, overflowX: 'auto', margin: 0 }}>
+            {`<script>
   window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';
 </script>`}
           </pre>
-          <div style={{position:'absolute',top:8,right:8}}>
-            <CopyBtn text={`<script>\n  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';\n</script>`}/>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}>
+            <CopyBtn text={`<script>\n  window.__BOOKING_LANG__ = document.documentElement.lang || '${lang}';\n</script>`} />
           </div>
         </div>
       </Step>
 
       <Step n={3} title="Вставте JS-тег на ваш сайт">
-        <div style={{position:'relative'}}>
-          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>{scriptTag}</pre>
-          <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={scriptTag}/></div>
+        <div style={{ position: 'relative' }}>
+          <pre style={{ background: 'var(--surface-secondary)', borderRadius: 8, padding: 16, fontSize: 12, overflowX: 'auto', margin: 0 }}>{scriptTag}</pre>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}><CopyBtn text={scriptTag} /></div>
         </div>
       </Step>
 
       <Step n={4} title="Або використайте iframe (альтернатива)">
-        <div style={{position:'relative'}}>
-          <pre style={{background:'var(--surface-secondary)',borderRadius:8,padding:16,fontSize:12,overflowX:'auto',margin:0}}>{iframeEmbed}</pre>
-          <div style={{position:'absolute',top:8,right:8}}><CopyBtn text={iframeEmbed}/></div>
+        <div style={{ position: 'relative' }}>
+          <pre style={{ background: 'var(--surface-secondary)', borderRadius: 8, padding: 16, fontSize: 12, overflowX: 'auto', margin: 0 }}>{iframeEmbed}</pre>
+          <div style={{ position: 'absolute', top: 8, right: 8 }}><CopyBtn text={iframeEmbed} /></div>
         </div>
       </Step>
 
       <Step n={5} title="Перевірте встановлення">
-        <div style={{fontSize:13,color:'var(--text-secondary)'}}>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           Відкрийте ваш сайт і переконайтесь що кнопка/форма бронювання відображається. Бронювання буде прив'язане до сайту <strong>{site.name}</strong>.
         </div>
       </Step>
@@ -934,6 +948,19 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
         </div>
       </Step>
 
+      <Step n={7} title="Контактне повідомлення після бронювання">
+        <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
+          Текст, який побачить гість на екрані підтвердження бронювання. Вкажіть email та телефон для зв&apos;язку.
+        </div>
+        <input
+          className="form-input"
+          placeholder="Якщо щось — пиши на hello@yoursite.com або +420 000 000 000"
+          value={cfg.supportContact || ''}
+          onChange={e => setCfg(c => ({ ...c, supportContact: e.target.value }))}
+        />
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>Якщо порожньо — використовується текст за замовчуванням з налаштувань мови</div>
+      </Step>
+
       <button className="btn btn-primary" onClick={save} disabled={saving}>
         {saving ? <Loader2 size={16} className="spin" /> : saved ? <Check size={16} /> : <Save size={16} />}
         {saved ? 'Збережено!' : 'Зберегти налаштування'}
@@ -948,9 +975,9 @@ function WidgetTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: WidgetConfi
 function RatePlansTab({ siteId }: { siteId: string }) {
   const [plans, setPlans] = useState<RatePlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string|null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name:'', cancellation_policy:'non_refundable', min_stay:1, max_stay:999, min_days_before_checkin:0, pricing_mode:'independent', is_default:false });
+  const [form, setForm] = useState({ name: '', cancellation_policy: 'non_refundable', min_stay: 1, max_stay: 999, min_days_before_checkin: 0, pricing_mode: 'independent', is_default: false });
   const [creating, setCreating] = useState(false);
 
   const fetchPlans = useCallback(async () => {
@@ -973,54 +1000,54 @@ function RatePlansTab({ siteId }: { siteId: string }) {
     });
     setCreating(false);
     setShowCreate(false);
-    setForm({ name:'', cancellation_policy:'non_refundable', min_stay:1, max_stay:999, min_days_before_checkin:0, pricing_mode:'independent', is_default:false });
+    setForm({ name: '', cancellation_policy: 'non_refundable', min_stay: 1, max_stay: 999, min_days_before_checkin: 0, pricing_mode: 'independent', is_default: false });
     fetchPlans();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Видалити тариф?')) return;
-    await fetch(`/api/booking-sites/${siteId}/rate-plans/${id}`, { method:'DELETE' });
+    await fetch(`/api/booking-sites/${siteId}/rate-plans/${id}`, { method: 'DELETE' });
     fetchPlans();
   };
 
-  if (loading) return <div style={{padding:40,textAlign:'center'}}><Loader2 size={24} className="spin"/></div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
   return (
     <div>
       <div className="table-toolbar">
-        <div style={{fontSize:14,color:'var(--text-secondary)'}}>{plans.length} тарифів</div>
-        <button className="btn btn-primary" onClick={()=>setShowCreate(true)}><Plus size={16}/> Новий тариф</button>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{plans.length} тарифів</div>
+        <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> Новий тариф</button>
       </div>
 
-      {plans.length===0 ? (
-        <div style={{textAlign:'center',padding:'60px 20px',color:'var(--text-secondary)'}}>
-          <Tag size={40} style={{margin:'0 auto 12px',opacity:0.3}}/>
+      {plans.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+          <Tag size={40} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
           <div>Тарифних планів ще немає</div>
         </div>
       ) : (
-        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {plans.map(plan => (
-            <div key={plan.id} style={{border:'1px solid var(--border-primary)',borderRadius:10,overflow:'hidden'}}>
-              <div style={{display:'flex',alignItems:'center',padding:'12px 16px',cursor:'pointer',background:'var(--surface-secondary)'}}
-                onClick={() => setExpanded(expanded===plan.id ? null : plan.id)}>
-                <div style={{flex:1}}>
-                  <span style={{fontWeight:600,marginRight:8}}>{plan.name}</span>
-                  {plan.is_default===1 && <span style={{fontSize:11,background:'var(--accent-primary)',color:'#fff',padding:'2px 8px',borderRadius:99,marginRight:8}}>За замовч.</span>}
-                  <span style={{fontSize:12,color:'var(--text-secondary)'}}>{CANCEL_LABELS[plan.cancellation_policy]}</span>
+            <div key={plan.id} style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', cursor: 'pointer', background: 'var(--surface-secondary)' }}
+                onClick={() => setExpanded(expanded === plan.id ? null : plan.id)}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 600, marginRight: 8 }}>{plan.name}</span>
+                  {plan.is_default === 1 && <span style={{ fontSize: 11, background: 'var(--accent-primary)', color: '#fff', padding: '2px 8px', borderRadius: 99, marginRight: 8 }}>За замовч.</span>}
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{CANCEL_LABELS[plan.cancellation_policy]}</span>
                 </div>
-                <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                  <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}} onClick={e=>{e.stopPropagation();handleDelete(plan.id);}}>
-                    <Trash2 size={14}/>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button className="btn btn-ghost" style={{ padding: '4px 8px', color: '#ef4444' }} onClick={e => { e.stopPropagation(); handleDelete(plan.id); }}>
+                    <Trash2 size={14} />
                   </button>
-                  {expanded===plan.id ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+                  {expanded === plan.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                 </div>
               </div>
-              {expanded===plan.id && (
-                <div style={{padding:'16px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,fontSize:13}}>
-                  <div><span style={{color:'var(--text-secondary)'}}>Мін. ночей:</span> <strong>{plan.min_stay}</strong></div>
-                  <div><span style={{color:'var(--text-secondary)'}}>Макс. ночей:</span> <strong>{plan.max_stay}</strong></div>
-                  <div><span style={{color:'var(--text-secondary)'}}>Днів до заїзду:</span> <strong>{plan.min_days_before_checkin}</strong></div>
-                  <div><span style={{color:'var(--text-secondary)'}}>Ціноутворення:</span> <strong>{plan.pricing_mode}</strong></div>
+              {expanded === plan.id && (
+                <div style={{ padding: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 13 }}>
+                  <div><span style={{ color: 'var(--text-secondary)' }}>Мін. ночей:</span> <strong>{plan.min_stay}</strong></div>
+                  <div><span style={{ color: 'var(--text-secondary)' }}>Макс. ночей:</span> <strong>{plan.max_stay}</strong></div>
+                  <div><span style={{ color: 'var(--text-secondary)' }}>Днів до заїзду:</span> <strong>{plan.min_days_before_checkin}</strong></div>
+                  <div><span style={{ color: 'var(--text-secondary)' }}>Ціноутворення:</span> <strong>{plan.pricing_mode}</strong></div>
                 </div>
               )}
             </div>
@@ -1028,20 +1055,20 @@ function RatePlansTab({ siteId }: { siteId: string }) {
         </div>
       )}
 
-      <Modal open={showCreate} onClose={()=>setShowCreate(false)} title="Новий тарифний план"
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Новий тарифний план"
         footer={<>
-          <button className="btn btn-ghost" onClick={()=>setShowCreate(false)}>Скасувати</button>
+          <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Скасувати</button>
           <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-            {creating ? <Loader2 size={14} className="spin"/> : <Plus size={14}/>} Створити
+            {creating ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} Створити
           </button>
         </>}>
         <div className="form-group">
           <label className="form-label">Назва *</label>
-          <input className="form-input" placeholder="Базовий тариф" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} autoFocus />
+          <input className="form-input" placeholder="Базовий тариф" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus />
         </div>
         <div className="form-group">
           <label className="form-label">Політика скасування</label>
-          <select className="form-select" value={form.cancellation_policy} onChange={e=>setForm(f=>({...f,cancellation_policy:e.target.value}))}>
+          <select className="form-select" value={form.cancellation_policy} onChange={e => setForm(f => ({ ...f, cancellation_policy: e.target.value }))}>
             <option value="non_refundable">❌ Без повернення</option>
             <option value="full_refund">✅ Повне повернення</option>
             <option value="flexible">⚡ Гнучке</option>
@@ -1050,20 +1077,20 @@ function RatePlansTab({ siteId }: { siteId: string }) {
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Мін. ночей</label>
-            <input className="form-input" type="number" min={1} value={form.min_stay} onChange={e=>setForm(f=>({...f,min_stay:+e.target.value}))} />
+            <input className="form-input" type="number" min={1} value={form.min_stay} onChange={e => setForm(f => ({ ...f, min_stay: +e.target.value }))} />
           </div>
           <div className="form-group">
             <label className="form-label">Макс. ночей</label>
-            <input className="form-input" type="number" min={1} value={form.max_stay} onChange={e=>setForm(f=>({...f,max_stay:+e.target.value}))} />
+            <input className="form-input" type="number" min={1} value={form.max_stay} onChange={e => setForm(f => ({ ...f, max_stay: +e.target.value }))} />
           </div>
         </div>
         <div className="form-group">
           <label className="form-label">Мін. днів до заїзду</label>
-          <input className="form-input" type="number" min={0} value={form.min_days_before_checkin} onChange={e=>setForm(f=>({...f,min_days_before_checkin:+e.target.value}))} />
+          <input className="form-input" type="number" min={0} value={form.min_days_before_checkin} onChange={e => setForm(f => ({ ...f, min_days_before_checkin: +e.target.value }))} />
         </div>
-        <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',marginTop:8}}>
-          <input type="checkbox" checked={form.is_default} onChange={e=>setForm(f=>({...f,is_default:e.target.checked}))} />
-          <span style={{fontSize:13}}>Встановити як тариф за замовчуванням</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 8 }}>
+          <input type="checkbox" checked={form.is_default} onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))} />
+          <span style={{ fontSize: 13 }}>Встановити як тариф за замовчуванням</span>
         </label>
       </Modal>
     </div>
@@ -1071,13 +1098,17 @@ function RatePlansTab({ siteId }: { siteId: string }) {
 }
 
 /* ════════════════════════════════════════════════
-   TAB: PAYMENTS (stub — payment_accounts not yet
-   fully wired; shows placeholder UI)
+   TAB: PAYMENTS
+   Uses global ENV (same store as /book) by default.
+   Advanced section allows per-site Teya override.
    ════════════════════════════════════════════════ */
 function PaymentsTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: PaymentConfig) => void }) {
   const [cfg, setCfg] = useState<PaymentConfig>(site.payment_config || { provider: 'teya', enabled: false });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // True only when ALL three per-site Teya fields are filled
+  const hasCustomCreds = !!(cfg.teya?.client_id && cfg.teya?.client_secret && cfg.teya?.store_id);
 
   const save = async () => {
     setSaving(true);
@@ -1119,30 +1150,82 @@ function PaymentsTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: PaymentCo
           </div>
 
           {cfg.provider === 'teya' && (
-            <div style={{ padding: 20, border: '1px solid var(--border-primary)', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <img src="https://teya.com/favicon.ico" style={{ width: 20, height: 20 }} alt="" />
-                <span style={{ fontWeight: 700 }}>Налаштування Teya</span>
-              </div>
-              
-              <div className="form-group">
-                <label className="form-label">Client ID</label>
-                <input className="form-input" type="password" value={cfg.teya?.client_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_id: e.target.value } }))} placeholder="Введіть Client ID" />
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Status banner */}
+              {hasCustomCreds ? (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                  padding: 16, borderRadius: 12,
+                  border: '2px solid #f59e0b',
+                  background: 'color-mix(in srgb, #f59e0b 8%, var(--surface-primary))',
+                }}>
+                  <span style={{ fontSize: 22, lineHeight: 1 }}>⚙️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Окремий акаунт Teya для цього сайту</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      Налаштований власний Store ID. Щоб повернутись до стандартного акаунту — очистіть поля нижче.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 14,
+                  padding: 16, borderRadius: 12,
+                  border: '2px solid #22c55e',
+                  background: 'color-mix(in srgb, #22c55e 8%, var(--surface-primary))',
+                }}>
+                  <span style={{ fontSize: 22, lineHeight: 1 }}>✅</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Використовуються стандартні налаштування оплати</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      Цей сайт використовує той самий платіжний акаунт Teya, що й основна форма бронювання{' '}
+                      <code style={{ background: 'var(--surface-secondary)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>/book</code>.
+                      Налаштовувати щось окремо не потрібно.
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              <div className="form-group">
-                <label className="form-label">Client Secret</label>
-                <input className="form-input" type="password" value={cfg.teya?.client_secret || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_secret: e.target.value } }))} placeholder="Введіть Client Secret" />
-              </div>
+              {/* Advanced: optional per-site credentials override */}
+              <details style={{ borderRadius: 10, border: '1px solid var(--border-primary)', overflow: 'hidden' }}>
+                <summary style={{
+                  padding: '10px 16px', cursor: 'pointer', fontWeight: 600, fontSize: 13,
+                  background: 'var(--surface-secondary)', userSelect: 'none', listStyle: 'none',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span>⚙️</span>
+                  <span>Розширені налаштування (окремий акаунт Teya для цього сайту)</span>
+                  {hasCustomCreds && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 8px', borderRadius: 99, background: '#f59e0b22', color: '#f59e0b', border: '1px solid #f59e0b44' }}>
+                      налаштовано
+                    </span>
+                  )}
+                </summary>
+                <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ fontSize: 12, color: '#f59e0b', padding: '8px 12px', background: '#fef3c722', borderRadius: 8, border: '1px solid #f59e0b44' }}>
+                    ⚠️ Заповніть лише якщо для цього сайту є <strong>окремий магазин Teya</strong>. Якщо поля порожні — використовується стандартний акаунт.
+                  </div>
 
-              <div className="form-group">
-                <label className="form-label">Store ID</label>
-                <input className="form-input" value={cfg.teya?.store_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, store_id: e.target.value } }))} placeholder="Введіть Store ID" />
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Client ID</label>
+                    <input className="form-input" type="password" value={cfg.teya?.client_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_id: e.target.value } }))} placeholder="Введіть Client ID" />
+                  </div>
 
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: 12, borderRadius: 8, border: '1px solid var(--border-primary)' }}>
-                💡 Ви можете знайти ці дані в особистому кабінеті Teya (Developer Portal).
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Client Secret</label>
+                    <input className="form-input" type="password" value={cfg.teya?.client_secret || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, client_secret: e.target.value } }))} placeholder="Введіть Client Secret" />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Store ID</label>
+                    <input className="form-input" value={cfg.teya?.store_id || ''} onChange={e => setCfg(c => ({ ...c, teya: { ...c.teya, store_id: e.target.value } }))} placeholder="Введіть Store ID" />
+                  </div>
+
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--surface-secondary)', padding: 12, borderRadius: 8, border: '1px solid var(--border-primary)' }}>
+                    💡 Ви можете знайти ці дані в особистому кабінеті Teya (Developer Portal).
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 
@@ -1175,7 +1258,7 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
     valid_from: '', valid_until: '',
     min_nights: 1, max_nights: '', redemption_limit: '',
     allowed_days: [] as number[],
-    applies_to: 'services' as 'services'|'listings'|'both',
+    applies_to: 'services' as 'services' | 'listings' | 'both',
   });
   const [form, setForm] = useState(emptyForm());
   const [creating, setCreating] = useState(false);
@@ -1238,18 +1321,18 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
     fetchCodes();
   };
 
-  if (loading) return <div style={{padding:40,textAlign:'center'}}><Loader2 size={24} className="spin"/></div>;
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
   return (
     <div>
       <div className="table-toolbar">
-        <div style={{fontSize:14,color:'var(--text-secondary)'}}>{codes.length} промокодів</div>
-        <button className="btn btn-primary" onClick={()=>setShowCreate(true)}><Plus size={16}/> Новий промокод</button>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{codes.length} промокодів</div>
+        <button className="btn btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> Новий промокод</button>
       </div>
 
-      {codes.length===0 ? (
-        <div style={{textAlign:'center',padding:'60px 20px',color:'var(--text-secondary)'}}>
-          <Percent size={40} style={{margin:'0 auto 12px',opacity:0.3}}/>
+      {codes.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+          <Percent size={40} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
           <div>Промо-кодів ще немає</div>
         </div>
       ) : (
@@ -1258,24 +1341,24 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
           <tbody>
             {codes.map(c => (
               <tr key={c.id}>
-                <td style={{fontFamily:'monospace',fontWeight:700}}>{c.code}</td>
-                <td>{c.discount_value}{c.discount_type==='percentage'?'%':' CZK'}</td>
-                <td style={{fontSize:12}}>
+                <td style={{ fontFamily: 'monospace', fontWeight: 700 }}>{c.code}</td>
+                <td>{c.discount_value}{c.discount_type === 'percentage' ? '%' : ' CZK'}</td>
+                <td style={{ fontSize: 12 }}>
                   {c.applies_to === 'listings' ? '🏠 Оголошення'
-                   : c.applies_to === 'both'   ? '🏠+🛎 Обидва'
-                   : '🛎 Сервіси'}
+                    : c.applies_to === 'both' ? '🏠+🛎 Обидва'
+                      : '🛎 Сервіси'}
                 </td>
-                <td style={{fontSize:13,color:'var(--text-secondary)'}}>{c.valid_until || '—'}</td>
-                <td style={{fontSize:13}}>
+                <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{c.valid_until || '—'}</td>
+                <td style={{ fontSize: 13 }}>
                   {c.min_nights || 1}–{c.max_nights || '∞'}
-                  {c.allowed_days && <span style={{marginLeft:6,fontSize:11,color:'var(--text-tertiary)'}}>
-                    {(() => { try { return JSON.parse(c.allowed_days).map((d:number) => ['','Пн','Вт','Ср','Чт','Пт','Сб','Нд'][d]).join(','); } catch { return ''; } })()}
+                  {c.allowed_days && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    {(() => { try { return JSON.parse(c.allowed_days).map((d: number) => ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'][d]).join(','); } catch { return ''; } })()}
                   </span>}
                 </td>
-                <td style={{fontSize:13}}>{c.current_uses || 0}{c.redemption_limit ? ` / ${c.redemption_limit}` : ''}</td>
+                <td style={{ fontSize: 13 }}>{c.current_uses || 0}{c.redemption_limit ? ` / ${c.redemption_limit}` : ''}</td>
                 <td>
-                  <button className="btn btn-ghost" style={{padding:'4px 8px',color:'#ef4444'}} onClick={()=>handleDelete(c.id)}>
-                    <Trash2 size={14}/>
+                  <button className="btn btn-ghost" style={{ padding: '4px 8px', color: '#ef4444' }} onClick={() => handleDelete(c.id)}>
+                    <Trash2 size={14} />
                   </button>
                 </td>
               </tr>
@@ -1284,32 +1367,32 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
         </table>
       )}
 
-      <Modal open={showCreate} onClose={()=>setShowCreate(false)} title="Новий промокод"
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Новий промокод"
         footer={<>
-          <button className="btn btn-ghost" onClick={()=>setShowCreate(false)}>Скасувати</button>
+          <button className="btn btn-ghost" onClick={() => setShowCreate(false)}>Скасувати</button>
           <button className="btn btn-primary" onClick={handleCreate} disabled={creating}>
-            {creating ? <Loader2 size={14} className="spin"/> : <Plus size={14}/>} Створити
+            {creating ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} Створити
           </button>
         </>}>
 
         {/* Застосовується до */}
         <div className="form-group">
           <label className="form-label">Застосовується до</label>
-          <div style={{display:'flex',gap:8}}>
-            {([['services','🛎 Сервіси'],['listings','🏠 Оголошення'],['both','🏠+🛎 Обидва']] as const).map(([val,label]) => (
-              <button key={val} type="button" onClick={() => setForm(f => ({...f, applies_to: val}))}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {([['services', '🛎 Сервіси'], ['listings', '🏠 Оголошення'], ['both', '🏠+🛎 Обидва']] as const).map(([val, label]) => (
+              <button key={val} type="button" onClick={() => setForm(f => ({ ...f, applies_to: val }))}
                 style={{
-                  flex:1, padding:'8px 4px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
-                  border:`2px solid ${form.applies_to===val?'var(--accent-primary)':'var(--border-primary)'}`,
-                  background:form.applies_to===val?'var(--accent-primary)':'var(--surface-secondary)',
-                  color:form.applies_to===val?'#fff':'var(--text-secondary)', transition:'all .15s',
+                  flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  border: `2px solid ${form.applies_to === val ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                  background: form.applies_to === val ? 'var(--accent-primary)' : 'var(--surface-secondary)',
+                  color: form.applies_to === val ? '#fff' : 'var(--text-secondary)', transition: 'all .15s',
                 }}>
                 {label}
               </button>
             ))}
           </div>
           {form.applies_to !== 'services' && (
-            <div style={{fontSize:11,color:'#f59e0b',marginTop:6,padding:'6px 10px',background:'#fef3c722',borderRadius:6,border:'1px solid #f59e0b44'}}>
+            <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6, padding: '6px 10px', background: '#fef3c722', borderRadius: 6, border: '1px solid #f59e0b44' }}>
               ⚠️ Промокоди для оголошень потребують додаткового налаштування embed.js. Наразі повністю працює лише для Сервісів.
             </div>
           )}
@@ -1319,15 +1402,15 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
         <div className="form-group">
           <label className="form-label">Код *</label>
           <input className="form-input" placeholder="SUMMER20" value={form.code}
-            style={{textTransform:'uppercase'}}
-            onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase()}))} autoFocus />
+            style={{ textTransform: 'uppercase' }}
+            onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} autoFocus />
         </div>
 
         {/* Тип + значення */}
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Тип знижки</label>
-            <select className="form-select" value={form.discount_type} onChange={e=>setForm(f=>({...f,discount_type:e.target.value}))}>
+            <select className="form-select" value={form.discount_type} onChange={e => setForm(f => ({ ...f, discount_type: e.target.value }))}>
               <option value="percent">Відсоток (%)</option>
               <option value="fixed">Фіксована сума</option>
             </select>
@@ -1335,8 +1418,8 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
           <div className="form-group">
             <label className="form-label">Значення *</label>
             <input className="form-input" type="number" min={0}
-              placeholder={form.discount_type==='percent'?'20':'500'}
-              value={form.discount_value} onChange={e=>setForm(f=>({...f,discount_value:e.target.value}))} />
+              placeholder={form.discount_type === 'percent' ? '20' : '500'}
+              value={form.discount_value} onChange={e => setForm(f => ({ ...f, discount_value: e.target.value }))} />
           </div>
         </div>
 
@@ -1344,11 +1427,11 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Діє від</label>
-            <input className="form-input" type="date" value={form.valid_from} onChange={e=>setForm(f=>({...f,valid_from:e.target.value}))} />
+            <input className="form-input" type="date" value={form.valid_from} onChange={e => setForm(f => ({ ...f, valid_from: e.target.value }))} />
           </div>
           <div className="form-group">
             <label className="form-label">Діє до</label>
-            <input className="form-input" type="date" value={form.valid_until} onChange={e=>setForm(f=>({...f,valid_until:e.target.value}))} />
+            <input className="form-input" type="date" value={form.valid_until} onChange={e => setForm(f => ({ ...f, valid_until: e.target.value }))} />
           </div>
         </div>
 
@@ -1357,12 +1440,12 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
           <div className="form-group">
             <label className="form-label">Мін. ночей</label>
             <input className="form-input" type="number" min={1} value={form.min_nights}
-              onChange={e=>setForm(f=>({...f,min_nights:+e.target.value}))} />
+              onChange={e => setForm(f => ({ ...f, min_nights: +e.target.value }))} />
           </div>
           <div className="form-group">
             <label className="form-label">Макс. ночей</label>
             <input className="form-input" type="number" min={1} placeholder="Без ліміту"
-              value={form.max_nights} onChange={e=>setForm(f=>({...f,max_nights:e.target.value}))} />
+              value={form.max_nights} onChange={e => setForm(f => ({ ...f, max_nights: e.target.value }))} />
           </div>
         </div>
 
@@ -1370,42 +1453,42 @@ function PromoCodesTab({ siteId }: { siteId: string }) {
         <div className="form-group">
           <label className="form-label">Ліміт використань</label>
           <input className="form-input" type="number" min={0} placeholder="Без ліміту"
-            value={form.redemption_limit} onChange={e=>setForm(f=>({...f,redemption_limit:e.target.value}))} />
+            value={form.redemption_limit} onChange={e => setForm(f => ({ ...f, redemption_limit: e.target.value }))} />
         </div>
 
         {/* Дні тижня */}
         <div className="form-group">
           <label className="form-label">
             Діє лише в ці дні тижня
-            <span style={{fontSize:11,color:'var(--text-tertiary)',fontWeight:400,marginLeft:6}}>
+            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400, marginLeft: 6 }}>
               {form.allowed_days.length === 0 ? '(всі дні)' : ''}
             </span>
           </label>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {DAYS.map(d => {
               const on = form.allowed_days.includes(d.key);
               return (
-                <button key={d.key} type="button" onClick={()=>toggleDay(d.key)}
+                <button key={d.key} type="button" onClick={() => toggleDay(d.key)}
                   style={{
-                    width:38,height:38,borderRadius:8,fontSize:12,fontWeight:600,cursor:'pointer',
-                    border:`2px solid ${on ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
+                    width: 38, height: 38, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `2px solid ${on ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
                     background: on ? 'var(--accent-primary)' : 'var(--surface-secondary)',
                     color: on ? '#fff' : 'var(--text-secondary)',
-                    transition:'all .15s',
+                    transition: 'all .15s',
                   }}>
                   {d.label}
                 </button>
               );
             })}
             {form.allowed_days.length > 0 && (
-              <button type="button" onClick={()=>setForm(f=>({...f,allowed_days:[]}))}
-                style={{fontSize:11,color:'var(--text-tertiary)',background:'none',border:'none',cursor:'pointer',padding:'0 4px'}}>
+              <button type="button" onClick={() => setForm(f => ({ ...f, allowed_days: [] }))}
+                style={{ fontSize: 11, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}>
                 скинути
               </button>
             )}
           </div>
           {form.allowed_days.length === 0 && (
-            <div style={{fontSize:11,color:'var(--text-tertiary)',marginTop:4}}>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
               Не вибрано — промокод діє в будь-який день
             </div>
           )}
@@ -1445,8 +1528,8 @@ export default function SiteDetailPage() {
   if (!isMounted || loading) return (
     <div className="page-layout">
       <Header title="Завантаження..." onMenuClick={onMenuClick} />
-      <div style={{ display:'flex',justifyContent:'center',padding:80 }}>
-        <Loader2 size={36} className="spin" style={{ color:'var(--accent-primary)' }} />
+      <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+        <Loader2 size={36} className="spin" style={{ color: 'var(--accent-primary)' }} />
       </div>
     </div>
   );
@@ -1454,14 +1537,14 @@ export default function SiteDetailPage() {
   if (!site) return (
     <div className="page-layout">
       <Header title="Сайт не знайдено" onMenuClick={onMenuClick} />
-      <div style={{padding:40,textAlign:'center'}}>
-        <div style={{fontSize:16,marginBottom:12}}>Сайт не знайдено або видалено</div>
-        <button className="btn btn-primary" onClick={()=>router.push('/sites')}><ArrowLeft size={16}/> Назад до списку</button>
+      <div style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ fontSize: 16, marginBottom: 12 }}>Сайт не знайдено або видалено</div>
+        <button className="btn btn-primary" onClick={() => router.push('/sites')}><ArrowLeft size={16} /> Назад до списку</button>
       </div>
     </div>
   );
 
-  const STATUS_COLOR: Record<string,string> = { active:'#22c55e', paused:'#f59e0b', deleted:'#ef4444' };
+  const STATUS_COLOR: Record<string, string> = { active: '#22c55e', paused: '#f59e0b', deleted: '#ef4444' };
 
   return (
     <div className="page-layout">
@@ -1469,41 +1552,43 @@ export default function SiteDetailPage() {
 
       <div className="page-content" style={{ padding: 12 }}>
         {/* Breadcrumb + meta */}
-        <div style={{ display:'flex',alignItems:'center',gap:12,marginBottom:20 }}>
-          <button className="btn btn-ghost" onClick={()=>router.push('/sites')} style={{padding:'6px 10px'}}>
-            <ArrowLeft size={16}/> Сайти
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+          <button className="btn btn-ghost" onClick={() => router.push('/sites')} style={{ padding: '6px 10px' }}>
+            <ArrowLeft size={16} /> Сайти
           </button>
-          <div style={{ display:'flex',alignItems:'center',gap:8 }}>
-            <Globe size={18} style={{color:'var(--accent-primary)'}} />
-            <span style={{ fontWeight:700,fontSize:18 }}>{site.name}</span>
-            <span style={{ fontSize:12,padding:'2px 10px',borderRadius:99,background:`${STATUS_COLOR[site.status]}22`,color:STATUS_COLOR[site.status],fontWeight:600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Globe size={18} style={{ color: 'var(--accent-primary)' }} />
+            <span style={{ fontWeight: 700, fontSize: 18 }}>{site.name}</span>
+            <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 99, background: `${STATUS_COLOR[site.status]}22`, color: STATUS_COLOR[site.status], fontWeight: 600 }}>
               {site.status === 'active' ? 'Активний' : site.status === 'paused' ? 'Призупинено' : 'Видалено'}
             </span>
-            <span style={{fontSize:12,color:'var(--text-tertiary)',fontFamily:'monospace'}}>{site.currency}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>{site.currency}</span>
           </div>
         </div>
 
         {/* Tab bar */}
-        <div style={{ display:'flex',gap:2,borderBottom:'1px solid var(--border-primary)',marginBottom:24,overflowX:'auto' }}>
+        <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border-primary)', marginBottom: 24, overflowX: 'auto' }}>
           {TABS.map(tab => (
-            <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
-              style={{ display:'flex',alignItems:'center',gap:6,padding:'10px 16px',fontSize:13,fontWeight:activeTab===tab.id?600:400,
-                border:'none',background:'none',cursor:'pointer',whiteSpace:'nowrap',
-                borderBottom:`2px solid ${activeTab===tab.id?'var(--accent-primary)':'transparent'}`,
-                color: activeTab===tab.id?'var(--accent-primary)':'var(--text-secondary)',
-                marginBottom:-1,transition:'all .15s' }}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', fontSize: 13, fontWeight: activeTab === tab.id ? 600 : 400,
+                border: 'none', background: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent-primary)' : 'transparent'}`,
+                color: activeTab === tab.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                marginBottom: -1, transition: 'all .15s'
+              }}>
               {tab.icon} {tab.label}
             </button>
           ))}
         </div>
 
         {/* Tab content */}
-        {activeTab === 'listings'    && <ListingsTab siteId={siteId} siteSlug={site?.slug || ''} />}
-        {activeTab === 'services'    && <ServicesTab siteId={siteId} />}
-        {activeTab === 'design'      && <DesignTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,design_config:cfg}:s)} />}
-        {activeTab === 'widget'      && <WidgetTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,widget_config:cfg}:s)} />}
-        {activeTab === 'rate-plans'  && <RatePlansTab siteId={siteId} />}
-        {activeTab === 'payments'    && <PaymentsTab site={site} onUpdate={cfg=>setSite(s=>s?{...s,payment_config:cfg}:s)} />}
+        {activeTab === 'listings' && <ListingsTab siteId={siteId} siteSlug={site?.slug || ''} />}
+        {activeTab === 'services' && <ServicesTab siteId={siteId} />}
+        {activeTab === 'design' && <DesignTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, design_config: cfg } : s)} />}
+        {activeTab === 'widget' && <WidgetTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, widget_config: cfg } : s)} />}
+        {activeTab === 'rate-plans' && <RatePlansTab siteId={siteId} />}
+        {activeTab === 'payments' && <PaymentsTab site={site} onUpdate={cfg => setSite(s => s ? { ...s, payment_config: cfg } : s)} />}
         {activeTab === 'promo-codes' && <PromoCodesTab siteId={siteId} />}
       </div>
     </div>

@@ -13,10 +13,8 @@
   }
   
   const unitId = script.getAttribute('data-unit') || '';
-  const lang = script.getAttribute('data-lang')
-    || (typeof window !== 'undefined' && window.__BOOKING_LANG__)
-    || 'uk';
-  const baseUrl = script.src.split('/widget/embed.v2.js')[0];
+  const lang = script.getAttribute('data-lang') || 'uk';
+  const baseUrl = script.src.split('/embed.v2.js')[0];
 
   // 3. Create a unique container for the widget
   const container = document.createElement('div');
@@ -24,24 +22,10 @@
   container.style.width = '100%';
   container.style.position = 'relative';
   
-  // 4. Find where to inject
-  const target = document.getElementById('alisio-booking-widget') || 
-                 document.getElementById('alisio-booking-container');
-                 
-  if (target) {
-    // Prevent duplicate injection
-    if (target.querySelector('.alisio-widget-container')) {
-      console.log('ALiSiO Widget already present in target, skipping.');
-      return;
-    }
-    target.appendChild(container);
-  } else if (script && script.parentNode) {
-    script.parentNode.insertBefore(container, script);
-  } else {
-    document.body.appendChild(container);
-  }
+  // Insert container before the script tag
+  script.parentNode.insertBefore(container, script);
 
-  // 5. Create the iframe
+  // 4. Create the iframe
   const iframe = document.createElement('iframe');
   const queryParams = new URLSearchParams({
     unitId: unitId,
@@ -55,7 +39,7 @@
   iframe.src = url;
   iframe.style.width = '1px';
   iframe.style.minWidth = '100%';
-  iframe.style.height = '1200px'; // Massive initial height
+  iframe.style.height = '700px'; // Initial height
   iframe.style.border = 'none';
   iframe.style.display = 'block';
   iframe.style.overflow = 'hidden';
@@ -66,10 +50,12 @@
 
   // 5. Robust Resize Listener
   window.addEventListener('message', function(e) {
+    // Only accept messages from the same origin as the script (or the specified baseUrl)
     if (e.data && e.data.type === 'resize' && e.data.height) {
-      // Massive 100px buffer
-      const newHeight = parseInt(e.data.height) + 100;
-      iframe.style.height = newHeight + 'px';
+      // Ensure we are resizing the correct iframe
+      if (e.source === iframe.contentWindow) {
+        iframe.style.height = e.data.height + 'px';
+      }
     }
   }, false);
 

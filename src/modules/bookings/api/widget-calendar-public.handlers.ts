@@ -16,138 +16,210 @@ export async function getWidgetCalendar(request: NextRequest) {
   try {
     const db = getDb();
     const { searchParams } = new URL(request.url);
-    const propertyId = searchParams.get('propertyId');
-    const monthParam = searchParams.get('month');
+    const propertyId  = searchParams.get('propertyId');
+    const unitId      = searchParams.get('unitId');
+    const siteSlug    = searchParams.get('siteSlug');
+    const siteId      = searchParams.get('siteId');
+    const monthParam  = searchParams.get('month');
 
+    const existingTables = new Set(
+      (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+        .map(t => t.name)
+    );
+    const hasAvailBlocks   = existingTables.has('availability_blocks');
+    const hasSiteListings  = existingTables.has('site_listings');
+    const hasPriceCalendar = existingTables.has('price_calendar');
+    const hasBookingSites  = existingTables.has('booking_sites');
+
+    // ── 1. Resolve site unit IDs (booking-site-aware) ──────────────────────
+    // When siteSlug/siteId is given, we restrict to units listed for that site.
+    let siteUnitIds: string[] | null = null;
+
+    if ((siteSlug || siteId) && hasBookingSites && hasSiteListings) {
+      let site: any;
+      if (siteSlug) {
+        site = db.prepare("SELECT id FROM booking_sites WHERE slug = ? AND status != 'deleted'").get(siteSlug);
+      } else {
+        site = db.prepare("SELECT id FROM booking_sites WHERE id = ? AND status != 'deleted'").get(siteId);
+      }
+      if (site) {
+        const listings = db.prepare('SELECT unit_id FROM site_listings WHERE site_id = ?').all(site.id) as any[];
+        siteUnitIds = listings.map((l: any) => l.unit_id);
+      }
+    }
+
+    // ── 2. Resolve target unit ──────────────────────────────────────────────
+    let targetUnitId: string | null = unitId;
+    // Validate that requested unit belongs to the site
+    if (targetUnitId && siteUnitIds && !siteUnitIds.includes(targetUnitId)) {
+      targetUnitId = null;
+    }
+
+    // ── 3. Resolve property ─────────────────────────────────────────────────
     let property: any;
-    if (propertyId) {
-      property = db.prepare('SELECT id FROM properties WHERE id = ? AND is_active = 1').get(propertyId);
-    } else {
-      property = db.prepare('SELECT id FROM properties WHERE is_active = 1 LIMIT 1').get();
+
+    if (targetUnitId) {
+      const u = db.prepare('SELECT property_id FROM units WHERE id = ?').get(targetUnitId) as any;
+      if (u) property = { id: u.property_id };
+    }
+
+    if (!property && siteUnitIds && siteUnitIds.length > 0) {
+      const u = db.prepare('SELECT property_id FROM units WHERE id = ?').get(siteUnitIds[0]) as any;
+      if (u) property = { id: u.property_id };
+    }
+
+    if (!property) {
+      if (propertyId) {
+        property = db.prepare('SELECT id FROM properties WHERE id = ? AND is_active = 1').get(propertyId);
+      } else {
+        property = db.prepare('SELECT id FROM properties WHERE is_active = 1 LIMIT 1').get();
+      }
     }
 
     if (!property) {
       return NextResponse.json({ error: 'Property not found' }, { status: 404, headers: CORS_HEADERS });
     }
 
+    // ── 4. Date range ───────────────────────────────────────────────────────
     let year: number, month: number;
     if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-      const parts = monthParam.split('-');
-      year = parseInt(parts[0], 10);
-      month = parseInt(parts[1], 10) - 1;
+      const [y, m] = monthParam.split('-');
+      year  = parseInt(y, 10);
+      month = parseInt(m, 10) - 1;
     } else {
       const now = new Date();
-      year = now.getFullYear();
+      year  = now.getFullYear();
       month = now.getMonth();
     }
 
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    const daysInMonth    = new Date(year, month + 1, 0).getDate();
+    const monthStart     = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const monthEnd       = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
     const nextMonthStart = new Date(year, month + 1, 1).toISOString().split('T')[0];
 
-    const existingTables = new Set(
-      (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
-        .map(t => t.name)
-    );
-    const hasAvailBlocks = existingTables.has('availability_blocks');
+    // ── 5. Total unit count ─────────────────────────────────────────────────
+    let totalCount = 0;
+    if (targetUnitId) {
+      const row = db.prepare('SELECT COUNT(*) as cnt FROM units WHERE id = ? AND is_active = 1').get(targetUnitId) as any;
+      totalCount = row?.cnt || 0;
+    } else if (siteUnitIds && siteUnitIds.length > 0) {
+      const ph  = siteUnitIds.map(() => '?').join(',');
+      const row = db.prepare(`SELECT COUNT(*) as cnt FROM units WHERE id IN (${ph}) AND is_active = 1`).get(...siteUnitIds) as any;
+      totalCount = row?.cnt || 0;
+    } else {
+      // Fallback: all glamping units in property
+      const row = db.prepare(`
+        SELECT COUNT(*) as cnt FROM units u
+        JOIN unit_types ut ON u.unit_type_id = ut.id
+        JOIN categories c ON ut.category_id = c.id
+        WHERE c.type = 'glamping' AND u.is_active = 1 AND u.room_status = 'available' AND ut.property_id = ?
+      `).get(property.id) as any;
+      totalCount = row?.cnt || 0;
+    }
 
+    // ── 6. Reservations ─────────────────────────────────────────────────────
+    let reservations: any[];
+    if (targetUnitId) {
+      reservations = db.prepare(`
+        SELECT r.unit_id, r.check_in, r.check_out FROM reservations r
+        WHERE r.unit_id = ?
+          AND r.status NOT IN ('cancelled', 'no_show')
+          AND r.check_in < ? AND r.check_out > ?
+      `).all(targetUnitId, nextMonthStart, monthStart) as any[];
+    } else if (siteUnitIds && siteUnitIds.length > 0) {
+      const ph = siteUnitIds.map(() => '?').join(',');
+      reservations = db.prepare(`
+        SELECT r.unit_id, r.check_in, r.check_out FROM reservations r
+        WHERE r.unit_id IN (${ph})
+          AND r.status NOT IN ('cancelled', 'no_show')
+          AND r.check_in < ? AND r.check_out > ?
+      `).all(...siteUnitIds, nextMonthStart, monthStart) as any[];
+    } else {
+      reservations = db.prepare(`
+        SELECT r.unit_id, r.check_in, r.check_out FROM reservations r
+        JOIN units u ON r.unit_id = u.id
+        JOIN unit_types ut ON u.unit_type_id = ut.id
+        JOIN categories c ON ut.category_id = c.id
+        WHERE c.type = 'glamping' AND ut.property_id = ?
+          AND r.status NOT IN ('cancelled', 'no_show')
+          AND r.check_in < ? AND r.check_out > ?
+      `).all(property.id, nextMonthStart, monthStart) as any[];
+    }
+
+    // ── 7. Availability blocks ──────────────────────────────────────────────
+    let blocks: any[] = [];
+    if (hasAvailBlocks) {
+      if (targetUnitId) {
+        blocks = db.prepare(`
+          SELECT ab.unit_id, ab.date_from, ab.date_to FROM availability_blocks ab
+          WHERE ab.unit_id = ? AND ab.date_from < ? AND ab.date_to > ?
+        `).all(targetUnitId, nextMonthStart, monthStart) as any[];
+      } else if (siteUnitIds && siteUnitIds.length > 0) {
+        const ph = siteUnitIds.map(() => '?').join(',');
+        blocks = db.prepare(`
+          SELECT ab.unit_id, ab.date_from, ab.date_to FROM availability_blocks ab
+          WHERE ab.unit_id IN (${ph}) AND ab.date_from < ? AND ab.date_to > ?
+        `).all(...siteUnitIds, nextMonthStart, monthStart) as any[];
+      } else {
+        blocks = db.prepare(`
+          SELECT ab.unit_id, ab.date_from, ab.date_to FROM availability_blocks ab
+          JOIN units u ON ab.unit_id = u.id
+          JOIN unit_types ut ON u.unit_type_id = ut.id
+          JOIN categories c ON ut.category_id = c.id
+          WHERE c.type = 'glamping' AND ut.property_id = ?
+            AND ab.date_from < ? AND ab.date_to > ?
+        `).all(property.id, nextMonthStart, monthStart) as any[];
+      }
+    }
+
+    // ── 8. Price map (optional) ─────────────────────────────────────────────
     const unitTypes = db.prepare(`
       SELECT ut.id FROM unit_types ut
       JOIN categories c ON ut.category_id = c.id
       WHERE c.type = 'glamping' AND ut.is_active = 1 AND ut.property_id = ?
     `).all(property.id) as any[];
 
-    const totalUnits = db.prepare(`
-      SELECT COUNT(*) as cnt FROM units u
-      JOIN unit_types ut ON u.unit_type_id = ut.id
-      JOIN categories c ON ut.category_id = c.id
-      WHERE c.type = 'glamping' AND u.is_active = 1 AND u.room_status = 'available' AND ut.property_id = ?
-    `).get(property.id) as any;
-    const totalCount = totalUnits?.cnt || 0;
-
-    const reservations = db.prepare(`
-      SELECT r.unit_id, r.check_in, r.check_out FROM reservations r
-      JOIN units u ON r.unit_id = u.id
-      JOIN unit_types ut ON u.unit_type_id = ut.id
-      JOIN categories c ON ut.category_id = c.id
-      WHERE c.type = 'glamping' AND ut.property_id = ?
-        AND r.status NOT IN ('cancelled', 'no_show')
-        AND r.check_in < ? AND r.check_out > ?
-    `).all(property.id, nextMonthStart, monthStart) as any[];
-
-    let blocks: any[] = [];
-    if (hasAvailBlocks) {
-      blocks = db.prepare(`
-        SELECT ab.unit_id, ab.date_from, ab.date_to FROM availability_blocks ab
-        JOIN units u ON ab.unit_id = u.id
-        JOIN unit_types ut ON u.unit_type_id = ut.id
-        JOIN categories c ON ut.category_id = c.id
-        WHERE c.type = 'glamping' AND ut.property_id = ?
-          AND ab.date_from < ? AND ab.date_to > ?
-      `).all(property.id, nextMonthStart, monthStart) as any[];
-    }
-
-    const hasPriceCalendar = existingTables.has('price_calendar');
     const priceMap = new Map<string, any>();
-
     if (hasPriceCalendar && unitTypes.length > 0) {
       try {
+        const ph = unitTypes.map(() => '?').join(',');
         const priceRows = db.prepare(`
           SELECT pc.date, MIN(pc.base_price) as min_price, MIN(pc.weekend_price) as min_weekend_price
           FROM price_calendar pc
-          WHERE pc.unit_type_id IN (${unitTypes.map(() => '?').join(',')})
-            AND pc.date >= ? AND pc.date <= ?
+          WHERE pc.unit_type_id IN (${ph}) AND pc.date >= ? AND pc.date <= ?
           GROUP BY pc.date
         `).all(...unitTypes.map((ut: any) => ut.id), monthStart, monthEnd) as any[];
-
         for (const p of priceRows) priceMap.set(p.date, p);
       } catch { /* price_calendar not available */ }
     }
 
-    const days: { date: string; status: 'available' | 'booked' | 'partial'; price: number | null }[] = [];
+    // ── 9. Build day array ──────────────────────────────────────────────────
     const STUB_PRICE = 2500;
+    const days: { date: string; status: 'available' | 'booked' | 'partial'; price: number | null }[] = [];
 
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const dateObj = new Date(year, month, d);
-      const dayOfWeek = dateObj.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
+      const dateStr   = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isWeekend = [0, 5, 6].includes(new Date(year, month, d).getDay());
 
       const bookedUnitIds = new Set<string>();
-
       for (const r of reservations) {
-        if (dateStr >= r.check_in && dateStr < r.check_out) {
-          bookedUnitIds.add(r.unit_id);
-        }
+        if (dateStr >= r.check_in && dateStr < r.check_out) bookedUnitIds.add(r.unit_id);
       }
-
       for (const b of blocks) {
-        if (dateStr >= b.date_from && dateStr < b.date_to) {
-          bookedUnitIds.add(b.unit_id);
-        }
+        if (dateStr >= b.date_from && dateStr < b.date_to) bookedUnitIds.add(b.unit_id);
       }
 
-      const bookedCount = bookedUnitIds.size;
+      const bookedCount    = bookedUnitIds.size;
       const availableCount = totalCount - bookedCount;
 
-      let status: 'available' | 'booked' | 'partial';
-      if (availableCount <= 0) {
-        status = 'booked';
-      } else if (bookedCount > 0) {
-        status = 'partial';
-      } else {
-        status = 'available';
-      }
+      const status: 'available' | 'booked' | 'partial' =
+        availableCount <= 0 ? 'booked' :
+        bookedCount > 0 ? 'partial' : 'available';
 
-      const priceEntry = priceMap.get(dateStr);
-      let price: number | null = null;
-      if (priceEntry) {
-        price = isWeekend && priceEntry.min_weekend_price != null
-          ? priceEntry.min_weekend_price : priceEntry.min_price;
-      } else if (unitTypes.length > 0) {
-        price = STUB_PRICE;
-      }
+      const pe = priceMap.get(dateStr);
+      const price: number | null = pe
+        ? (isWeekend && pe.min_weekend_price != null ? pe.min_weekend_price : pe.min_price)
+        : (unitTypes.length > 0 ? STUB_PRICE : null);
 
       days.push({ date: dateStr, status, price });
     }

@@ -2,8 +2,13 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import './booking.css';
-import { BookingLang, BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from './translations';
+import './booking-v2.css';
+// Exception: @bookings public API imports better-sqlite3 (server-only).
+// translations.ts has zero server deps — safe to import from ui/ in 'use client' context.
+// TODO: move translations to src/shared/ when creating that layer.
+import type { BookingLang } from '@/modules/bookings/ui/translations';
+import { BOOKING_LANG_LABELS, BOOKING_LANG_FLAGS, getBookingTranslations } from '@/modules/bookings/ui/translations';
+
 
 // API base URL — configurable for subdomain deployment
 const API_BASE = process.env.NEXT_PUBLIC_PMS_API_URL || '';
@@ -199,6 +204,9 @@ export default function BookingPage() {
   // Whether step 4 has any services to show
   const [hasServices, setHasServices] = useState(true); // default true until checked
 
+  // Calendar: booked days from Hostex (fetched per visible months)
+  const [bookedDays, setBookedDays] = useState<Set<string>>(new Set());
+
 
   // Handle return from Teya payment (room or services checkout)
   useEffect(() => {
@@ -279,6 +287,37 @@ export default function BookingPage() {
 
   // Mobile summary
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
+  // ─── Fetch booked dates for calendar ──────
+  useEffect(() => {
+    const fetchCalendar = async () => {
+      try {
+        const months = [
+          new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1),
+          new Date(today.getFullYear(), today.getMonth() + calMonthOffset + 1, 1),
+        ].map(d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+
+        const booked = new Set<string>();
+        const currentSiteId = typeof window !== 'undefined' ? (window as any).__BOOKING_SITE_ID__ || '' : '';
+
+        await Promise.all(months.map(async (month) => {
+          const params = new URLSearchParams({ month });
+          if (currentSiteId) params.set('siteId', currentSiteId);
+          const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
+          if (res.ok) {
+            const data = await res.json();
+            for (const day of data.days || []) {
+              if (day.status === 'booked') booked.add(day.date);
+            }
+          }
+        }));
+
+        setBookedDays(booked);
+      } catch { /* silent — calendar is decorative, doesn't break booking */ }
+    };
+    fetchCalendar();
+  }, [calMonthOffset, today]);
+
 
   // ─── Derived ──────
   const calMonths = useMemo(() => {
@@ -711,12 +750,14 @@ export default function BookingPage() {
       if (checkOut && dateStr === checkOut) rangeClass += ' range-end';
       if (checkIn && checkOut && dateStr > checkIn && dateStr < checkOut) rangeClass = 'in-range';
 
+      const isBooked = bookedDays.has(dateStr);
+
       cells.push(
         <button
           key={d}
-          className={`booking-cal-day ${isPast ? 'past' : ''} ${isToday ? 'today' : ''} ${rangeClass}`}
-          onClick={() => !isPast && handleDayClick(dateStr)}
-          disabled={isPast}
+          className={`booking-cal-day ${isPast ? 'past' : ''} ${isBooked ? 'booked' : ''} ${isToday && !isBooked ? 'today' : ''} ${rangeClass}`}
+          onClick={() => !isPast && !isBooked && handleDayClick(dateStr)}
+          disabled={isPast || isBooked}
           type="button"
         >
           {d}
