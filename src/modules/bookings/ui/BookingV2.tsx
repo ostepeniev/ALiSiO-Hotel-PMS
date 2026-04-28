@@ -193,10 +193,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const l = params.get('lang')
         || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
         || initialLang
+        || (typeof localStorage !== 'undefined' && localStorage.getItem('alisio_widget_lang'))
         || getBrowserLang()
         || null;
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
         setLang(l as BookingLang);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('alisio_widget_lang', l);
+        }
       }
 
       // Auto-fill dates from URL
@@ -257,6 +261,15 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           if (data.currency) setSiteCurrency(data.currency);
           if (data.hasPayment !== undefined) setSiteConfig(data);
           if (data.config?.thank_you_url) setSiteThankYouUrl(data.config.thank_you_url);
+          if (data.config?.default_lang) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasUrlLang = urlParams.has('lang');
+            const hasWindowLang = typeof window !== 'undefined' && !!(window as any).__BOOKING_LANG__;
+            const hasSavedLang = typeof localStorage !== 'undefined' && !!localStorage.getItem('alisio_widget_lang');
+            if (!hasUrlLang && !hasWindowLang && !hasSavedLang) {
+              setLang(data.config.default_lang);
+            }
+          }
         }
       } catch (e) { console.error('Fetch site config error:', e); }
     };
@@ -768,9 +781,11 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     return styles;
   }, [activeDesign]);
 
-  // Sync html/body background to match the widget theme
-  // (prevents white gaps from globals.css on /w/ pages)
+  // Sync html/body background to match the widget theme only when inside an iframe
+  // (prevents styling the host page when used directly as a component)
   useEffect(() => {
+    if (typeof window === 'undefined' || window.self === window.top) return;
+    
     const theme = activeDesign?.theme?.toLowerCase() || '';
     const BG_MAP: Record<string, string> = {
       dark:      '#0f172a',
@@ -1354,7 +1369,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         {/* STEP 5: PAYMENT (Breakdown) */}
         <div className={`v3-step ${step === 5 ? 'visible' : ''}`}>
           <h1 className="v3-step-title">{t.paymentTitle}</h1>
-          <p className="v3-step-sub">{siteConfig?.hasPayment ? t.securePaymentNote : t.paymentSubtitle}</p>
+          <p className="v3-step-sub">
+            {(siteConfig as any)?.payment_config?.custom_description 
+              || (siteConfig?.hasPayment ? t.securePaymentNote : t.paymentSubtitle)}
+          </p>
 
           <div className="v3-breakdown">
             <div className="v3-breakdown-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
@@ -1363,7 +1381,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                 <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
               </div>
               {checkIn && checkOut && (
-                <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4, width: '100%' }}>
+                <div style={{ fontSize: 13, color: 'var(--ink-2)', width: '100%' }}>
                   {formatDisplayDate(checkIn, lang)} з 15:00 – {formatDisplayDate(checkOut, lang)} до 11:00
                 </div>
               )}

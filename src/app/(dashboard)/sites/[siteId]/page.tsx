@@ -54,7 +54,7 @@ interface WidgetConfig {
   supportContact?: string;
 }
 interface Listing { id: string; unit_id?: string; unit_type_id?: string; unit_name?: string; unit_code?: string; unit_type_name?: string; unit_type_code?: string; unit_type_photos?: string; photos?: string; actual_unit_type_id?: string; price_override?: number; external_url?: string; thank_you_url?: string; default_lang?: string; sort_order: number; created_at: string; }
-interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; }
+interface SiteService { id: string; name: string; icon: string; service_type: string; price: number; currency: string; is_enabled: number; price_override?: number; site_service_id?: string; photo_override?: string; photo_url?: string; }
 interface RatePlan { id: string; name: string; is_default: number; cancellation_policy: string; payment_schedule: { percent: number; trigger: string }[]; meals_included: string[]; min_stay: number; max_stay: number; min_days_before_checkin: number; pricing_mode: string; applied_listings: string[]; }
 
 const TABS = [
@@ -195,7 +195,15 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [embedLang, setEmbedLang] = useState('uk');
+  const [embedLang, setEmbedLang] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('alisio_embed_lang') || 'uk';
+    return 'uk';
+  });
+  
+  const handleEmbedLangChange = (l: string) => {
+    setEmbedLang(l);
+    if (typeof window !== 'undefined') localStorage.setItem('alisio_embed_lang', l);
+  };
   const [origin, setOrigin] = useState('');
   useEffect(() => { setOrigin(window.location.origin); }, []);
 
@@ -227,14 +235,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
       }),
     });
 
-    // Update unit type photos
-    if (listing.actual_unit_type_id) {
-      await fetch(`/api/unit-types/${listing.actual_unit_type_id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photos: photoUrls.join(',') }),
-      });
-    }
+
 
     setSaving(false);
     onClose();
@@ -249,7 +250,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('unit_type_id', listing.actual_unit_type_id!);
+      formData.append('misc_id', `site_listing_${listing.id}`);
 
       const res = await fetch('/api/photos/upload', {
         method: 'POST',
@@ -331,7 +332,7 @@ function ListingEditModal({ listing, siteId, siteSlug, open, onClose, onRefresh 
         <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 6 }}>
             {LANGS.map(l => (
-              <button key={l} type="button" onClick={() => setEmbedLang(l)}
+              <button key={l} type="button" onClick={() => handleEmbedLangChange(l)}
                 style={{
                   padding: '5px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   border: `2px solid ${embedLang === l ? 'var(--accent-primary)' : 'var(--border-primary)'}`,
@@ -578,6 +579,7 @@ function ServicesTab({ siteId }: { siteId: string }) {
     `<script src="${typeof window !== 'undefined' ? window.location.origin : ''}/widget/service-embed.js"\n  data-service="${svcId}"\n  data-site="${siteId}">\n</script>`;
 
   const [embedSvc, setEmbedSvc] = useState<SiteService | null>(null);
+  const [editingServicePhoto, setEditingServicePhoto] = useState<SiteService | null>(null);
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>;
 
@@ -604,9 +606,14 @@ function ServicesTab({ siteId }: { siteId: string }) {
                 </button>
               </td>
               <td>
-                <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setEmbedSvc(svc)}>
-                  <Code2 size={13} /> Код
-                </button>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setEditingServicePhoto(svc)}>
+                    <ImageIcon size={13} /> {svc.photo_override ? 'Своє фото' : 'Фото'}
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setEmbedSvc(svc)}>
+                    <Code2 size={13} /> Код
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -628,7 +635,69 @@ function ServicesTab({ siteId }: { siteId: string }) {
           </div>
         </div>
       </Modal>
+
+      {/* Photo Edit Modal for Service */}
+      {editingServicePhoto && (
+        <ServicePhotoEditModal 
+          open={!!editingServicePhoto} 
+          service={editingServicePhoto} 
+          siteId={siteId} 
+          onClose={() => setEditingServicePhoto(null)} 
+          onRefresh={fetchServices} 
+        />
+      )}
     </div>
+  );
+}
+
+/* ── ServicePhotoEditModal ── */
+function ServicePhotoEditModal({ open, service, siteId, onClose, onRefresh }: {
+  open: boolean; service: SiteService; siteId: string; onClose: () => void; onRefresh: () => void;
+}) {
+  const [url, setUrl] = useState(service.photo_override || service.photo_url || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    await fetch(`/api/booking-sites/${siteId}/services`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        service_id: service.id, 
+        is_enabled: service.is_enabled,
+        price_override: service.price_override,
+        photo_override: url 
+      }),
+    });
+    setSaving(false);
+    onRefresh();
+    onClose();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Фото: ${service.name}`}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose}>Скасувати</button>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Зберегти
+        </button>
+      </>}>
+      <div className="form-group">
+        <label className="form-label">URL фото (лише для цього сайту)</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="form-input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+          Вставте пряме посилання на зображення. Якщо порожньо — використовуватиметься стандартне фото сервісу.
+        </div>
+      </div>
+      {url && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Попередній перегляд:</div>
+          <div style={{ height: 160, borderRadius: 8, background: '#eee', backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -1137,6 +1206,21 @@ function PaymentsTab({ site, onUpdate }: { site: Site; onUpdate: (cfg: PaymentCo
 
       {cfg.enabled && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label className="form-label">Опис на сторінці оплати</label>
+            <textarea
+              className="form-input"
+              rows={3}
+              placeholder="Дозволити гостям оплачувати бронювання онлайн..."
+              value={cfg.custom_description || ''}
+              onChange={e => setCfg(c => ({ ...c, custom_description: e.target.value }))}
+            />
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+              Цей текст буде відображатись під заголовком "Оплата" на етапі 5 у віджеті бронювання. Якщо порожньо — використовується стандартний текст.
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">Платіжний провайдер</label>
             <div style={{ display: 'flex', gap: 8 }}>

@@ -2868,9 +2868,11 @@ function runMigrations(database: any) {
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN redemption_limit INTEGER'); } catch { /* */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN applied_listings TEXT'); } catch { /* */ }
+  try { database.exec('ALTER TABLE promo_codes ADD COLUMN min_nights INTEGER'); } catch { /* */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN max_nights INTEGER'); } catch { /* */ }
   try { database.exec('ALTER TABLE promo_codes ADD COLUMN allowed_days TEXT'); } catch { /* */ }
   try { database.exec("ALTER TABLE promo_codes ADD COLUMN applies_to TEXT DEFAULT 'services'"); } catch { /* */ }
+  try { database.exec("ALTER TABLE site_services ADD COLUMN photo_override TEXT"); } catch { /* */ }
 
   try { database.exec('ALTER TABLE booking_service_orders ADD COLUMN site_id TEXT REFERENCES booking_sites(id) ON DELETE SET NULL'); } catch { /* */ }
   console.log('[DB] Booking Sites module tables ready');
