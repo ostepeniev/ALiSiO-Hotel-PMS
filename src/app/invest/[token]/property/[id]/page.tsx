@@ -73,13 +73,13 @@ export default function PropertyDetailPage() {
           <ArrowLeft size={16} /> Портфель
         </Link>
         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{data.investor.name}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{data.investor.name}</div>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Інвестор</div>
         </div>
       </header>
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: 32 }}>
-        <h1 style={{ margin: 0, marginBottom: 4 }}>Деталі об&apos;єкта</h1>
+        <h1 style={{ margin: 0, marginBottom: 4, color: '#0f172a' }}>Деталі об&apos;єкта</h1>
         <p style={{ margin: 0, color: '#64748b' }}>Поточна результативність {property.project_name}</p>
 
         {/* Title card */}
@@ -87,7 +87,7 @@ export default function PropertyDetailPage() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24 }}>
             <div style={{ flex: 1 }}>
               <span style={{ display: 'inline-block', padding: '4px 10px', background: `${stat.color}15`, color: stat.color, borderRadius: 4, fontSize: 11, fontWeight: 600, marginBottom: 8 }}>{stat.label}</span>
-              <h2 style={{ margin: 0, fontSize: 22 }}>{property.project_name}</h2>
+              <h2 style={{ margin: 0, fontSize: 22, color: '#0f172a' }}>{property.project_name}</h2>
               {property.airbnb_url && (
                 <a href={property.airbnb_url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, padding: '6px 12px', background: '#fce7f3', color: '#be185d', borderRadius: 6, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
                   <ExternalLink size={14} /> Переглянути на Airbnb
@@ -112,7 +112,7 @@ export default function PropertyDetailPage() {
         {/* Work stages */}
         {property.work_stages.length > 0 && (
           <div style={{ marginTop: 16, padding: 20, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
-            <h3 style={{ margin: 0, marginBottom: 12, fontSize: 16 }}>Прогрес реалізації</h3>
+            <h3 style={{ margin: 0, marginBottom: 12, fontSize: 16, color: '#0f172a' }}>Прогрес реалізації</h3>
             {property.work_stages.map((s, i) => (
               <div key={i} style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>
@@ -131,14 +131,14 @@ export default function PropertyDetailPage() {
         {reports.length > 0 && (
           <div style={{ marginTop: 16, padding: 20, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>Фінансова звітність</h3>
+              <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>Фінансова звітність</h3>
               <span style={{ fontSize: 11, color: '#22c55e', display: 'inline-flex', alignItems: 'center', gap: 4 }}>● ONLINE LIVE</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
               {reports.map((r) => (
                 <div key={r.year_month} style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 8 }}>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{r.year_month}</div>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>{property.project_name}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 6, color: '#0f172a' }}>{property.project_name}</div>
                   {r.adr != null && <div style={{ fontSize: 12, color: '#475569' }}>ADR: <b>{fmt(r.adr, property.currency)}</b></div>}
                   {r.general_comment && <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>{r.general_comment}</div>}
                   {r.market_insight && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, fontStyle: 'italic' }}>📊 {r.market_insight}</div>}

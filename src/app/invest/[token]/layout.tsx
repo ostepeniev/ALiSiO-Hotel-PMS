@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '../invest.css';
 
 const TITLE = 'ALiSiO Investment Portfolio';
 const DESCRIPTION = 'Your investment portfolio dashboard';

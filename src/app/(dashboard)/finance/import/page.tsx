@@ -61,6 +61,10 @@ interface ReviewResult {
   ok: boolean;
   rows: ProcessedRow[];
   summary: { total: number; ok: number; possible_dup: number; exact_dup: number; errors: number };
+  all_entities: {
+    category: { id: string; name: string; meta?: string }[];
+    project:  { id: string; name: string; meta?: string }[];
+  };
 }
 
 type EntityType = 'account' | 'category' | 'project' | 'counterparty';
@@ -216,6 +220,14 @@ export default function ImportWizardPage() {
       setStage('review');
     } catch (e: any) { setError(e.message); }
     setLoading(false);
+  }
+
+  function updateRowField(rowIndex: number, field: 'category' | 'project', next: ProcessedRow['category']) {
+    if (!review) return;
+    setReview({
+      ...review,
+      rows: review.rows.map((r) => r.index === rowIndex ? { ...r, [field]: next } : r),
+    });
   }
 
   async function commitFinal() {
@@ -657,6 +669,7 @@ export default function ImportWizardPage() {
                   <th style={th}>Тип</th>
                   <th style={th}>From → To</th>
                   <th style={th}>Категорія</th>
+                  <th style={th}>Проєкт</th>
                   <th style={th}>Коментар</th>
                 </tr>
               </thead>
@@ -688,7 +701,18 @@ export default function ImportWizardPage() {
                         {r.account_to?.source && <span>{r.account_to.source}{r.account_to.action === 'create_new' && ' (new)'}</span>}
                       </td>
                       <td style={td}>
-                        {r.category?.source}{r.category?.action === 'create_new' && <span style={{ fontSize: 10, color: '#3b82f6' }}> (new)</span>}
+                        <RowEntitySelect
+                          entry={r.category}
+                          options={review.all_entities.category}
+                          onChange={(next) => updateRowField(r.index, 'category', next)}
+                        />
+                      </td>
+                      <td style={td}>
+                        <RowEntitySelect
+                          entry={r.project}
+                          options={review.all_entities.project}
+                          onChange={(next) => updateRowField(r.index, 'project', next)}
+                        />
                       </td>
                       <td style={{ ...td, fontSize: 11 }}>
                         {r.comment || (r.error && <span style={{ color: '#dc2626' }}>{r.error}</span>) || '—'}
@@ -714,6 +738,44 @@ export default function ImportWizardPage() {
         </>
       )}
     </div>
+  );
+}
+
+function RowEntitySelect({
+  entry, options, onChange,
+}: {
+  entry: { source: string; resolved_id: string | null; action: string } | null;
+  options: { id: string; name: string; meta?: string }[];
+  onChange: (next: { source: string; resolved_id: string | null; action: 'use_existing' | 'create_new' | 'ignore' }) => void;
+}) {
+  const source = entry?.source || '';
+  const action = (entry?.action || 'ignore') as 'use_existing' | 'create_new' | 'ignore';
+  let value = '__ignore__';
+  if (action === 'use_existing' && entry?.resolved_id) value = entry.resolved_id;
+  else if (action === 'create_new') value = '__create__';
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v === '__ignore__') onChange({ source, resolved_id: null, action: 'ignore' });
+        else if (v === '__create__') onChange({ source, resolved_id: null, action: 'create_new' });
+        else onChange({ source: source || options.find((o) => o.id === v)?.name || '', resolved_id: v, action: 'use_existing' });
+      }}
+      style={{ padding: '4px 6px', fontSize: 11, border: '1px solid var(--border-primary)', borderRadius: 4, background: 'var(--bg-primary)', color: 'var(--text-primary)', maxWidth: 240 }}
+      title={source ? `Source: «${source}»` : 'No source value in row'}
+    >
+      <option value="__ignore__">— ігнорувати —</option>
+      {source && <option value="__create__">+ створити «{source}»</option>}
+      {options.length > 0 && (
+        <optgroup label="Існуючі в PMS">
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}{o.meta ? ` · ${o.meta}` : ''}</option>
+          ))}
+        </optgroup>
+      )}
+    </select>
   );
 }
 

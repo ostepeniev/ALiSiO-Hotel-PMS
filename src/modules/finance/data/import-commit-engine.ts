@@ -18,6 +18,7 @@
 
 import * as crypto from 'crypto';
 import { createOperationInTx } from '../api/operations.handlers';
+import { loadAllPmsEntities, type PmsEntity } from './entity-matcher';
 
 export type RowStatus = 'ok' | 'possible_dup' | 'exact_dup' | 'error';
 
@@ -116,10 +117,18 @@ function resolveEntity(
   return { source: sourceValue, resolved_id: r.pms_entity_id, action: r.action };
 }
 
+function inferCurrencyFromAccountName(name: string): string | null {
+  const l = name.toLowerCase();
+  if (l.includes('eur') || l.includes('євро') || l.includes('евро')) return 'EUR';
+  if (l.includes('czk') || l.includes('крон') || l.includes('кч')) return 'CZK';
+  if (l.includes('usd') || l.includes('долар')) return 'USD';
+  return null;
+}
+
 export function processRowsForReview(
   db: any, orgId: string, formatId: string,
   fieldMappings: FieldMappings, allRows: any[][],
-): { rows: ProcessedRow[]; summary: ProcessSummary } {
+): { rows: ProcessedRow[]; summary: ProcessSummary; all_entities: { category: PmsEntity[]; project: PmsEntity[] } } {
   const resolutions = loadResolutions(db, formatId);
 
   const colPaidAt   = colByField(fieldMappings, 'paid_at');
@@ -138,6 +147,15 @@ export function processRowsForReview(
   const summary: ProcessSummary = { total: allRows.length, ok: 0, possible_dup: 0, exact_dup: 0, errors: 0 };
   const out: ProcessedRow[] = [];
 
+  // Pre-load account currencies — used to infer transaction currency when
+  // the source CSV has no explicit currency column or empty cell. Fixes the
+  // bug where EUR transactions on KB Euro got tagged CZK by default.
+  const accountCurrencies = new Map<string, string>();
+  const accRows = db.prepare(
+    "SELECT id, currency FROM finance_accounts WHERE organization_id = ?"
+  ).all(orgId) as { id: string; currency: string }[];
+  for (const a of accRows) accountCurrencies.set(a.id, a.currency);
+
   // Pre-load fin_operations for dup detection (last 18 months window)
   const eighteenMonthsAgo = new Date(Date.now() - 540 * 24 * 3600 * 1000).toISOString().substring(0, 10);
   const existingOps = db.prepare(`
@@ -153,13 +171,24 @@ export function processRowsForReview(
     const rawAccrued = pickStr(row, colAccrued);
     const accruedAt = parseDate(rawAccrued) || paidAt;
     const amount = parseNum(pickStr(row, colAmount));
-    const currency = pickStr(row, colCurrency).toUpperCase() || 'CZK';
 
     const accountFrom = resolveEntity(resolutions.account, pickStr(row, colAccFrom));
     const accountTo   = resolveEntity(resolutions.account, pickStr(row, colAccTo));
     const category    = resolveEntity(resolutions.category, pickStr(row, colCategory));
     const project     = resolveEntity(resolutions.project, pickStr(row, colProject));
     const counterparty= resolveEntity(resolutions.counterparty, pickStr(row, colCp));
+
+    let currency = pickStr(row, colCurrency).toUpperCase();
+    if (!currency) {
+      const accId = accountTo?.resolved_id || accountFrom?.resolved_id;
+      if (accId) currency = accountCurrencies.get(accId) || '';
+      if (!currency) {
+        const newAccName = accountTo?.action === 'create_new' ? accountTo.source
+                         : accountFrom?.action === 'create_new' ? accountFrom.source : '';
+        if (newAccName) currency = inferCurrencyFromAccountName(newAccName) || '';
+      }
+      if (!currency) currency = 'CZK';
+    }
 
     const explicitType = pickStr(row, colOpType).toLowerCase();
     let opType: 'income' | 'expense' | 'transfer' | null = null;
@@ -205,7 +234,7 @@ export function processRowsForReview(
       else if (dupCandidates.length > 0) status = 'possible_dup';
     }
 
-    summary[status]++;
+    if (status === 'error') summary.errors++; else summary[status]++;
     out.push({
       index: i,
       status, error,
@@ -217,7 +246,14 @@ export function processRowsForReview(
     });
   }
 
-  return { rows: out, summary };
+  // Bundle full PMS category + project lists so the review UI can let the
+  // user override the auto-resolved choice per row inline.
+  const all_entities = {
+    category: loadAllPmsEntities(db, orgId, 'category'),
+    project:  loadAllPmsEntities(db, orgId, 'project'),
+  };
+
+  return { rows: out, summary, all_entities };
 }
 
 // ─── Auto-create entity helpers ─────────────────────────

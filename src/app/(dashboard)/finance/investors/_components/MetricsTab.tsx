@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit, Zap, RefreshCw } from 'lucide-react';
 
 interface Metric {
   id: string;
@@ -13,13 +13,31 @@ interface Metric {
   notes: string | null;
 }
 
+interface AutoRevenue {
+  project_id: string;
+  unit_id: string | null;
+  unit_name: string | null;
+  year_month: string;
+  total: number;
+  reservations: number;
+  by_source: { source: string; total: number; reservations: number }[];
+}
+
 interface Project { id: string; name: string }
+
+const SOURCE_LABEL: Record<string, string> = {
+  direct: 'Direct', phone: 'Phone', whatsapp: 'WhatsApp',
+  booking_com: 'Booking.com', airbnb: 'Airbnb', other_ota: 'Other OTA',
+};
 
 export default function MetricsTab() {
   const [items, setItems] = useState<Metric[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [autoForMonth, setAutoForMonth] = useState<Map<string, AutoRevenue>>(new Map());
+  const [autoMonth, setAutoMonth] = useState<string>(() => new Date().toISOString().substring(0, 7));
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<Metric> | null>(null);
+  const [editingAuto, setEditingAuto] = useState<AutoRevenue | null>(null);
   const [filter, setFilter] = useState<string>('');
 
   const fetchAll = useCallback(async () => {
@@ -27,18 +45,50 @@ export default function MetricsTab() {
     try {
       const params = new URLSearchParams();
       if (filter) params.set('project_id', filter);
-      const [mRes, pRes] = await Promise.all([
+      const [mRes, pRes, aRes] = await Promise.all([
         fetch(`/api/finance/investor-monthly-metrics?${params}`),
         fetch('/api/finance/investor-projects'),
+        fetch(`/api/finance/investor-auto-revenue?year_month=${autoMonth}`),
       ]);
-      const [mJ, pJ] = await Promise.all([mRes.json(), pRes.json()]);
+      const [mJ, pJ, aJ] = await Promise.all([mRes.json(), pRes.json(), aRes.json()]);
       setItems(mJ.items || []);
       setProjects(pJ.items || []);
+      const map = new Map<string, AutoRevenue>();
+      for (const a of (aJ.items || []) as AutoRevenue[]) map.set(a.project_id, a);
+      setAutoForMonth(map);
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [filter]);
+  }, [filter, autoMonth]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  async function loadAutoFor(projectId: string, yearMonth: string): Promise<AutoRevenue | null> {
+    try {
+      const res = await fetch(`/api/finance/investor-auto-revenue?year_month=${yearMonth}&project_id=${projectId}`);
+      const j = await res.json();
+      return (j.items || [])[0] || null;
+    } catch { return null; }
+  }
+
+  async function applyAuto(projectId: string) {
+    const auto = autoForMonth.get(projectId);
+    if (!auto) return;
+    if (!auto.unit_id) {
+      alert(`Не знайдено glamping-юніт з назвою business_unit. Перейменуйте business_unit щоб збігався з units.name (A1, B2 тощо).`);
+      return;
+    }
+    if (!confirm(`Записати auto-revenue ${auto.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} EUR за ${autoMonth} як метрику для цього проєкту?`)) return;
+    const res = await fetch('/api/finance/investor-monthly-metrics', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: projectId, year_month: autoMonth,
+        occupancy_pct: null, revenue: auto.total,
+        notes: `Авто з ${auto.reservations} бронювань (${auto.unit_name}) станом на ${new Date().toISOString().substring(0,10)}`,
+      }),
+    });
+    if (!res.ok) { const j = await res.json(); alert(`Помилка: ${j.error}`); return; }
+    fetchAll();
+  }
 
   async function save() {
     if (!editing?.project_id || !editing?.year_month) {
@@ -60,8 +110,74 @@ export default function MetricsTab() {
     fetchAll();
   }
 
+  // Auto-revenue cards (one per project) for the chosen month
+  const autoCards = [...autoForMonth.values()];
+
   return (
     <div>
+      {/* Auto-revenue from real bookings — top section */}
+      <div style={{ marginBottom: 20, padding: 14, background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <Zap size={16} color="#16a34a" />
+          <h4 style={{ margin: 0, fontSize: 14, color: '#16a34a' }}>Auto-revenue з реальних бронювань</h4>
+          <input type="month" style={{ ...input, maxWidth: 150 }} value={autoMonth} onChange={(e) => setAutoMonth(e.target.value)} />
+          <button onClick={fetchAll} style={btn} title="Перерахувати"><RefreshCw size={12} /></button>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)' }}>
+            Сума беретьcя з reservations де гості вже виїхали (check_out ≤ сьогодні) і checkout у вибраному місяці
+          </span>
+        </div>
+        {autoCards.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Жоден проєкт не має активних інвестицій або не зматчений з реальним юнітом.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 8 }}>
+            {autoCards.map((a) => {
+              const project = projects.find((p) => p.id === a.project_id);
+              const matched = items.find((m) => m.project_id === a.project_id && m.year_month === autoMonth);
+              return (
+                <div key={a.project_id} style={{ padding: 10, border: '1px solid var(--border-primary)', borderRadius: 8, background: 'var(--bg-primary)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{project?.name || a.project_id}</div>
+                    {!a.unit_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>⚠ юніт не зматчено</span>}
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>
+                    {a.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} EUR
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    {a.reservations} бронювань
+                    {a.unit_name && <> · юніт: {a.unit_name}</>}
+                  </div>
+                  {a.by_source.length > 0 && (
+                    <details style={{ marginTop: 4 }}>
+                      <summary style={{ fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer' }}>За джерелами</summary>
+                      <div style={{ fontSize: 11, marginTop: 4 }}>
+                        {a.by_source.map((s) => (
+                          <div key={s.source} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{SOURCE_LABEL[s.source] || s.source}</span>
+                            <span>{s.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} ({s.reservations})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <button onClick={() => applyAuto(a.project_id)} disabled={!a.unit_id || a.total === 0}
+                            style={{ ...btn, fontSize: 11, padding: '4px 8px', background: '#16a34a', color: '#fff', border: 'none', opacity: a.unit_id && a.total > 0 ? 1 : 0.5 }}>
+                      <Zap size={11} /> {matched ? 'Перезаписати' : 'Застосувати'}
+                    </button>
+                    {matched && (
+                      <span style={{ fontSize: 10, color: 'var(--text-secondary)', alignSelf: 'center' }}>
+                        вручну: {(matched.revenue ?? 0).toLocaleString('cs-CZ', { minimumFractionDigits: 0 })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Manual metrics list */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <select style={input} value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">Всі проєкти</option>
@@ -69,13 +185,13 @@ export default function MetricsTab() {
         </select>
         <button onClick={() => setEditing({ year_month: new Date().toISOString().substring(0,7), project_id: filter || undefined })}
                 style={{ marginLeft: 'auto', ...btn, background: '#3b82f6', color: '#fff', border: 'none' }}>
-          <Plus size={14} /> Додати місяць
+          <Plus size={14} /> Додати місяць (вручну)
         </button>
       </div>
 
       {loading ? <div>Завантаження…</div> : items.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)', border: '1px dashed var(--border-primary)', borderRadius: 8 }}>
-          Метрик ще немає.
+          Метрик ще немає. Натисни «Застосувати» на картці зверху щоб взяти auto з бронювань.
         </div>
       ) : (
         <div style={{ border: '1px solid var(--border-primary)', borderRadius: 10, overflow: 'hidden' }}>
@@ -98,7 +214,10 @@ export default function MetricsTab() {
                   <td style={{ ...td, textAlign: 'right' }}>{m.occupancy_pct != null ? `${m.occupancy_pct}%` : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{m.revenue != null ? m.revenue.toLocaleString('cs-CZ', { minimumFractionDigits: 2 }) : '—'}</td>
                   <td style={td}>{m.notes || '—'}</td>
-                  <td style={td}><button onClick={() => remove(m.id)} style={{ ...iconBtn, color: '#dc2626' }}><Trash2 size={14} /></button></td>
+                  <td style={td}>
+                    <button onClick={() => setEditing(m)} style={iconBtn} title="Редагувати"><Edit size={14} /></button>
+                    <button onClick={() => remove(m.id)} style={{ ...iconBtn, color: '#dc2626' }}><Trash2 size={14} /></button>
+                  </td>
                 </tr>
               ))}
             </tbody>

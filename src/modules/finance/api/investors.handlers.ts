@@ -18,6 +18,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import * as crypto from 'crypto';
 import { createOperationInTx } from './operations.handlers';
+import { buildMonthlyDigest, renderDigestText } from '../data/monthly-digest-engine';
+import { getTelegramBotInfo, sendTelegramMessage } from '../data/telegram-bot';
+import { getAutoRevenueAllProjects, getAutoRevenue } from '../data/auto-revenue-engine';
 
 function getOrgId(db: any): string {
   const row = db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined;
@@ -27,6 +30,27 @@ function getOrgId(db: any): string {
 
 function newToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Returns the id of the "Дивіденди" expense category, creating it on
+ * first call. Memoised in DB by lookup, so one row per org.
+ */
+function getOrCreateDividendCategory(db: any, orgId: string): string {
+  const existing = db.prepare(`
+    SELECT id FROM expense_categories
+    WHERE organization_id = ? AND op_type = 'expense' AND LOWER(name) = LOWER(?)
+    LIMIT 1
+  `).get(orgId, 'Дивіденди') as { id: string } | undefined;
+  if (existing) return existing.id;
+
+  const id = `ec_dividend_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
+  db.prepare(`
+    INSERT INTO expense_categories
+      (id, organization_id, name, op_type, classifier, std_group, pnl_line, include_in_pnl, include_in_cash, alloc_method, is_capex, icon, color, sort_order, is_active)
+    VALUES (?, ?, ?, 'expense', 'financial', 'FINOP', ?, 1, 1, 'NONE', 0, '💰', '#16a34a', 700, 1)
+  `).run(id, orgId, 'Дивіденди', 'Дивіденди');
+  return id;
 }
 
 // ─── Investors CRUD ──────────────────────────────────────
@@ -337,6 +361,10 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
 
     const payoutId = `payout_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
+    // Look up (or auto-create) the «Дивіденди» expense category so finance
+    // P&L groups all investor payouts under one line.
+    const dividendCategoryId = getOrCreateDividendCategory(db, orgId);
+
     // Create the matching fin_operation
     const operationId = createOperationInTx(db, orgId, {
       op_type: 'expense',
@@ -346,6 +374,7 @@ export async function createPayout(request: NextRequest): Promise<NextResponse> 
       currency,
       paid_at: body.paid_at,
       project_id: body.project_id || null,
+      category_id: dividendCategoryId,
       comment: body.comment || `Dividend → ${investor.name}` + (body.period_year_month ? ` for ${body.period_year_month}` : ''),
       method: 'bank_transfer',
       source: 'dividend',
@@ -387,6 +416,104 @@ export async function deletePayout(
   }
 }
 
+// ─── Monthly digest aggregator ──────────────────────────
+//
+// GET /api/finance/investor-monthly-digest?year_month=YYYY-MM&investor_id=...
+// Returns the per-investor month snapshot used by the admin "Monthly digest"
+// tab. Optionally renders a plain-text body for one investor when ?text=1
+// and ?investor_id= are provided.
+
+export async function getMonthlyDigest(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const yearMonth = sp.get('year_month');
+    const investorId = sp.get('investor_id') || undefined;
+    const wantText = sp.get('text') === '1';
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'year_month=YYYY-MM required' }, { status: 400 });
+    }
+
+    const digest = buildMonthlyDigest(db, orgId, yearMonth, investorId);
+
+    if (wantText && investorId) {
+      const target = digest.investors.find((d) => d.investor_id === investorId);
+      if (!target) return NextResponse.json({ error: 'Investor has no investments' }, { status: 404 });
+      const origin = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+      return NextResponse.json({ text: renderDigestText(target, yearMonth, origin), digest: target });
+    }
+
+    return NextResponse.json(digest);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Telegram bot status + send digest ──────────────────
+
+export async function getTelegramStatus(_request: NextRequest): Promise<NextResponse> {
+  const info = await getTelegramBotInfo();
+  return NextResponse.json(info);
+}
+
+/**
+ * POST /api/finance/investor-monthly-digest/send-telegram
+ * Body: { investor_id, year_month }
+ * Sends the rendered digest text via Telegram Bot API to the investor's
+ * stored telegram_chat_id. Requires TELEGRAM_BOT_TOKEN env var on server.
+ */
+export async function sendDigestTelegram(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.investor_id || !body.year_month) {
+      return NextResponse.json({ error: 'investor_id and year_month required' }, { status: 400 });
+    }
+    const investor = db.prepare("SELECT name, telegram_chat_id FROM investors WHERE id = ? AND organization_id = ?")
+      .get(body.investor_id, orgId) as { name: string; telegram_chat_id: string | null } | undefined;
+    if (!investor) return NextResponse.json({ error: 'Investor not found' }, { status: 404 });
+    if (!investor.telegram_chat_id) return NextResponse.json({ error: 'У інвестора не вказано telegram_chat_id' }, { status: 400 });
+
+    const digest = buildMonthlyDigest(db, orgId, body.year_month, body.investor_id);
+    const target = digest.investors.find((d) => d.investor_id === body.investor_id);
+    if (!target) return NextResponse.json({ error: 'У інвестора немає інвестицій' }, { status: 404 });
+
+    const origin = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
+    const text = renderDigestText(target, body.year_month, origin);
+    const result = await sendTelegramMessage(investor.telegram_chat_id, text);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Auto revenue from real reservations ─────
+//
+// Computes per-project monthly revenue from PMS reservations whose
+// guests have already checked out. Used to skip manual metric entry.
+
+export async function getAutoRevenueForMonth(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const yearMonth = sp.get('year_month');
+    const projectId = sp.get('project_id');
+    if (!yearMonth || !/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return NextResponse.json({ error: 'year_month=YYYY-MM required' }, { status: 400 });
+    }
+    if (projectId) {
+      return NextResponse.json({ items: [getAutoRevenue(db, orgId, projectId, yearMonth)] });
+    }
+    return NextResponse.json({ items: getAutoRevenueAllProjects(db, orgId, yearMonth) });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 // ─── Helper: get available projects (= business_units) ─────
 
 export async function listInvestorProjects(_request: NextRequest): Promise<NextResponse> {
@@ -400,6 +527,213 @@ export async function listInvestorProjects(_request: NextRequest): Promise<NextR
       ORDER BY sort_order, name
     `).all(orgId);
     return NextResponse.json({ items: rows });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Properties (= business_units + investor_property_details + work_stages) ─────
+//
+// The admin "Properties" tab needs the joined view of every project that
+// either has investor data OR is flagged via investor_property_details.
+// Returns work_stages parsed from JSON.
+
+export async function listInvestorProperties(_request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const rows = db.prepare(`
+      SELECT
+        bu.id              AS project_id,
+        bu.name,
+        bu.sort_order,
+        bu.is_active,
+        d.location,
+        d.image_url,
+        d.airbnb_url,
+        d.ical_url,
+        COALESCE(d.status, 'active') AS status,
+        ws.stages_json,
+        (SELECT COUNT(*) FROM investor_investments WHERE project_id = bu.id AND is_active = 1) AS active_lots,
+        (SELECT COALESCE(SUM(amount), 0) FROM investor_investments WHERE project_id = bu.id AND is_active = 1) AS total_invested
+      FROM business_units bu
+      LEFT JOIN investor_property_details d ON d.project_id = bu.id
+      LEFT JOIN property_work_stages ws ON ws.project_id = bu.id
+      WHERE bu.organization_id = ?
+      ORDER BY bu.sort_order, bu.name
+    `).all(orgId) as any[];
+    const items = rows.map((r) => ({
+      ...r,
+      work_stages: r.stages_json ? safeJson(r.stages_json) : [],
+      stages_json: undefined,
+    }));
+    return NextResponse.json({ items });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+function safeJson(s: string): any {
+  try { return JSON.parse(s); } catch { return []; }
+}
+
+/**
+ * POST /api/finance/investor-properties
+ * Body: { name, location?, image_url?, airbnb_url?, ical_url?, status? }
+ * Creates a new business_unit + investor_property_details row.
+ */
+export async function createInvestorProperty(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.name) return NextResponse.json({ error: 'name required' }, { status: 400 });
+    const buId = `bu_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const tx = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO business_units (id, organization_id, name, sort_order, is_active, is_shared)
+        VALUES (?, ?, ?, 500, 1, 0)
+      `).run(buId, orgId, body.name);
+      db.prepare(`
+        INSERT INTO investor_property_details (id, project_id, location, image_url, airbnb_url, ical_url, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(`pd_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`, buId,
+             body.location || null, body.image_url || null, body.airbnb_url || null,
+             body.ical_url || null, body.status || 'active');
+    });
+    tx();
+    return NextResponse.json({ project_id: buId, ok: true }, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * PUT /api/finance/investor-properties/[id]
+ * Body: any subset of { name, location, image_url, airbnb_url, ical_url, status, work_stages }
+ * Updates business_unit name + upserts details + optionally upserts work_stages.
+ */
+export async function updateInvestorProperty(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+    const body = await request.json();
+
+    const tx = db.transaction(() => {
+      if (body.name !== undefined) {
+        db.prepare("UPDATE business_units SET name = ? WHERE id = ?").run(body.name, id);
+      }
+      const detailFields = ['location', 'image_url', 'airbnb_url', 'ical_url', 'status'];
+      const haveDetailUpdate = detailFields.some((k) => body[k] !== undefined);
+      if (haveDetailUpdate) {
+        const existing = db.prepare("SELECT id FROM investor_property_details WHERE project_id = ?").get(id) as { id: string } | undefined;
+        if (existing) {
+          const setParts: string[] = [];
+          const params: any[] = [];
+          for (const k of detailFields) {
+            if (body[k] !== undefined) { setParts.push(`${k} = ?`); params.push(body[k]); }
+          }
+          setParts.push("updated_at = datetime('now')");
+          params.push(id);
+          db.prepare(`UPDATE investor_property_details SET ${setParts.join(', ')} WHERE project_id = ?`).run(...params);
+        } else {
+          db.prepare(`
+            INSERT INTO investor_property_details (id, project_id, location, image_url, airbnb_url, ical_url, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(`pd_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`, id,
+                 body.location || null, body.image_url || null, body.airbnb_url || null,
+                 body.ical_url || null, body.status || 'active');
+        }
+      }
+      if (Array.isArray(body.work_stages)) {
+        db.prepare(`
+          INSERT INTO property_work_stages (id, project_id, stages_json)
+          VALUES (?, ?, ?)
+          ON CONFLICT(project_id) DO UPDATE SET
+            stages_json = excluded.stages_json,
+            updated_at = datetime('now')
+        `).run(`pws_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`, id, JSON.stringify(body.work_stages));
+      }
+    });
+    tx();
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// ─── Property monthly reports CRUD ──────────────────────
+
+export async function listMonthlyReports(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const sp = request.nextUrl.searchParams;
+    const projectId = sp.get('project_id');
+    const yearMonth = sp.get('year_month');
+
+    const where: string[] = ['r.organization_id = ?'];
+    const params: any[] = [orgId];
+    if (projectId) { where.push('r.project_id = ?'); params.push(projectId); }
+    if (yearMonth) { where.push('r.year_month = ?'); params.push(yearMonth); }
+
+    const rows = db.prepare(`
+      SELECT r.*, bu.name AS project_name
+      FROM property_monthly_reports r
+      JOIN business_units bu ON bu.id = r.project_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY r.year_month DESC, bu.sort_order
+    `).all(...params);
+    return NextResponse.json({ items: rows });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function upsertMonthlyReport(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = getOrgId(db);
+    const body = await request.json();
+    if (!body.project_id || !body.year_month) {
+      return NextResponse.json({ error: 'project_id and year_month required' }, { status: 400 });
+    }
+    const id = `pmr_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const ops = Array.isArray(body.operational_updates) ? body.operational_updates : [];
+    db.prepare(`
+      INSERT INTO property_monthly_reports
+        (id, organization_id, project_id, year_month, adr, general_comment,
+         market_insight, operational_updates_json, photo_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id, year_month) DO UPDATE SET
+        adr = excluded.adr,
+        general_comment = excluded.general_comment,
+        market_insight = excluded.market_insight,
+        operational_updates_json = excluded.operational_updates_json,
+        photo_url = excluded.photo_url,
+        updated_at = datetime('now')
+    `).run(id, orgId, body.project_id, body.year_month,
+           body.adr ?? null, body.general_comment || null,
+           body.market_insight || null, JSON.stringify(ops),
+           body.photo_url || null);
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function deleteMonthlyReport(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { id } = await context.params;
+    db.prepare("DELETE FROM property_monthly_reports WHERE id = ?").run(id);
+    return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

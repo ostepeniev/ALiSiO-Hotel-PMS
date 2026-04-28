@@ -2,25 +2,31 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Users, Briefcase, BarChart3, DollarSign, ArrowLeft, Database } from 'lucide-react';
+import { Users, Briefcase, BarChart3, DollarSign, ArrowLeft, Database, Building2, FileText, Send } from 'lucide-react';
 import InvestorsTab from './_components/InvestorsTab';
 import InvestmentsTab from './_components/InvestmentsTab';
 import MetricsTab from './_components/MetricsTab';
 import PayoutsTab from './_components/PayoutsTab';
 import SupabaseImportTab from './_components/SupabaseImportTab';
+import PropertiesTab from './_components/PropertiesTab';
+import MonthlyReportsTab from './_components/MonthlyReportsTab';
+import MonthlyDigestTab from './_components/MonthlyDigestTab';
 
-type TabId = 'investors' | 'investments' | 'metrics' | 'payouts' | 'supabase';
+type TabId = 'properties' | 'investors' | 'investments' | 'metrics' | 'reports' | 'payouts' | 'digest' | 'supabase';
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'properties',  label: 'Об\'єкти',             icon: <Building2 size={16} /> },
   { id: 'investors',   label: 'Інвестори',           icon: <Users size={16} /> },
   { id: 'investments', label: 'Інвестиції (лоти)',   icon: <Briefcase size={16} /> },
   { id: 'metrics',     label: 'Метрики (Occupancy)', icon: <BarChart3 size={16} /> },
+  { id: 'reports',     label: 'Місячні звіти',       icon: <FileText size={16} /> },
   { id: 'payouts',     label: 'Виплати',             icon: <DollarSign size={16} /> },
+  { id: 'digest',      label: 'Зведення місяця',     icon: <Send size={16} /> },
   { id: 'supabase',    label: 'Import з Supabase',   icon: <Database size={16} /> },
 ];
 
 export default function InvestorsAdminPage() {
-  const [tab, setTab] = useState<TabId>('investors');
+  const [tab, setTab] = useState<TabId>('properties');
 
   return (
     <div className="page-container" style={{ maxWidth: 1400, margin: '0 auto' }}>
@@ -46,10 +52,13 @@ export default function InvestorsAdminPage() {
         ))}
       </div>
 
+      {tab === 'properties' && <PropertiesTab />}
       {tab === 'investors' && <InvestorsTab />}
       {tab === 'investments' && <InvestmentsTab />}
       {tab === 'metrics' && <MetricsTab />}
+      {tab === 'reports' && <MonthlyReportsTab />}
       {tab === 'payouts' && <PayoutsTab />}
+      {tab === 'digest' && <MonthlyDigestTab />}
       {tab === 'supabase' && <SupabaseImportTab />}
     </div>
   );

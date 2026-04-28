@@ -24,12 +24,22 @@ interface PortalData {
   }>;
   capital_growth: Array<{ month: string; invested: number; profit_cumulative: number }>;
   occupancy_dynamics: Array<{ month: string; occupancy_pct: number }>;
+  income_by_source: Array<{ source: string; total_share: number; reservations: number }>;
   monthly_reports: Array<{
     project_id: string; project_name: string; year_month: string;
     adr: number | null; general_comment: string | null;
     market_insight: string | null; photo_url: string | null;
   }>;
 }
+
+const SOURCE_LABEL: Record<string, { label: string; color: string }> = {
+  direct:      { label: 'Direct',       color: '#16a34a' },
+  phone:       { label: 'Phone',        color: '#0891b2' },
+  whatsapp:    { label: 'WhatsApp',     color: '#22c55e' },
+  booking_com: { label: 'Booking.com',  color: '#003580' },
+  airbnb:      { label: 'Airbnb',       color: '#ff5a5f' },
+  other_ota:   { label: 'Other OTA',    color: '#94a3b8' },
+};
 
 function fmt(n: number, cur: string): string {
   return `${n.toLocaleString('cs-CZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${cur}`;
@@ -77,11 +87,11 @@ export default function InvestorPortalPage() {
       <header style={{ background: '#fff', borderBottom: '1px solid #e2e8f0', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#16a34a,#22c55e)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>A</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>ALiSiO Investment</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>ALiSiO Investment</div>
           <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1 }}>Portfolio</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{data.investor.name}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{data.investor.name}</div>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Investor</div>
         </div>
       </header>
@@ -149,8 +159,8 @@ export default function InvestorPortalPage() {
                 const stat = STATUS_LABEL[p.status] || STATUS_LABEL.active;
                 return (
                   <tr key={p.project_id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                    <td style={{ ...td, fontWeight: 600 }}>{p.project_name}</td>
-                    <td style={td}>{fmt(p.invested, p.currency)}</td>
+                    <td style={{ ...td, fontWeight: 600, color: '#0f172a' }}>{p.project_name}</td>
+                    <td style={{ ...td, color: '#0f172a' }}>{fmt(p.invested, p.currency)}</td>
                     <td style={{ ...td, color: (p.roi_pct || 0) >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600 }}>
                       {p.roi_pct != null ? `${p.roi_pct >= 0 ? '+' : ''}${p.roi_pct}%` : '—'}
                     </td>
@@ -192,6 +202,13 @@ export default function InvestorPortalPage() {
           </Card>
         </div>
 
+        {/* Income by source — derived from real reservations × equity */}
+        {data.income_by_source.length > 0 && (
+          <Card title="Дохід за джерелами" subtitle="Ваша частка з реальних бронювань (після виїзду)" style={{ marginTop: 16 }}>
+            <SourceBreakdown items={data.income_by_source} currency={t.currency} />
+          </Card>
+        )}
+
         {/* Monthly reports */}
         {data.monthly_reports.length > 0 && (
           <Card title="Фінансова звітність" style={{ marginTop: 16 }}>
@@ -199,7 +216,7 @@ export default function InvestorPortalPage() {
               {data.monthly_reports.slice(0, 6).map((r) => (
                 <div key={`${r.project_id}-${r.year_month}`} style={{ padding: 12, border: '1px solid #e2e8f0', borderRadius: 8 }}>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{r.year_month}</div>
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{r.project_name}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: '#0f172a' }}>{r.project_name}</div>
                   {r.general_comment && <div style={{ fontSize: 12, color: '#475569' }}>{r.general_comment.substring(0, 100)}{r.general_comment.length > 100 ? '…' : ''}</div>}
                   <Link href={`/invest/${params.token}/property/${r.project_id}`} style={{ display: 'inline-block', marginTop: 8, color: '#3b82f6', fontSize: 12, textDecoration: 'none' }}>Відкрити звіт →</Link>
                 </div>
@@ -247,7 +264,7 @@ function Card({ title, subtitle, children, style }: { title: string; subtitle?: 
   return (
     <div style={{ background: '#fff', padding: 20, borderRadius: 12, border: '1px solid #e2e8f0', ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
+        <h3 style={{ margin: 0, fontSize: 16, color: '#0f172a' }}>{title}</h3>
         {subtitle && <span style={{ fontSize: 11, color: '#94a3b8' }}>{subtitle}</span>}
       </div>
       {children}
@@ -278,6 +295,39 @@ function CapitalGrowthChart({ data, currency }: { data: { month: string; profit_
         {data[data.length - 1]?.profit_cumulative.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency}
       </text>
     </svg>
+  );
+}
+
+function SourceBreakdown({ items, currency }: { items: Array<{ source: string; total_share: number; reservations: number }>; currency: string }) {
+  const total = items.reduce((s, x) => s + x.total_share, 0);
+  if (total === 0) return <div style={{ color: '#94a3b8', padding: 20, textAlign: 'center' }}>Поки немає даних</div>;
+  return (
+    <div>
+      <div style={{ display: 'flex', height: 18, borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
+        {items.map((it) => {
+          const meta = SOURCE_LABEL[it.source] || { label: it.source, color: '#64748b' };
+          const pct = (it.total_share / total) * 100;
+          return (
+            <div key={it.source} style={{ width: `${pct}%`, background: meta.color }}
+                 title={`${meta.label}: ${pct.toFixed(1)}%`} />
+          );
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+        {items.map((it) => {
+          const meta = SOURCE_LABEL[it.source] || { label: it.source, color: '#64748b' };
+          const pct = (it.total_share / total) * 100;
+          return (
+            <div key={it.source} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+              <span style={{ width: 10, height: 10, background: meta.color, borderRadius: 2 }} />
+              <span style={{ flex: 1, fontWeight: 600, color: '#0f172a' }}>{meta.label}</span>
+              <span style={{ color: '#64748b' }}>{pct.toFixed(0)}% · {it.reservations}</span>
+              <span style={{ fontWeight: 600 }}>{it.total_share.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })} {currency}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
