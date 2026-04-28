@@ -1312,7 +1312,10 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
           <div className="v3-breakdown">
             <div className="v3-breakdown-row">
-              <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
+              <span>
+                {selectedUnit?.name} · {nights} {t.nightsShort}
+                {checkIn && checkOut && ` (${formatDisplayDate(checkIn, lang)} – ${formatDisplayDate(checkOut, lang)})`}
+              </span>
               <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
             </div>
             {services.filter(s => selectedServiceIds.has(s.id)).map(s => (
