@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
+import { findOrCreateGuest } from '@guests';
 import { notifyGroupBookingCreated } from '../domain/reservation-tg-notify';
 
 export async function listGroupBookings() {
@@ -91,23 +92,13 @@ export async function createGroupBooking(request: NextRequest) {
       return NextResponse.json({ error: 'Unit not found' }, { status: 400 });
     }
 
-    let guestId: string;
-    if (email) {
-      const existing = db.prepare('SELECT id FROM guests WHERE email = ? AND organization_id = ?').get(email, org.id) as any;
-      if (existing) {
-        guestId = existing.id;
-        db.prepare('UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime(\'now\') WHERE id = ?')
-          .run(firstName, lastName, phone || null, guestId);
-      } else {
-        guestId = `g_${Date.now()}`;
-        db.prepare('INSERT INTO guests (id, organization_id, first_name, last_name, email, phone) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(guestId, org.id, firstName, lastName, email, phone || null);
-      }
-    } else {
-      guestId = `g_${Date.now()}`;
-      db.prepare('INSERT INTO guests (id, organization_id, first_name, last_name, phone) VALUES (?, ?, ?, ?, ?)')
-        .run(guestId, org.id, firstName, lastName, phone || null);
-    }
+    const guestId = findOrCreateGuest({
+      organizationId: org.id,
+      firstName,
+      lastName,
+      email: email || null,
+      phone: phone || null,
+    }).id;
 
     const groupId = `grp_${Date.now()}`;
     db.prepare(`

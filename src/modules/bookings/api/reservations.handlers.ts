@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, generateGuestToken } from '@core/db';
+import { findOrCreateGuest } from '@guests';
 import { notifyReservationCreated } from '../domain/reservation-tg-notify';
 
 export async function listReservations(request: NextRequest) {
@@ -123,23 +124,14 @@ export async function createReservation(request: NextRequest) {
 
     const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as { id: string };
 
-    let guestId: string;
-    if (email) {
-      const existing = db.prepare('SELECT id FROM guests WHERE email = ? AND organization_id = ?').get(email, org.id) as { id: string } | undefined;
-      if (existing) {
-        guestId = existing.id;
-        db.prepare('UPDATE guests SET first_name = ?, last_name = ?, phone = COALESCE(?, phone), updated_at = datetime(\'now\') WHERE id = ?')
-          .run(firstName, lastName, phone || null, guestId);
-      } else {
-        guestId = `g_${Date.now()}`;
-        db.prepare('INSERT INTO guests (id, organization_id, first_name, last_name, email, phone) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(guestId, org.id, firstName, lastName, email, phone || null);
-      }
-    } else {
-      guestId = `g_${Date.now()}`;
-      db.prepare('INSERT INTO guests (id, organization_id, first_name, last_name, phone) VALUES (?, ?, ?, ?, ?)')
-        .run(guestId, org.id, firstName, lastName, phone || null);
-    }
+    const dedup = findOrCreateGuest({
+      organizationId: org.id,
+      firstName,
+      lastName,
+      email: email || null,
+      phone: phone || null,
+    });
+    const guestId = dedup.id;
 
     const resId = `r_${Date.now()}`;
     let commissionAmount = 0;

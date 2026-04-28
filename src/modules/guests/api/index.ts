@@ -13,3 +13,10 @@ export { handleCartEvent } from './cart.handlers';
 
 // Domain types
 export type { GuestWithStats, CreateGuestInput, RegisteredGuest } from '../domain/types';
+
+// Unified dedup helper — call from any handler that creates/finds a guest
+// (manual booking, group booking, channel sync, Excel import, email parser).
+// Strategy: email → phone → first+last name (case-insensitive), all scoped
+// to organization_id. Soft-merges new fields without overwriting existing ones.
+export { findOrCreateGuest } from '../data/guest-dedup.repo';
+export type { GuestDedupArgs, GuestDedupResult } from '../data/guest-dedup.repo';

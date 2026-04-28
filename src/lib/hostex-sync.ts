@@ -13,6 +13,7 @@ import {
 } from './hostex';
 import { upsertReceivableForReservation } from '@/modules/finance/data/clearing-engine';
 import { notifyReservationCreated } from '@/modules/bookings/domain/reservation-tg-notify';
+import { findOrCreateGuest as findOrCreateGuestUnified } from '@guests';
 
 // Public URL of the PMS (used to build guest page links sent to Hostex)
 const PMS_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://alisio.swipescape.eu';
@@ -453,36 +454,25 @@ function processBlockedDate(db: any, res: HostexReservation, result: SyncResult)
 
 // ─── Guest management ─────────────────────────────────────
 
-function findOrCreateGuest(db: any, res: HostexReservation): string {
+function findOrCreateGuest(_db: any, res: HostexReservation): string {
   const guestData = res.guests?.[0];
-  const email = guestData?.email || res.guest_email || '';
-  const phone = guestData?.phone || res.guest_phone || '';
+  const rawEmail = guestData?.email || res.guest_email || '';
+  // Booking's privacy-proxy emails (@guest.booking.com) are not stable identifiers
+  // — strip them so the unified helper falls through to phone/name dedup.
+  const email = rawEmail && !rawEmail.includes('@guest.booking.com') ? rawEmail : null;
+  const phone = guestData?.phone || res.guest_phone || null;
   const name = guestData?.name || res.guest_name || 'Unknown';
-  const country = guestData?.country || '';
-
-  let guest: any = null;
-  if (email && !email.includes('@guest.booking.com')) {
-    guest = db.prepare('SELECT id FROM guests WHERE email = ?').get(email);
-  }
-  if (!guest && phone) {
-    guest = db.prepare('SELECT id FROM guests WHERE phone = ?').get(phone);
-  }
-
-  if (guest) {
-    if (country) {
-      db.prepare("UPDATE guests SET country = ?, updated_at = datetime('now') WHERE id = ?").run(country, guest.id);
-    }
-    return guest.id;
-  }
+  const country = guestData?.country || null;
 
   const { firstName, lastName } = splitGuestName(name);
-  const guestId = `hx_g_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  db.prepare(`
-    INSERT INTO guests (id, organization_id, first_name, last_name, email, phone, country)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(guestId, ORG_ID, firstName, lastName, email || null, phone || null, country || null);
-
-  return guestId;
+  return findOrCreateGuestUnified({
+    organizationId: ORG_ID,
+    firstName,
+    lastName,
+    email,
+    phone,
+    country,
+  }).id;
 }
 
 // ─── Payment auto-creation ────────────────────────────────
