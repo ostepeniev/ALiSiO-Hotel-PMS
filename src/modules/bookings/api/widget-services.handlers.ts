@@ -106,7 +106,7 @@ export async function getWidgetServices(request: NextRequest) {
     if (siteId && hasSiteServices) {
       // Services enabled for this booking site (defaulting to enabled if no explicit config)
       services = db.prepare(`
-        SELECT s.*, ss.price_override, 
+        SELECT s.*, ss.price_override, ss.photo_override,
                COALESCE(ss.sort_order, s.sort_order) as site_sort_order, 
                COALESCE(ss.is_enabled, 1) as is_enabled
         FROM additional_services s
@@ -414,7 +414,7 @@ function formatService(s: any) {
     category: s.category,
     serviceType: s.service_type || 'simple',
     durationMinutes: s.duration_minutes,
-    photoUrl: s.photo_url,
+    photoUrl: s.photo_override || s.photo_url,
     minQuantity: s.min_quantity || 0,
     maxQuantity: s.max_quantity || 10,
   };

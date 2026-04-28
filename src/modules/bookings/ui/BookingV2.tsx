@@ -93,12 +93,94 @@ interface DesignConfig {
   show_shadow?: boolean;
 }
 
+const commonTranslations: Record<string, Record<string, string>> = {
+  en: {
+    "Комфортне ліжко": "Comfortable bed",
+    "Душ": "Shower",
+    "Туалет": "Toilet",
+    "Опалення": "Heating",
+    "Чайник": "Kettle",
+    "Міні-холодильник": "Mini-fridge",
+    "Wi-Fi": "Wi-Fi",
+    "Тераса": "Terrace",
+    "Замок": "Lock",
+    "Рушники": "Towels",
+    "Освітлення": "Lighting",
+    "Сніданок": "Breakfast",
+    "Повноцінний сніданок у ресторані": "Full breakfast in the restaurant",
+    "Сауна": "Sauna",
+    "Фінська сауна (2 години)": "Finnish sauna (2 hours)",
+    "Чан карпатський": "Carpathian vat",
+    "Нержавіючий чан під відкритим небом. Мінімальне бронювання — 2 години.": "Stainless open-air vat. Minimum booking — 2 hours.",
+    "Мангал": "BBQ Grill",
+    "Набір для барбекю та вогнища з вугіллям, розпалювачем та дровами": "BBQ and fire pit set with charcoal, fire starter and wood",
+    "Пізнє виселення": "Late Check-out",
+    "Виселення до 14:00 замість 11:00": "Check-out until 14:00 instead of 11:00",
+    "Раннє заселення": "Early Check-in",
+    "Заселення з 11:00 замість 15:00": "Check-in from 11:00 instead of 15:00"
+  },
+  cs: {
+    "Комфортне ліжко": "Pohodlná postel",
+    "Душ": "Sprcha",
+    "Туалет": "Toaleta",
+    "Опалення": "Topení",
+    "Чайник": "Rychlovarná konvice",
+    "Міні-холодильник": "Mini-lednice",
+    "Wi-Fi": "Wi-Fi",
+    "Тераса": "Terasa",
+    "Замок": "Zámek",
+    "Рушники": "Ručníky",
+    "Освітлення": "Osvětlení",
+    "Сніданок": "Snídaně",
+    "Повноцінний сніданок у ресторані": "Plná snídaně v restauraci",
+    "Сауна": "Sauna",
+    "Фінська сауна (2 години)": "Finská sauna (2 hodiny)",
+    "Чан карпатський": "Karpatská káď",
+    "Нержавіючий чан під відкритим небом. Мінімальне бронювання — 2 години.": "Nerezová venkovní káď. Minimální rezervace — 2 hodiny.",
+    "Мангал": "BBQ Gril",
+    "Набір для барбекю та вогнища з вугіллям, розпалювачем та дровами": "Sada pro BBQ a ohniště s uhlím, podpalovačem a dřevem",
+    "Пізнє виселення": "Pozdní odhlášení",
+    "Виселення do 14:00 замість 11:00": "Odhlášení do 14:00 místo 11:00",
+    "Раннє заселення": "Dřívější přihlášení",
+    "Заселення з 11:00 замість 15:00": "Přihlášení od 11:00 místo 15:00"
+  },
+  de: {
+    "Комфортне ліжко": "Bequemes Bett",
+    "Душ": "Dusche",
+    "Туалет": "Toilette",
+    "Опалення": "Heizung",
+    "Чайник": "Wasserkocher",
+    "Міні-холодильник": "Minikühlschrank",
+    "Wi-Fi": "WLAN",
+    "Тераса": "Terrasse",
+    "Замок": "Schloss",
+    "Рушники": "Handtücher",
+    "Освітлення": "Beleuchtung",
+    "Сніданок": "Frühstück",
+    "Повноцінний сніданок у ресторані": "Ausgiebiges Frühstück im Restaurant",
+    "Сауна": "Sauna",
+    "Фінська сауна (2 години)": "Finnische Sauna (2 Stunden)",
+    "Чан карпатський": "Karpaten-Badefass",
+    "Нержавіючий чан під відкритим небом. Мінімальне бронювання — 2 години.": "Rostfreies Freiluft-Badefass. Mindestbuchung — 2 Stunden.",
+    "Мангал": "BBQ-Grill",
+    "Набір для барбекю та вогнища з вугіллям, розпалювачем та дровами": "BBQ- und Feuerstellen-Set mit Holzkohle, Anzünder und Holz",
+    "Пізнє виселення": "Später Check-out",
+    "Виселення до 14:00 замість 11:00": "Check-out bis 14:00 statt 11:00",
+    "Раннє заселення": "Früher Check-in",
+    "Заселення з 11:00 замість 15:00": "Check-in ab 11:00 statt 15:00"
+  }
+};
+
 const tName = (obj: any, key: string, l: string) => {
   if (!obj) return '';
   if (l === 'en' && obj[`${key}En`]) return obj[`${key}En`];
   if (l === 'cs' && obj[`${key}Cs`]) return obj[`${key}Cs`];
   if (l === 'de' && obj[`${key}De`]) return obj[`${key}De`];
-  return obj[key];
+  const baseVal = obj[key];
+  if (baseVal && commonTranslations[l] && commonTranslations[l][baseVal]) {
+    return commonTranslations[l][baseVal];
+  }
+  return baseVal;
 };
 
 const v3Locales: Record<string, any> = {
@@ -282,6 +364,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
 
+
+
       const payStatus = params.get('payment_status');
       const resId = params.get('res_id');
       if (payStatus === 'success' && resId) {
@@ -341,13 +425,6 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
       if (urlPromo) {
         setPromoCode(urlPromo);
-        fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(urlPromo.trim().toUpperCase())}`)
-          .then(r => r.json())
-          .then(data => {
-            if (data.valid) {
-              setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
-            }
-          }).catch(() => {});
       }
 
       // Pre-fill from localStorage
@@ -714,23 +791,36 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   };
 
-  const handleApplyPromo = async () => {
-    const code = promoCode.trim().toUpperCase();
+  const handleApplyPromo = async (codeToApply?: string | React.MouseEvent) => {
+    const code = (typeof codeToApply === 'string' ? codeToApply : promoCode).trim().toUpperCase();
     if (!code) return;
     setApplyingPromo(true);
     setPromoError('');
     try {
-      const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}`);
+      const uId = selectedUnitId || '';
+      const sId = resolvedSiteId || '';
+      const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
       const data = await res.json();
       if (data.valid) {
         setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
         setShowPromo(false);
       } else {
-        setPromoError(data.error || v3t.promoError);
+        setPromoApplied(null);
+        setPromoError(data.error || 'Invalid code');
       }
-    } catch { setPromoError(v3t.serverError); }
-    setApplyingPromo(false);
+    } catch (err) {
+      setPromoError('Server error');
+    } finally {
+      setApplyingPromo(false);
+    }
   };
+
+  // Auto-apply promo from URL if it exists and hasn't been applied yet
+  useEffect(() => {
+    if (promoCode && !promoApplied && selectedUnitId && resolvedSiteId && !applyingPromo && !promoError) {
+      handleApplyPromo(promoCode);
+    }
+  }, [promoCode, promoApplied, selectedUnitId, resolvedSiteId]);
 
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) {
@@ -1165,7 +1255,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
           </div>
 
           {/* Occupancy notice */}
-          {selectedUnit && (adults + kids) > selectedUnit.maxOccupancy && (
+          {selectedUnit && kids > 0 && (
             <div className="v3-occupancy-notice">
               <span className="v3-occupancy-notice-icon">🛏️</span>
               <span>У будиночку одне велике ліжко — ідеально для двох дорослих. Якщо з вами дитина, ми завжди раді зробити виняток: маленькі гості не займають окреме спальне місце 😊</span>
@@ -1443,10 +1533,16 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
                     onClick={() => toggleService(s.id)}
                   >
                     <div className="v3-service-body">
-                      <div className="v3-service-visual">{s.icon || '📦'}</div>
+                      <div className="v3-service-visual" style={s.photoUrl ? { background: 'transparent' } : {}}>
+                        {s.photoUrl ? (
+                          <img src={s.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          s.icon || '📦'
+                        )}
+                      </div>
                       <div className="v3-service-info">
-                        <div className="v3-service-name">{s.name}</div>
-                        <div className="v3-service-reason">{s.description}</div>
+                        <div className="v3-service-name">{tName(s, 'name', lang)}</div>
+                        <div className="v3-service-reason">{tName(s, 'description', lang)}</div>
                         <div className="v3-service-price-row">
                           <span className="v3-service-price">+ {formatPrice(s.price, siteCurrency)}</span>
                           <div className="v3-service-toggle"></div>

@@ -150,6 +150,8 @@ export async function createWidgetReservation(request: NextRequest) {
         if (promo) {
           if (promo.discount_type === 'percentage') {
             promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
+          } else if (promo.discount_type === 'fixed_price') {
+            promoDiscount = Math.max(0, totalPrice - promo.discount_value);
           } else {
             promoDiscount = promo.discount_value;
           }
@@ -193,12 +195,12 @@ export async function createWidgetReservation(request: NextRequest) {
 
     const resId = `r_${Date.now()}`;
     db.prepare(`
-      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, payment_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reservations (id, property_id, unit_id, guest_id, check_in, check_out, nights, adults, children, status, payment_status, source, total_price, payment_id, promotions_applied)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       resId, unit.property_id, unitId, guestId,
       checkIn, checkOut, nights, adults, children,
-      'tentative', 'unpaid', 'direct', finalPrice, null
+      'tentative', 'unpaid', 'direct', finalPrice, null, promoCode ? JSON.stringify([promoCode]) : null
     );
 
     notifyReservationCreated(resId, { sourceLabel: 'Widget · публічне бронювання', emoji: '🌐' });
