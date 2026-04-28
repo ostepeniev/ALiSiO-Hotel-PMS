@@ -50,6 +50,16 @@
     v: Date.now() // Cache busting
   });
 
+  // Forward parent window query params (e.g., promo, checkin, checkout)
+  if (typeof window !== 'undefined' && window.location.search) {
+    const parentParams = new URLSearchParams(window.location.search);
+    parentParams.forEach((value, key) => {
+      if (!queryParams.has(key)) {
+        queryParams.set(key, value);
+      }
+    });
+  }
+
   const url = `${baseUrl}/w/${siteSlug}?${queryParams.toString()}`;
   
   iframe.src = url;

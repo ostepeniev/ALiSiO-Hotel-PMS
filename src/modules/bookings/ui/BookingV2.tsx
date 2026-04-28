@@ -187,11 +187,23 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const urlOut = params.get('checkout') || params.get('check_out');
       const urlAdults = params.get('adults');
       const urlKids = params.get('kids');
+      const urlPromo = params.get('promo') || params.get('promoCode') || params.get('promocode');
 
       if (urlIn) setCheckIn(urlIn);
       if (urlOut) setCheckOut(urlOut);
       if (urlAdults) setAdults(parseInt(urlAdults, 10) || 2);
       if (urlKids) setKids(parseInt(urlKids, 10) || 0);
+
+      if (urlPromo) {
+        setPromoCode(urlPromo);
+        fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(urlPromo.trim().toUpperCase())}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.valid) {
+              setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
+            }
+          }).catch(() => {});
+      }
 
       // Pre-fill from localStorage
       const savedGuest = localStorage.getItem('alisio_guest_data');
@@ -403,6 +415,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
     const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
 
+    let base = selectedUnit.totalPrice + extraCharge;
+
+    if (promoApplied) {
+      if (promoApplied.discount_type === 'fixed_price') {
+        base -= promoApplied.discount_value;
+      } else if (promoApplied.discount_type === 'percentage') {
+        base = Math.round(base * (1 - promoApplied.discount_value / 100));
+      }
+    }
+    if (base < 0) base = 0;
+
     // Add selected services
     let servicesTotal = 0;
     services.forEach(s => {
@@ -411,8 +434,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       }
     });
 
-    return selectedUnit.totalPrice + extraCharge + servicesTotal;
-  }, [selectedUnit, adults, nights, services, selectedServiceIds]);
+    return base + servicesTotal;
+  }, [selectedUnit, adults, nights, services, selectedServiceIds, promoApplied]);
 
   // ─── Actions ───
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
