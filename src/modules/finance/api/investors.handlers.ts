@@ -514,18 +514,28 @@ export async function getAutoRevenueForMonth(request: NextRequest): Promise<Next
   }
 }
 
-// ─── Helper: get available projects (= business_units) ─────
+// ─── Helper: get available projects for investor pickers ─────
+// Returns active BUs PLUS any (potentially archived) BU still referenced
+// by an active investor_investment. This way:
+//   - New investments can pick from active finance BUs (the 5-6 normal ones).
+//   - Existing investments on archived investor-only BUs (A1/B1 etc, that
+//     cleanup #C archived) still resolve correctly when editing.
 
 export async function listInvestorProjects(_request: NextRequest): Promise<NextResponse> {
   try {
     const db = getDb();
     const orgId = getOrgId(db);
     const rows = db.prepare(`
-      SELECT id, name, sort_order
+      SELECT id, name, sort_order, is_active
       FROM business_units
-      WHERE organization_id = ? AND is_active = 1
-      ORDER BY sort_order, name
-    `).all(orgId);
+      WHERE organization_id = ?
+        AND (
+          is_active = 1
+          OR id IN (SELECT DISTINCT project_id FROM investor_investments
+                    WHERE organization_id = ? AND is_active = 1 AND project_id IS NOT NULL)
+        )
+      ORDER BY is_active DESC, sort_order, name
+    `).all(orgId, orgId);
     return NextResponse.json({ items: rows });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -3295,6 +3295,47 @@ function runMigrations(database: any) {
     database.exec('CREATE INDEX IF NOT EXISTS idx_inv_payouts_unit ON investor_payouts(unit_id)');
   } catch (e: any) { console.log('[DB] Cleanup #A indexes:', e.message); }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Cleanup #C: archive Supabase-imported business_units that are only
+  // used by the investor module. These polluted finance reports/budgets
+  // because business_units is the finance grouping table and the importer
+  // (PR #36/#37) created rows here for each Supabase property.
+  //
+  // Criteria: id LIKE 'bu_sb_%' AND has at least one investor_investment.
+  // We DO NOT delete — just set is_active = 0. Existing fin_operations
+  // that reference these rows continue to work; they just disappear from
+  // pickers and active project lists. Manually un-archivable via
+  // /finance/projects (existing UI).
+  //
+  // Idempotent — uses fin_system_state key.
+  // ═══════════════════════════════════════════════════════════════════
+  try {
+    const already = database.prepare(
+      "SELECT value FROM fin_system_state WHERE key = 'cleanup_c_archived_supabase_bus'"
+    ).get() as { value: string } | undefined;
+    if (!already) {
+      const targets = database.prepare(`
+        SELECT bu.id, bu.name FROM business_units bu
+        WHERE bu.id LIKE 'bu_sb_%'
+          AND bu.is_active = 1
+          AND EXISTS (SELECT 1 FROM investor_investments WHERE project_id = bu.id)
+      `).all() as { id: string; name: string }[];
+
+      let archived = 0;
+      const upd = database.prepare("UPDATE business_units SET is_active = 0 WHERE id = ?");
+      for (const t of targets) {
+        upd.run(t.id);
+        archived++;
+      }
+      database.prepare(
+        "INSERT OR REPLACE INTO fin_system_state (key, value, updated_at) VALUES ('cleanup_c_archived_supabase_bus', ?, datetime('now'))"
+      ).run(`archived ${archived}: ${targets.map((t) => t.name).join(', ')}`);
+      if (archived > 0) {
+        console.log(`[DB] Cleanup #C: archived ${archived} Supabase-imported BUs from finance pickers (${targets.map((t) => t.name).join(', ')})`);
+      }
+    }
+  } catch (e: any) { console.log('[DB] Cleanup #C archive supabase BUs:', e.message); }
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
