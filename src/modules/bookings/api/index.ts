@@ -22,3 +22,6 @@ export { getWidgetCalendar, getWidgetCalendarOptions } from './widget-calendar-p
 export { getWidgetSiteConfig, getWidgetSiteConfigOptions } from './widget-site.handlers';
 export { createBookingDraft, getBookingDraft, deleteBookingDraft, createBookingDraftOptions } from './booking-drafts.handlers';
 export { fixServiceOrderPayment, getPendingOrders } from './fix-payment.handlers';
+export { previewBookingComImport, confirmBookingComImport } from './import-bookingcom.handlers';
+export type { PreviewRow, PreviewResponse, ConfirmRequest, ConfirmResponse } from './import-bookingcom.handlers';
+export type { BookingComRow } from '../domain/booking-com-excel';
