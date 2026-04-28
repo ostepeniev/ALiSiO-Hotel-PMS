@@ -309,6 +309,8 @@ export {
   getAutoRevenueForMonth,
 } from './investors.handlers';
 export { getInvestorAudit } from './investor-audit.handlers';
+import { relinkProjectToUnit as _relinkProjectToUnit } from './investor-audit.handlers';
+export const relinkProjectToUnit = withPermission('manage_investors', _relinkProjectToUnit);
 import {
   createInvestor as _createInvestor, updateInvestor as _updateInvestor, deleteInvestor as _deleteInvestor,
   createInvestment as _createInvestment, updateInvestment as _updateInvestment, deleteInvestment as _deleteInvestment,

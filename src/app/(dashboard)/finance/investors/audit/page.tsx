@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
@@ -73,14 +73,27 @@ export default function InvestorAuditPage() {
   const [data, setData] = useState<AuditData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = () => {
     fetch('/api/finance/investors/audit')
       .then(async (r) => {
         if (!r.ok) { const j = await r.json(); setError(j.error); return; }
         setData(await r.json());
       })
       .catch((e) => setError(e.message));
-  }, []);
+  };
+
+  useEffect(reload, []);
+
+  async function relinkBu(projectId: string, unitId: string) {
+    const res = await fetch('/api/finance/investors/audit/relink', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId, unit_id: unitId }),
+    });
+    const j = await res.json();
+    if (!res.ok) { alert(`Помилка: ${j.error}`); return; }
+    alert(`✓ Привʼязано до «${j.unit?.name}». Оновлено ${j.updated_rows} рядків.`);
+    reload();
+  }
 
   if (error) return <div style={{ padding: 40, color: '#dc2626' }}>{error}</div>;
   if (!data) return <div style={{ padding: 40, color: 'var(--text-secondary)' }}>Завантаження…</div>;
@@ -121,20 +134,20 @@ export default function InvestorAuditPage() {
       {/* Investor-related business_units */}
       <Section title={`🟢 Інвесторські business_units (${investorBus.length})`}
                subtitle="Ці рядки мають investor_investments / payouts / metrics. Якщо в колонці «fin_ops» ≠ 0 — вони ЗМІШАНІ й забруднюють фінансові звіти.">
-        <BuTable rows={investorBus} />
+        <BuTable rows={investorBus} glampingUnits={data.glamping_units} onRelink={relinkBu} />
       </Section>
 
       {/* Finance-only business_units */}
       <Section title={`🔵 Тільки фінансові business_units (${financeBus.length})`}
                subtitle="Чисті фінансові buckets — Глемпинг, Кемпинг, Резорт, Ресторан, Сауна тощо. Без інвесторських даних.">
-        <BuTable rows={financeBus} />
+        <BuTable rows={financeBus} glampingUnits={data.glamping_units} onRelink={relinkBu} />
       </Section>
 
       {/* Orphans */}
       {orphanBus.length > 0 && (
         <Section title={`⚪ Порожні business_units (${orphanBus.length})`}
                  subtitle="Ні фінансових операцій, ні інвестицій. Можна архівувати без шкоди.">
-          <BuTable rows={orphanBus} compact />
+          <BuTable rows={orphanBus} glampingUnits={data.glamping_units} onRelink={relinkBu} compact />
         </Section>
       )}
 
@@ -236,7 +249,14 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
   );
 }
 
-function BuTable({ rows, compact }: { rows: AuditData['business_units']; compact?: boolean }) {
+function BuTable({ rows, glampingUnits, onRelink, compact }: {
+  rows: AuditData['business_units'];
+  glampingUnits: AuditData['glamping_units'];
+  onRelink: (projectId: string, unitId: string) => Promise<void>;
+  compact?: boolean;
+}) {
+  const [relinkingId, setRelinkingId] = React.useState<string | null>(null);
+
   return (
     <table style={table}>
       <thead><tr style={tr}>
@@ -251,33 +271,56 @@ function BuTable({ rows, compact }: { rows: AuditData['business_units']; compact
         <th style={th}>matched unit</th>
       </tr></thead>
       <tbody>
-        {rows.map((bu) => (
-          <tr key={bu.id} style={tr}>
-            <td style={td}>
-              <b>{bu.name}</b>
-              {bu.is_supabase_imported && <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>(supabase)</span>}
-              {!bu.is_active && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-secondary)' }}>(archived)</span>}
-            </td>
-            <td style={td}><span style={{ fontSize: 11, padding: '2px 8px', background: `${ROLE_COLOR[bu.role]}22`, color: ROLE_COLOR[bu.role], borderRadius: 4, fontWeight: 600 }}>{bu.role}</span></td>
-            <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)' }}>{bu.id}</td>
-            <td style={{ ...td, textAlign: 'right' }}>{bu.fin_ops_count}</td>
-            <td style={{ ...td, textAlign: 'right' }}>{bu.investor_lots}</td>
-            {!compact && <td style={{ ...td, textAlign: 'right' }}>{bu.payout_count}</td>}
-            {!compact && <td style={{ ...td, textAlign: 'right' }}>{bu.metric_count}</td>}
-            {!compact && <td style={{ ...td, textAlign: 'right' }}>{bu.budget_count}</td>}
-            <td style={td}>
-              {bu.matched_unit_name ? (
-                <span style={{ color: '#22c55e', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <CheckCircle2 size={12} /> {bu.matched_unit_name}
-                </span>
-              ) : (
-                <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <AlertTriangle size={12} /> —
-                </span>
-              )}
-            </td>
-          </tr>
-        ))}
+        {rows.map((bu) => {
+          const showPicker = bu.investor_lots > 0;  // only investor BUs need a unit link
+          return (
+            <tr key={bu.id} style={tr}>
+              <td style={td}>
+                <b>{bu.name}</b>
+                {bu.is_supabase_imported && <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>(supabase)</span>}
+                {!bu.is_active && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--text-secondary)' }}>(archived)</span>}
+              </td>
+              <td style={td}><span style={{ fontSize: 11, padding: '2px 8px', background: `${ROLE_COLOR[bu.role]}22`, color: ROLE_COLOR[bu.role], borderRadius: 4, fontWeight: 600 }}>{bu.role}</span></td>
+              <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)' }}>{bu.id}</td>
+              <td style={{ ...td, textAlign: 'right' }}>{bu.fin_ops_count}</td>
+              <td style={{ ...td, textAlign: 'right' }}>{bu.investor_lots}</td>
+              {!compact && <td style={{ ...td, textAlign: 'right' }}>{bu.payout_count}</td>}
+              {!compact && <td style={{ ...td, textAlign: 'right' }}>{bu.metric_count}</td>}
+              {!compact && <td style={{ ...td, textAlign: 'right' }}>{bu.budget_count}</td>}
+              <td style={td}>
+                {bu.matched_unit_name ? (
+                  <span style={{ color: '#22c55e', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <CheckCircle2 size={12} /> {bu.matched_unit_name}
+                  </span>
+                ) : showPicker ? (
+                  <select
+                    value=""
+                    disabled={relinkingId === bu.id}
+                    onChange={async (e) => {
+                      const unitId = e.target.value;
+                      if (!unitId) return;
+                      const u = glampingUnits.find((x) => x.id === unitId);
+                      if (!confirm(`Привʼязати «${bu.name}» → «${u?.property_name} / ${u?.name}»?\nОновить unit_id у всіх investor-таблицях.`)) return;
+                      setRelinkingId(bu.id);
+                      try { await onRelink(bu.id, unitId); }
+                      finally { setRelinkingId(null); }
+                    }}
+                    style={{ padding: 4, fontSize: 11, border: '1px solid #f59e0b', borderRadius: 4, background: 'var(--bg-primary)', color: 'var(--text-primary)', maxWidth: 220 }}
+                  >
+                    <option value="">⚠ зматчити вручну…</option>
+                    {glampingUnits.map((u) => (
+                      <option key={u.id} value={u.id}>{u.property_name} / {u.name} ({u.code})</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{ color: '#94a3b8', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <AlertTriangle size={12} /> —
+                  </span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
