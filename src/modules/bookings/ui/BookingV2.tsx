@@ -342,25 +342,37 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (!isMounted) return;
     const fetchBusyDates = async () => {
       try {
-        const date = new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1);
-        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        const params = new URLSearchParams({ month: monthStr });
-        if (siteId) params.set('siteId', siteId);
-        if (siteSlug) params.set('siteSlug', siteSlug);
-        if (selectedUnitId) params.set('unitId', selectedUnitId);
+        const fetchMonth = async (offset: number) => {
+          const date = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+          const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const params = new URLSearchParams({ month: monthStr });
+          if (siteId) params.set('siteId', siteId);
+          if (siteSlug) params.set('siteSlug', siteSlug);
+          if (selectedUnitId) params.set('unitId', selectedUnitId);
 
-        const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
-        const data = await res.json();
-        if (data.days) {
-          const busy = new Set<string>();
-          const partial = new Set<string>();
-          data.days.forEach((d: any) => {
-            if (d.status === 'booked') busy.add(d.date);
-            if (d.status === 'partial') partial.add(d.date);
-          });
-          setBusyDates(busy);
-          setPartialDates(partial);
-        }
+          const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
+          return res.json();
+        };
+
+        const [data1, data2] = await Promise.all([
+          fetchMonth(calMonthOffset),
+          fetchMonth(calMonthOffset + 1)
+        ]);
+
+        const busy = new Set<string>();
+        const partial = new Set<string>();
+        
+        [data1, data2].forEach(data => {
+          if (data?.days) {
+            data.days.forEach((d: any) => {
+              if (d.status === 'booked') busy.add(d.date);
+              if (d.status === 'partial') partial.add(d.date);
+            });
+          }
+        });
+        
+        setBusyDates(busy);
+        setPartialDates(partial);
       } catch (e) { console.error('Fetch busy dates error:', e); }
     };
     fetchBusyDates();
