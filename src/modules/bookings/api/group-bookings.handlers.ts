@@ -49,6 +49,38 @@ export async function createGroupBooking(request: NextRequest) {
       return NextResponse.json({ error: 'Не обрано жодної кімнати' }, { status: 400 });
     }
 
+    // Pre-check overlap for ALL units up-front. Without this, the loop below
+    // would either rely on the prevent_overbooking trigger (which aborts the
+    // transaction mid-group, leaving partial state) or silently overbook if
+    // units come from external sync sources that bypass it. Better to fail
+    // the whole request with a clear conflict report than to half-create.
+    const overlapPlaceholders = finalUnitIds.map(() => '?').join(',');
+    const conflicts = db.prepare(`
+      SELECT r.unit_id, u.code as unit_code, u.name as unit_name,
+             r.id as conflict_id, r.check_in, r.check_out, r.status
+      FROM reservations r
+      JOIN units u ON u.id = r.unit_id
+      WHERE r.unit_id IN (${overlapPlaceholders})
+        AND r.status NOT IN ('cancelled', 'no_show')
+        AND r.check_in < ? AND r.check_out > ?
+    `).all(...finalUnitIds, checkOut, checkIn) as any[];
+    if (conflicts.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Один або кілька юнітів вже зайняті на ці дати',
+          conflicts: conflicts.map((c) => ({
+            unitCode: c.unit_code,
+            unitName: c.unit_name,
+            conflictReservationId: c.conflict_id,
+            checkIn: c.check_in,
+            checkOut: c.check_out,
+            status: c.status,
+          })),
+        },
+        { status: 409 },
+      );
+    }
+
     const nights = Math.max(1, Math.floor(
       (new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 86400000
     ));
