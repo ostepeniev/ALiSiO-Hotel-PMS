@@ -199,7 +199,7 @@
 /* ── STEPS ── */
 .v3-step {
   display: none;
-  padding: 0 16px 160px; /* Increased to avoid sticky CTA overlap */
+  padding: 0 16px 24px;
   flex: 1;
 }
 
