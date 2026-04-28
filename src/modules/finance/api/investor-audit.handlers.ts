@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 //
-// Read-only diagnostic for the investor / finance entanglement.
-// No mutations. Returns a snapshot of every business_unit, every glamping
-// unit, every investor_investment, with the joins and counts needed to
-// figure out what got polluted by the Supabase importer.
+// Diagnostic for the investor / finance entanglement.
+// - GET  /api/finance/investors/audit         — read-only snapshot
+// - POST /api/finance/investors/audit/relink  — manual relink BU → unit
 //
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -153,6 +152,59 @@ export async function getInvestorAudit(_request: NextRequest): Promise<NextRespo
       investments,
       polluted_fin_operations_sample: pollutedFinOps,
     });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * POST /api/finance/investors/audit/relink
+ * Body: { project_id, unit_id }
+ *
+ * Sets unit_id on every investor row attached to that project_id:
+ * investor_investments, investor_payouts, property_monthly_metrics,
+ * property_monthly_reports, property_work_stages, investor_property_details.
+ *
+ * Idempotent — only updates rows where unit_id is currently NULL or differs.
+ */
+export async function relinkProjectToUnit(request: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const orgId = (db.prepare("SELECT id FROM organizations LIMIT 1").get() as { id: string } | undefined)?.id;
+    if (!orgId) throw new Error('No organization found');
+
+    const body = await request.json();
+    const { project_id, unit_id } = body || {};
+    if (!project_id || !unit_id) {
+      return NextResponse.json({ error: 'project_id and unit_id required' }, { status: 400 });
+    }
+
+    // Validate the unit belongs to this org and is a glamping unit
+    const unit = db.prepare(`
+      SELECT u.id, u.name FROM units u
+      JOIN categories c ON c.id = u.category_id
+      JOIN properties p ON p.id = u.property_id
+      WHERE u.id = ? AND p.organization_id = ? AND c.type = 'glamping'
+    `).get(unit_id, orgId) as { id: string; name: string } | undefined;
+    if (!unit) return NextResponse.json({ error: 'Unit not found or not glamping' }, { status: 404 });
+
+    const tables = [
+      'investor_investments', 'investor_payouts',
+      'property_monthly_metrics', 'property_monthly_reports',
+      'property_work_stages', 'investor_property_details',
+    ];
+    let updated = 0;
+    const tx = db.transaction(() => {
+      for (const t of tables) {
+        const cols = db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[];
+        if (!cols.some((c) => c.name === 'unit_id') || !cols.some((c) => c.name === 'project_id')) continue;
+        const r = db.prepare(`UPDATE ${t} SET unit_id = ? WHERE project_id = ? AND (unit_id IS NULL OR unit_id != ?)`).run(unit_id, project_id, unit_id);
+        updated += r.changes;
+      }
+    });
+    tx();
+
+    return NextResponse.json({ ok: true, updated_rows: updated, unit: { id: unit.id, name: unit.name } });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
