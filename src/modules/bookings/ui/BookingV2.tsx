@@ -364,6 +364,11 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
 
+      const urlPromo = params.get('promo');
+      if (urlPromo) {
+        setPromoCode(urlPromo);
+      }
+
       const payStatus = params.get('payment_status');
       const resId = params.get('res_id');
       if (payStatus === 'success' && resId) {
@@ -796,23 +801,36 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     }
   };
 
-  const handleApplyPromo = async () => {
-    const code = promoCode.trim().toUpperCase();
+  const handleApplyPromo = async (codeToApply?: string | React.MouseEvent) => {
+    const code = (typeof codeToApply === 'string' ? codeToApply : promoCode).trim().toUpperCase();
     if (!code) return;
     setApplyingPromo(true);
     setPromoError('');
     try {
-      const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}`);
+      const uId = selectedUnitId || '';
+      const sId = resolvedSiteId || '';
+      const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
       const data = await res.json();
       if (data.valid) {
         setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
         setShowPromo(false);
       } else {
-        setPromoError(data.error || v3t.promoError);
+        setPromoApplied(null);
+        setPromoError(data.error || 'Invalid code');
       }
-    } catch { setPromoError(v3t.serverError); }
-    setApplyingPromo(false);
+    } catch (err) {
+      setPromoError('Server error');
+    } finally {
+      setApplyingPromo(false);
+    }
   };
+
+  // Auto-apply promo from URL if it exists and hasn't been applied yet
+  useEffect(() => {
+    if (promoCode && !promoApplied && selectedUnitId && resolvedSiteId && !applyingPromo && !promoError) {
+      handleApplyPromo(promoCode);
+    }
+  }, [promoCode, promoApplied, selectedUnitId, resolvedSiteId]);
 
   const submitBooking = async () => {
     if (!checkIn || !checkOut || !selectedUnitId || !firstName || !lastName || !phone) {
