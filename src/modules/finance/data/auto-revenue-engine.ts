@@ -51,14 +51,16 @@ function normName(s: string): string {
 }
 
 /**
- * Build a project_id → matched unit_id map for the given org. Cyrillic-folded
- * normalised name matching, scoped to glamping units.
+ * Build a project_id → matched unit map for the given org.
+ *
+ * Two-stage resolution (explicit-first, then heuristic):
+ *   1. Any investor_investments row with explicit unit_id wins — that's
+ *      the admin's deliberate link, set in cleanup #A's auto-fill or by
+ *      future relink UI.
+ *   2. Cyrillic-folded name match between business_units.name and
+ *      glamping units.name — fallback for rows that haven't been linked.
  */
 export function buildProjectToUnitMap(db: any, orgId: string): Map<string, { id: string; name: string }> {
-  const buRows = db.prepare(
-    "SELECT id, name FROM business_units WHERE organization_id = ?"
-  ).all(orgId) as { id: string; name: string }[];
-
   const unitRows = db.prepare(`
     SELECT u.id, u.name
     FROM units u
@@ -66,12 +68,30 @@ export function buildProjectToUnitMap(db: any, orgId: string): Map<string, { id:
     JOIN properties p ON p.id = u.property_id
     WHERE p.organization_id = ? AND u.is_active = 1 AND c.type = 'glamping'
   `).all(orgId) as { id: string; name: string }[];
-
+  const unitById = new Map<string, { id: string; name: string }>();
+  for (const u of unitRows) unitById.set(u.id, u);
   const unitByNorm = new Map<string, { id: string; name: string }>();
-  for (const u of unitRows) unitByNorm.set(normName(u.name), { id: u.id, name: u.name });
+  for (const u of unitRows) unitByNorm.set(normName(u.name), u);
 
   const out = new Map<string, { id: string; name: string }>();
+
+  // Stage 1 — explicit unit_id from investor_investments (highest priority)
+  const explicitRows = db.prepare(`
+    SELECT DISTINCT project_id, unit_id
+    FROM investor_investments
+    WHERE organization_id = ? AND project_id IS NOT NULL AND unit_id IS NOT NULL AND is_active = 1
+  `).all(orgId) as { project_id: string; unit_id: string }[];
+  for (const r of explicitRows) {
+    const u = unitById.get(r.unit_id);
+    if (u) out.set(r.project_id, u);
+  }
+
+  // Stage 2 — name match for projects that don't already have an explicit link
+  const buRows = db.prepare(
+    "SELECT id, name FROM business_units WHERE organization_id = ?"
+  ).all(orgId) as { id: string; name: string }[];
   for (const bu of buRows) {
+    if (out.has(bu.id)) continue;
     const u = unitByNorm.get(normName(bu.name));
     if (u) out.set(bu.id, u);
   }
