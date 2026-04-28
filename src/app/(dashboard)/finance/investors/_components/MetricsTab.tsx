@@ -20,14 +20,17 @@ interface AutoRevenue {
   year_month: string;
   total: number;
   reservations: number;
-  by_source: { source: string; total: number; reservations: number }[];
+  reconciled_total: number;
+  raw_total: number;
+  by_source: { source: string; total: number; reservations: number; basis: 'reconciled' | 'raw' }[];
 }
 
 interface Project { id: string; name: string }
 
 const SOURCE_LABEL: Record<string, string> = {
   direct: 'Direct', phone: 'Phone', whatsapp: 'WhatsApp',
-  booking_com: 'Booking.com', airbnb: 'Airbnb', other_ota: 'Other OTA',
+  booking_com: 'Booking.com', airbnb: 'Airbnb', booking: 'Booking.com',
+  vrbo: 'VRBO', expedia: 'Expedia', other_ota: 'Other OTA',
 };
 
 export default function MetricsTab() {
@@ -119,11 +122,11 @@ export default function MetricsTab() {
       <div style={{ marginBottom: 20, padding: 14, background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
           <Zap size={16} color="#16a34a" />
-          <h4 style={{ margin: 0, fontSize: 14, color: '#16a34a' }}>Auto-revenue з реальних бронювань</h4>
+          <h4 style={{ margin: 0, fontSize: 14, color: '#16a34a' }}>Auto-revenue з бронювань</h4>
           <input type="month" style={{ ...input, maxWidth: 150 }} value={autoMonth} onChange={(e) => setAutoMonth(e.target.value)} />
           <button onClick={fetchAll} style={btn} title="Перерахувати"><RefreshCw size={12} /></button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)' }}>
-            Сума беретьcя з reservations де гості вже виїхали (check_out ≤ сьогодні) і checkout у вибраному місяці
+            Reconciled = після завантаження виписок (actual_net, без комісії). Raw = виїхали але виписки ще немає.
           </span>
         </div>
         {autoCards.length === 0 ? (
@@ -146,13 +149,24 @@ export default function MetricsTab() {
                     {a.reservations} бронювань
                     {a.unit_name && <> · юніт: {a.unit_name}</>}
                   </div>
+                  {(a.reconciled_total > 0 || a.raw_total > 0) && (
+                    <div style={{ display: 'flex', gap: 8, fontSize: 10, marginTop: 2 }}>
+                      {a.reconciled_total > 0 && <span style={{ color: '#16a34a' }}>✓ reconciled: {a.reconciled_total.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}</span>}
+                      {a.raw_total > 0 && <span style={{ color: '#f59e0b' }}>⏳ raw: {a.raw_total.toLocaleString('cs-CZ', { maximumFractionDigits: 0 })}</span>}
+                    </div>
+                  )}
                   {a.by_source.length > 0 && (
                     <details style={{ marginTop: 4 }}>
                       <summary style={{ fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer' }}>За джерелами</summary>
                       <div style={{ fontSize: 11, marginTop: 4 }}>
                         {a.by_source.map((s) => (
-                          <div key={s.source} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>{SOURCE_LABEL[s.source] || s.source}</span>
+                          <div key={s.source} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                            <span>
+                              {SOURCE_LABEL[s.source] || s.source}
+                              <span style={{ fontSize: 9, marginLeft: 4, padding: '0 4px', borderRadius: 3, background: s.basis === 'reconciled' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)', color: s.basis === 'reconciled' ? '#16a34a' : '#92400e' }}>
+                                {s.basis === 'reconciled' ? '✓' : '⏳'}
+                              </span>
+                            </span>
                             <span>{s.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} ({s.reservations})</span>
                           </div>
                         ))}
