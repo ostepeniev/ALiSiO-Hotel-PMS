@@ -109,9 +109,11 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
   if (bookingData.isBookingCom && lead.id) {
     enrichLeadWithBookingData(db, lead.id, bookingData);
     
-    // Auto-create reservation for Resort (ONLY if it's a new booking)
-    if (bookingData.isBookingCom && bookingData.isNewReservation && bookingData.categoryType === 'resort' && !lead.reservation_id && bookingData.checkIn && bookingData.checkOut) {
-      autoCreateReservationForResort(db, lead.id, bookingData, email.textBody);
+    // Auto-create reservation for any new Booking.com booking (any property type).
+    // Until now this fired only for categoryType==='resort', leaving Booking
+    // emails for camping/glamping/hostel as leads-only with no reservation row.
+    if (bookingData.isBookingCom && bookingData.isNewReservation && !lead.reservation_id && bookingData.checkIn && bookingData.checkOut) {
+      autoCreateReservationFromEmail(db, lead.id, bookingData, email.textBody);
     }
   }
 
@@ -128,7 +130,6 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
 
     // Auto-create reservation for Vrbo (Resort by default)
     if (vrboData.isNewReservation && !lead.reservation_id && vrboData.checkIn && vrboData.checkOut) {
-      // Map VrboData to a compatible format for autoCreateReservationForResort or handle directly
       const mappedData = {
         confirmationId: vrboData.confirmationId,
         checkIn: vrboData.checkIn,
@@ -137,9 +138,9 @@ async function processEmail(email: IncomingEmail, db: any, results: any) {
         totalPrice: vrboData.totalPrice,
         currency: vrboData.currency,
         propertyName: vrboData.propertyName,
-        source: 'vrbo'
+        source: 'vrbo',
       };
-      autoCreateReservationForResort(db, lead.id, mappedData, email.textBody);
+      autoCreateReservationFromEmail(db, lead.id, mappedData, email.textBody);
     }
   }
 
@@ -391,54 +392,94 @@ function enrichLeadWithBookingData(db: any, leadId: string, data: any): void {
   }
 }
 
-function autoCreateReservationForResort(db: any, leadId: string, data: any, emailText: string): void {
+function autoCreateReservationFromEmail(db: any, leadId: string, data: any, emailText: string): void {
   try {
     const lead = db.prepare("SELECT organization_id, guest_id FROM crm_leads WHERE id = ?").get(leadId) as any;
     if (!lead || !lead.guest_id) return;
 
-    // 1. Find the property (Carlsbad Wellness & Camping Resort)
-    const prop = db.prepare("SELECT id FROM properties WHERE name LIKE '%Camping%' LIMIT 1").get() as any;
+    // Idempotency — bail out early if a reservation for this confirmation already exists.
+    if (data.confirmationId) {
+      const dup = db.prepare(
+        "SELECT id FROM reservations WHERE bcom_reservation_id = ? OR external_uid = ? LIMIT 1"
+      ).get(data.confirmationId, data.confirmationId) as any;
+      if (dup) {
+        console.log(`[AutoRes] Reservation already exists for ${data.confirmationId} → ${dup.id}, skipping`);
+        return;
+      }
+    }
+
+    // 1. Property — try by Camping name first; fall back to first property.
+    const prop =
+      (db.prepare("SELECT id FROM properties WHERE name LIKE '%Camping%' LIMIT 1").get() as any) ||
+      (db.prepare("SELECT id FROM properties LIMIT 1").get() as any);
     if (!prop) {
-      console.error("[AutoRes] Property 'Camping' not found");
+      console.error("[AutoRes] No property in DB");
       return;
     }
 
-    // 2. Determine target building (D if Wellness Hostel, else F)
-    const isBuildingD = emailText.toLowerCase().includes('wellness hostel') || (data.propertyName || '').toLowerCase().includes('hostel');
+    // 2. Decide target category. Booking.com / Vrbo emails for our setup are
+    //    almost always resort (Wellness Hostel + Resort F both live under
+    //    category type='resort'). categoryType is honoured if the parser
+    //    extracted it; otherwise we default to resort and let fallback widen.
+    const requestedCategory: string =
+      (typeof data.categoryType === 'string' && data.categoryType) || 'resort';
+
+    // 3. Building hint: emails mentioning "wellness hostel" → building D,
+    //    otherwise the resort flow defaults to building F.
+    const isBuildingD =
+      emailText.toLowerCase().includes('wellness hostel') ||
+      (data.propertyName || '').toLowerCase().includes('hostel');
     const buildingCode = isBuildingD ? 'D' : 'F';
     const buildingId = isBuildingD ? 'bldg_d' : 'bldg_f';
 
-    // 3. Find a free unit in the target building
+    // 4. Find a free unit in the preferred building first.
     let unit = db.prepare(`
-      SELECT u.id, u.name 
+      SELECT u.id, u.name
       FROM units u
       WHERE u.building_id = ?
-      AND u.id NOT IN (
-        SELECT unit_id FROM reservations 
-        WHERE status NOT IN ('cancelled', 'no_show')
-        AND NOT (check_out <= ? OR check_in >= ?)
-      )
+        AND u.id NOT IN (
+          SELECT unit_id FROM reservations
+          WHERE status NOT IN ('cancelled', 'no_show')
+            AND NOT (check_out <= ? OR check_in >= ?)
+        )
       ORDER BY u.sort_order ASC LIMIT 1
     `).get(buildingId, data.checkIn, data.checkOut) as any;
 
+    // 5. Widen to any free unit in the requested category.
     if (!unit) {
-      // Fallback: any free resort unit if specific building is full
       unit = db.prepare(`
-        SELECT u.id, u.name 
+        SELECT u.id, u.name
+        FROM units u
+        JOIN categories c ON c.id = u.category_id
+        WHERE c.type = ?
+          AND u.id NOT IN (
+            SELECT unit_id FROM reservations
+            WHERE status NOT IN ('cancelled', 'no_show')
+              AND NOT (check_out <= ? OR check_in >= ?)
+          )
+        ORDER BY u.sort_order ASC LIMIT 1
+      `).get(requestedCategory, data.checkIn, data.checkOut) as any;
+    }
+
+    // 6. Final fallback: any free unit in resort. Matches the user's rule
+    //    that hostel/resort all live under the resort umbrella for now.
+    if (!unit && requestedCategory !== 'resort') {
+      unit = db.prepare(`
+        SELECT u.id, u.name
         FROM units u
         JOIN categories c ON c.id = u.category_id
         WHERE c.type = 'resort'
-        AND u.id NOT IN (
-          SELECT unit_id FROM reservations 
-          WHERE status NOT IN ('cancelled', 'no_show')
-          AND NOT (check_out <= ? OR check_in >= ?)
-        )
+          AND u.id NOT IN (
+            SELECT unit_id FROM reservations
+            WHERE status NOT IN ('cancelled', 'no_show')
+              AND NOT (check_out <= ? OR check_in >= ?)
+          )
         ORDER BY u.sort_order ASC LIMIT 1
       `).get(data.checkIn, data.checkOut) as any;
     }
 
     if (!unit) {
-      console.warn(`[AutoRes] No free resort units for ${data.checkIn} - ${data.checkOut}`);
+      console.warn(`[AutoRes] No free units for ${requestedCategory} on ${data.checkIn} - ${data.checkOut}`);
       return;
     }
 
@@ -447,19 +488,23 @@ function autoCreateReservationForResort(db: any, leadId: string, data: any, emai
     const end = new Date(data.checkOut);
     const nights = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 
-    // 5. Create reservation
+    // 7. Create reservation. source mirrors the actual channel (booking_com,
+    //    vrbo, airbnb…) so reports and filters work correctly. We still write
+    //    bcom_reservation_id alongside external_uid because the legacy dedup
+    //    SQL searches both columns.
+    const sourceCode = (data.source && String(data.source).toLowerCase().replace(/\./g, '_')) || 'booking_com';
     const resId = crypto.randomBytes(16).toString('hex');
     db.prepare(`
       INSERT INTO reservations (
-        id, property_id, unit_id, guest_id, check_in, check_out, 
-        nights, adults, status, source, total_price, currency, 
+        id, property_id, unit_id, guest_id, check_in, check_out,
+        nights, adults, status, source, total_price, currency,
         external_uid, bcom_reservation_id, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'booking_com', ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?, ?, ?)
     `).run(
       resId, prop.id, unit.id, lead.guest_id, data.checkIn, data.checkOut,
-      nights, data.totalGuests || 1, data.totalPrice || 0, data.currency || 'CZK',
+      nights, data.totalGuests || 1, sourceCode, data.totalPrice || 0, data.currency || 'CZK',
       data.confirmationId, data.confirmationId,
-      `Auto-created from ${data.source || 'Booking.com'} email (Resort Building ${buildingCode}${isBuildingD ? ' - Wellness Hostel' : ''})`
+      `Auto-created from ${data.source || 'Booking.com'} email (Building ${buildingCode}${isBuildingD ? ' - Wellness Hostel' : ''}, category ${requestedCategory})`,
     );
 
     // 6. Link lead to reservation
