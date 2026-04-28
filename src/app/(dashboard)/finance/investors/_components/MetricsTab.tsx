@@ -20,9 +20,7 @@ interface AutoRevenue {
   year_month: string;
   totals_by_currency: Record<string, number>;
   reservations: number;
-  reconciled_total_by_currency: Record<string, number>;
-  raw_total_by_currency: Record<string, number>;
-  by_source: { source: string; currency: string; total: number; reservations: number; basis: 'reconciled' | 'raw' }[];
+  by_source: { source: string; currency: string; total: number; reservations: number }[];
 }
 
 interface Project { id: string; name: string; is_active?: number }
@@ -34,9 +32,10 @@ function fmtCurrencies(by: Record<string, number>): string {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  direct: 'Direct', phone: 'Phone', whatsapp: 'WhatsApp',
-  booking_com: 'Booking.com', airbnb: 'Airbnb', booking: 'Booking.com',
-  vrbo: 'VRBO', expedia: 'Expedia', other_ota: 'Other OTA',
+  direct: 'Direct',
+  airbnb: 'Airbnb',
+  booking_com: 'Booking.com',
+  vrbo: 'VRBO',
 };
 
 export default function MetricsTab() {
@@ -140,7 +139,7 @@ export default function MetricsTab() {
           <input type="month" style={{ ...input, maxWidth: 150 }} value={autoMonth} onChange={(e) => setAutoMonth(e.target.value)} />
           <button onClick={fetchAll} style={btn} title="Перерахувати"><RefreshCw size={12} /></button>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-secondary)' }}>
-            Reconciled = після завантаження виписок (actual_net, без комісії). Raw = виїхали але виписки ще немає.
+            Сума = з reservations.total_rate_eur (для Hostex) або reservations.total_price (для прямих). Бронювання з нульовою сумою не рахуються.
           </span>
         </div>
         {autoCards.length === 0 ? (
@@ -163,26 +162,13 @@ export default function MetricsTab() {
                     {a.reservations} бронювань
                     {a.unit_name && <> · юніт: {a.unit_name}</>}
                   </div>
-                  {(Object.keys(a.reconciled_total_by_currency).length > 0 || Object.keys(a.raw_total_by_currency).length > 0) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 10, marginTop: 2 }}>
-                      {Object.keys(a.reconciled_total_by_currency).length > 0 &&
-                        <span style={{ color: '#16a34a' }}>✓ reconciled: {fmtCurrencies(a.reconciled_total_by_currency)}</span>}
-                      {Object.keys(a.raw_total_by_currency).length > 0 &&
-                        <span style={{ color: '#f59e0b' }}>⏳ raw: {fmtCurrencies(a.raw_total_by_currency)}</span>}
-                    </div>
-                  )}
                   {a.by_source.length > 0 && (
-                    <details style={{ marginTop: 4 }}>
+                    <details style={{ marginTop: 4 }} open>
                       <summary style={{ fontSize: 11, color: 'var(--text-secondary)', cursor: 'pointer' }}>За джерелами</summary>
                       <div style={{ fontSize: 11, marginTop: 4 }}>
                         {a.by_source.map((s, i) => (
                           <div key={`${s.source}-${s.currency}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                            <span>
-                              {SOURCE_LABEL[s.source] || s.source}
-                              <span style={{ fontSize: 9, marginLeft: 4, padding: '0 4px', borderRadius: 3, background: s.basis === 'reconciled' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)', color: s.basis === 'reconciled' ? '#16a34a' : '#92400e' }}>
-                                {s.basis === 'reconciled' ? '✓' : '⏳'}
-                              </span>
-                            </span>
+                            <span>{SOURCE_LABEL[s.source] || s.source}</span>
                             <span>{s.total.toLocaleString('cs-CZ', { minimumFractionDigits: 2 })} {s.currency} ({s.reservations})</span>
                           </div>
                         ))}
