@@ -1,28 +1,31 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 //
-// Auto-revenue engine — derives investor monthly revenue per project from
-// real PMS reservations.
+// Auto-revenue engine — derives investor monthly revenue per project.
 //
-// Investor module is keyed on `business_units` (project_id). User renames
-// the relevant business_units to match real `units.name` (A1, A2, B1...).
-// We resolve each business_unit by name-match to a unit, then sum
-// `reservations.total_price` for stays that:
-//   - belong to that unit
-//   - have already departed (check_out <= today)
-//   - departed in the requested year_month
-//   - are not cancelled / no_show
+// Two data sources, in priority order:
 //
-// Same primitive used by:
-//   - admin MetricsTab («Apply auto» pre-fill)
-//   - monthly-digest engine (auto when no manual metric for the month)
-//   - portal engine (auto fallback)
-//   - public portal "source breakdown" widget
+//   1. RECONCILED  — `fin_channel_receivables` joined to reservations.
+//      Once a channel statement is uploaded (PR #17) and reconciled with
+//      a bank op (PR #16), the row carries `actual_net` = real money the
+//      hotel received after platform commission. This is the *truthful*
+//      number for investor payout calculations and is the user's preferred
+//      source ("once a month after document upload").
+//
+//   2. RAW reservations — `reservations.total_price` for stays already
+//      checked out. Used as a fallback for direct/walk-in bookings (no
+//      receivable row) and for live previews before reconciliation.
+//
+// Investor module is keyed on `business_units` (project_id, legacy). User
+// renames the relevant business_units to match real `units.name` (A1, A2,
+// B1...). We resolve project_id → unit_id by Cyrillic-folded name match,
+// scoped to glamping units only.
 //
 
 export interface AutoRevenuePerSource {
-  source: string;       // 'direct' | 'booking_com' | 'airbnb' | ...
-  total: number;
+  source: string;       // 'direct' | 'booking' | 'airbnb' | ...
+  total: number;        // sum (already net of commission for reconciled rows)
   reservations: number;
+  basis: 'reconciled' | 'raw';   // where this number came from
 }
 
 export interface AutoRevenueResult {
@@ -32,6 +35,8 @@ export interface AutoRevenueResult {
   year_month: string;
   total: number;               // sum across sources
   reservations: number;
+  reconciled_total: number;    // portion that came from reconciled receivables
+  raw_total: number;           // portion that came from raw reservations
   by_source: AutoRevenuePerSource[];
 }
 
@@ -42,16 +47,14 @@ function normName(s: string): string {
 }
 
 /**
- * Build a project_id → matched unit_id map for the given org. We do
- * Cyrillic-folded normalised name matching once and reuse the cache.
+ * Build a project_id → matched unit_id map for the given org. Cyrillic-folded
+ * normalised name matching, scoped to glamping units.
  */
 export function buildProjectToUnitMap(db: any, orgId: string): Map<string, { id: string; name: string }> {
   const buRows = db.prepare(
     "SELECT id, name FROM business_units WHERE organization_id = ?"
   ).all(orgId) as { id: string; name: string }[];
 
-  // Only glamping units (categories.type='glamping') — investor block is
-  // explicitly limited to glamping houses per user requirement.
   const unitRows = db.prepare(`
     SELECT u.id, u.name
     FROM units u
@@ -73,7 +76,13 @@ export function buildProjectToUnitMap(db: any, orgId: string): Map<string, { id:
 
 /**
  * Compute auto revenue for one project_id and month.
- * Uses today's date as the cut-off — only departed reservations count.
+ *
+ * Strategy:
+ *   - For each reservation that checks out in the target month for this unit,
+ *     prefer the reconciled receivable's actual_net (or expected_net when
+ *     receivable exists but isn't reconciled yet);
+ *   - Fall back to reservations.total_price for direct bookings / no
+ *     receivable row.
  */
 export function getAutoRevenue(
   db: any,
@@ -89,32 +98,83 @@ export function getAutoRevenue(
     unit_name: unit?.name || null,
     year_month: yearMonth,
     total: 0, reservations: 0, by_source: [],
+    reconciled_total: 0, raw_total: 0,
   };
   if (!unit) return result;
 
   const today = new Date().toISOString().substring(0, 10);
-  const rows = db.prepare(`
-    SELECT source, COALESCE(SUM(total_price), 0) AS total, COUNT(*) AS n
-    FROM reservations
-    WHERE unit_id = ?
-      AND check_out <= ?
-      AND substr(check_out, 1, 7) = ?
-      AND status NOT IN ('cancelled', 'no_show', 'draft')
-    GROUP BY source
-  `).all(unit.id, today, yearMonth) as { source: string; total: number; n: number }[];
 
+  // One row per reservation that departed this month, with its receivable
+  // (when present). LEFT JOIN so direct bookings still appear.
+  const rows = db.prepare(`
+    SELECT r.id            AS reservation_id,
+           r.source        AS res_source,
+           r.total_price   AS res_total,
+           rc.channel_source AS rc_source,
+           rc.actual_net,
+           rc.expected_net,
+           rc.status       AS rc_status
+    FROM reservations r
+    LEFT JOIN fin_channel_receivables rc ON rc.reservation_id = r.id
+    WHERE r.unit_id = ?
+      AND r.check_out <= ?
+      AND substr(r.check_out, 1, 7) = ?
+      AND r.status NOT IN ('cancelled', 'no_show', 'draft')
+  `).all(unit.id, today, yearMonth) as Array<{
+    reservation_id: string;
+    res_source: string;
+    res_total: number;
+    rc_source: string | null;
+    actual_net: number | null;
+    expected_net: number | null;
+    rc_status: string | null;
+  }>;
+
+  // Aggregate per source, marking reconciled vs raw
+  const bySource = new Map<string, { total: number; n: number; basis: 'reconciled' | 'raw' }>();
   for (const r of rows) {
-    result.by_source.push({ source: r.source, total: +r.total.toFixed(2), reservations: r.n });
-    result.total += r.total;
-    result.reservations += r.n;
+    let amount = 0;
+    let basis: 'reconciled' | 'raw';
+    let source: string;
+    if (r.rc_status === 'paid' || r.rc_status === 'in_statement') {
+      amount = r.actual_net ?? r.expected_net ?? 0;
+      basis = 'reconciled';
+      source = r.rc_source || r.res_source;
+      result.reconciled_total += amount;
+    } else if (r.rc_status === 'expected') {
+      // Receivable exists but not reconciled yet — show but mark as raw
+      amount = r.expected_net || r.res_total;
+      basis = 'raw';
+      source = r.rc_source || r.res_source;
+      result.raw_total += amount;
+    } else {
+      // No receivable — direct/walk-in/cash
+      amount = r.res_total;
+      basis = 'raw';
+      source = r.res_source;
+      result.raw_total += amount;
+    }
+    const cell = bySource.get(source) || { total: 0, n: 0, basis };
+    cell.total += amount;
+    cell.n += 1;
+    if (basis === 'reconciled') cell.basis = 'reconciled';   // upgrade if any reconciled
+    bySource.set(source, cell);
+    result.total += amount;
+    result.reservations += 1;
   }
+
+  result.by_source = [...bySource.entries()]
+    .map(([source, c]) => ({ source, total: +c.total.toFixed(2), reservations: c.n, basis: c.basis }))
+    .sort((a, b) => b.total - a.total);
   result.total = +result.total.toFixed(2);
+  result.reconciled_total = +result.reconciled_total.toFixed(2);
+  result.raw_total = +result.raw_total.toFixed(2);
   return result;
 }
 
 /**
- * Bulk version — returns auto-revenue for every business_unit referenced
- * by an active investor_investment, for the chosen month.
+ * Bulk version — auto-revenue for every business_unit referenced by an
+ * active investor_investment, for the chosen month.
  */
 export function getAutoRevenueAllProjects(
   db: any,
@@ -130,17 +190,19 @@ export function getAutoRevenueAllProjects(
   return projectIds.map((p) => getAutoRevenue(db, orgId, p.project_id, yearMonth));
 }
 
-/**
- * Source breakdown across all-time (or year window) — feeds the public
- * portal "Income by source" widget. Per-investor: sums the investor's
- * equity-share of revenue per source for stays in their projects.
- */
+// ─── Source breakdown for public investor portal ─────────────────
+
 export interface InvestorSourceBreakdown {
   source: string;
   total_share: number;        // investor's share (after equity_pct)
   reservations: number;
+  basis: 'reconciled' | 'mixed' | 'raw';
 }
 
+/**
+ * Per-investor income breakdown by channel source. Uses the same
+ * reconciled-first strategy.
+ */
 export function getInvestorIncomeBySource(
   db: any,
   investorId: string,
@@ -154,7 +216,6 @@ export function getInvestorIncomeBySource(
   `).all(investorId) as { project_id: string; equity_pct: number | null; invested_at: string }[];
   if (investments.length === 0) return [];
 
-  // Resolve project_ids → unit_ids via name match
   const investorRow = db.prepare(
     "SELECT organization_id FROM investors WHERE id = ?"
   ).get(investorId) as { organization_id: string } | undefined;
@@ -162,35 +223,55 @@ export function getInvestorIncomeBySource(
   const map = buildProjectToUnitMap(db, investorRow.organization_id);
 
   const today = new Date().toISOString().substring(0, 10);
-  const totalsBySource = new Map<string, { total: number; n: number }>();
+  const bySource = new Map<string, { total: number; n: number; reconciledShare: number }>();
 
   for (const inv of investments) {
     const unit = map.get(inv.project_id);
     if (!unit) continue;
     const eq = (inv.equity_pct || 0) / 100;
 
-    const where: string[] = ['unit_id = ?', 'check_out <= ?', 'check_out >= ?',
-                             "status NOT IN ('cancelled', 'no_show', 'draft')"];
+    const where: string[] = ['r.unit_id = ?', 'r.check_out <= ?', 'r.check_out >= ?',
+                             "r.status NOT IN ('cancelled', 'no_show', 'draft')"];
     const params: any[] = [unit.id, today, inv.invested_at];
-    if (fromMonth) { where.push("substr(check_out, 1, 7) >= ?"); params.push(fromMonth); }
-    if (toMonth)   { where.push("substr(check_out, 1, 7) <= ?"); params.push(toMonth); }
+    if (fromMonth) { where.push("substr(r.check_out, 1, 7) >= ?"); params.push(fromMonth); }
+    if (toMonth)   { where.push("substr(r.check_out, 1, 7) <= ?"); params.push(toMonth); }
 
     const rows = db.prepare(`
-      SELECT source, COALESCE(SUM(total_price), 0) AS total, COUNT(*) AS n
-      FROM reservations
+      SELECT r.source AS res_source, r.total_price AS res_total,
+             rc.channel_source AS rc_source, rc.actual_net, rc.expected_net, rc.status AS rc_status
+      FROM reservations r
+      LEFT JOIN fin_channel_receivables rc ON rc.reservation_id = r.id
       WHERE ${where.join(' AND ')}
-      GROUP BY source
-    `).all(...params) as { source: string; total: number; n: number }[];
+    `).all(...params) as any[];
 
     for (const r of rows) {
-      const cell = totalsBySource.get(r.source) || { total: 0, n: 0 };
-      cell.total += r.total * eq;
-      cell.n += r.n;
-      totalsBySource.set(r.source, cell);
+      let amount = 0; let source: string; let isReconciled = false;
+      if (r.rc_status === 'paid' || r.rc_status === 'in_statement') {
+        amount = r.actual_net ?? r.expected_net ?? 0;
+        source = r.rc_source || r.res_source;
+        isReconciled = true;
+      } else if (r.rc_status === 'expected') {
+        amount = r.expected_net || r.res_total;
+        source = r.rc_source || r.res_source;
+      } else {
+        amount = r.res_total;
+        source = r.res_source;
+      }
+      const share = amount * eq;
+      const cell = bySource.get(source) || { total: 0, n: 0, reconciledShare: 0 };
+      cell.total += share;
+      cell.n += 1;
+      if (isReconciled) cell.reconciledShare += share;
+      bySource.set(source, cell);
     }
   }
 
-  return [...totalsBySource.entries()]
-    .map(([source, c]) => ({ source, total_share: +c.total.toFixed(2), reservations: c.n }))
+  return [...bySource.entries()]
+    .map(([source, c]) => {
+      let basis: 'reconciled' | 'mixed' | 'raw' = 'raw';
+      if (c.reconciledShare === c.total && c.total > 0) basis = 'reconciled';
+      else if (c.reconciledShare > 0) basis = 'mixed';
+      return { source, total_share: +c.total.toFixed(2), reservations: c.n, basis };
+    })
     .sort((a, b) => b.total_share - a.total_share);
 }
