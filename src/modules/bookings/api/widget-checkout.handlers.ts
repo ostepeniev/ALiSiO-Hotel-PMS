@@ -117,11 +117,15 @@ export async function createWidgetCheckoutSession(req: Request) {
       currency = res.currency || 'CZK';
       description = `Booking #${reservation_id.substring(0, 8)}`;
 
-      // Also add unpaid booking_service_orders to the total
-      const svcOrders = db.prepare(
-        "SELECT SUM(total_price) as svc_total FROM booking_service_orders WHERE reservation_id = ? AND payment_status IN ('none','pending',NULL)"
-      ).get(reservation_id) as any;
-      if (svcOrders?.svc_total) amount += svcOrders.svc_total;
+      // Also add unpaid service_orders to the total
+      try {
+        const svcOrders = db.prepare(
+          "SELECT SUM(total_price) as svc_total FROM service_orders WHERE reservation_id = ? AND status = 'pending'"
+        ).get(reservation_id) as any;
+        if (svcOrders?.svc_total) amount += svcOrders.svc_total;
+      } catch (err: any) {
+        console.error('[Checkout Session] Error calculating service_orders:', err.message);
+      }
 
       // If DB amount is still 0 (brand new reservation), use client-sent amount
       if (amount <= 0 && clientAmount && typeof clientAmount === 'number' && clientAmount > 0) {
@@ -147,22 +151,26 @@ export async function createWidgetCheckoutSession(req: Request) {
     let orderId: string | null = null;
     if (service_id && service_date) {
       try {
-        orderId = `bso_${Date.now()}`;
+        orderId = `so_${Date.now()}`;
         const h = hours || 2;
         const sHour = start_hour || 14;
+        const notesObj = {
+          service_date,
+          startHour: sHour,
+          hours: h,
+          addons: addons || [],
+          unit_price: amount / h,
+          payment_id: 'pending_teya'
+        };
 
         db.prepare(`
-          INSERT INTO booking_service_orders (id, reservation_id, service_id, quantity, service_date,
-            options_json, unit_price, total_price, status, payment_id, payment_status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending')
+          INSERT INTO service_orders (id, reservation_id, service_id, quantity, total_price, status, notes)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?)
         `).run(
-          orderId, reservation_id || null, service_id, h, service_date,
-          JSON.stringify({ startHour: sHour, hours: h, addons: addons || [] }),
-          amount / h, amount,
-          'pending_teya'
+          orderId, reservation_id || 'system_fallback', service_id, h, amount, JSON.stringify(notesObj)
         );
       } catch (dbErr: any) {
-        console.error('[Checkout Session] DB error:', dbErr.message);
+        console.error('[Checkout Session] DB error inserting service_orders:', dbErr.message);
       }
     }
 
@@ -247,7 +255,12 @@ export async function createWidgetCheckoutSession(req: Request) {
 
       if (orderId) {
         try {
-          db.prepare('UPDATE booking_service_orders SET payment_id = ? WHERE id = ?').run(session.sessionId, orderId);
+          const so = db.prepare("SELECT notes FROM service_orders WHERE id = ?").get(orderId) as any;
+          if (so && so.notes) {
+            const parsed = JSON.parse(so.notes);
+            parsed.payment_id = session.sessionId;
+            db.prepare('UPDATE service_orders SET notes = ? WHERE id = ?').run(JSON.stringify(parsed), orderId);
+          }
         } catch { /* */ }
       }
 

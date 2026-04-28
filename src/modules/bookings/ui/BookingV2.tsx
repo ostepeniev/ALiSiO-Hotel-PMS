@@ -175,8 +175,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const uId = params.get('unitId');
       if (uId) setSelectedUnitId(uId);
 
+      const getBrowserLang = () => {
+        if (typeof navigator !== 'undefined' && navigator.language) {
+          const browserLang = navigator.language.slice(0, 2).toLowerCase();
+          if (['uk', 'en', 'cs', 'de'].includes(browserLang)) return browserLang;
+        }
+        return null;
+      };
+
       const l = params.get('lang')
         || (typeof window !== 'undefined' && (window as any).__BOOKING_LANG__)
+        || getBrowserLang()
         || null;
       if (l && ['uk', 'en', 'cs', 'de'].includes(l)) {
         setLang(l as BookingLang);
@@ -187,11 +196,23 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const urlOut = params.get('checkout') || params.get('check_out');
       const urlAdults = params.get('adults');
       const urlKids = params.get('kids');
+      const urlPromo = params.get('promo') || params.get('promoCode') || params.get('promocode');
 
       if (urlIn) setCheckIn(urlIn);
       if (urlOut) setCheckOut(urlOut);
       if (urlAdults) setAdults(parseInt(urlAdults, 10) || 2);
       if (urlKids) setKids(parseInt(urlKids, 10) || 0);
+
+      if (urlPromo) {
+        setPromoCode(urlPromo);
+        fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(urlPromo.trim().toUpperCase())}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.valid) {
+              setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
+            }
+          }).catch(() => {});
+      }
 
       // Pre-fill from localStorage
       const savedGuest = localStorage.getItem('alisio_guest_data');
@@ -342,25 +363,37 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     if (!isMounted) return;
     const fetchBusyDates = async () => {
       try {
-        const date = new Date(today.getFullYear(), today.getMonth() + calMonthOffset, 1);
-        const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        const params = new URLSearchParams({ month: monthStr });
-        if (siteId) params.set('siteId', siteId);
-        if (siteSlug) params.set('siteSlug', siteSlug);
-        if (selectedUnitId) params.set('unitId', selectedUnitId);
+        const fetchMonth = async (offset: number) => {
+          const date = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+          const monthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const params = new URLSearchParams({ month: monthStr });
+          if (siteId) params.set('siteId', siteId);
+          if (siteSlug) params.set('siteSlug', siteSlug);
+          if (selectedUnitId) params.set('unitId', selectedUnitId);
 
-        const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
-        const data = await res.json();
-        if (data.days) {
-          const busy = new Set<string>();
-          const partial = new Set<string>();
-          data.days.forEach((d: any) => {
-            if (d.status === 'booked') busy.add(d.date);
-            if (d.status === 'partial') partial.add(d.date);
-          });
-          setBusyDates(busy);
-          setPartialDates(partial);
-        }
+          const res = await fetch(`${API_BASE}/api/widget/calendar?${params.toString()}`);
+          return res.json();
+        };
+
+        const [data1, data2] = await Promise.all([
+          fetchMonth(calMonthOffset),
+          fetchMonth(calMonthOffset + 1)
+        ]);
+
+        const busy = new Set<string>();
+        const partial = new Set<string>();
+        
+        [data1, data2].forEach(data => {
+          if (data?.days) {
+            data.days.forEach((d: any) => {
+              if (d.status === 'booked') busy.add(d.date);
+              if (d.status === 'partial') partial.add(d.date);
+            });
+          }
+        });
+        
+        setBusyDates(busy);
+        setPartialDates(partial);
       } catch (e) { console.error('Fetch busy dates error:', e); }
     };
     fetchBusyDates();
@@ -391,6 +424,17 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
     const extraGuests = Math.max(0, adults - selectedUnit.baseOccupancy);
     const extraCharge = extraGuests * (selectedUnit.extraPersonCharge || 0) * nights;
 
+    let base = selectedUnit.totalPrice + extraCharge;
+
+    if (promoApplied) {
+      if (promoApplied.discount_type === 'fixed_price') {
+        base -= promoApplied.discount_value;
+      } else if (promoApplied.discount_type === 'percentage') {
+        base = Math.round(base * (1 - promoApplied.discount_value / 100));
+      }
+    }
+    if (base < 0) base = 0;
+
     // Add selected services
     let servicesTotal = 0;
     services.forEach(s => {
@@ -399,8 +443,8 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       }
     });
 
-    return selectedUnit.totalPrice + extraCharge + servicesTotal;
-  }, [selectedUnit, adults, nights, services, selectedServiceIds]);
+    return base + servicesTotal;
+  }, [selectedUnit, adults, nights, services, selectedServiceIds, promoApplied]);
 
   // ─── Actions ───
   const fetchAvailability = useCallback(async (ci: string, co: string) => {
@@ -641,7 +685,16 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       }
       const data = await res.json();
       if (data.session_url) {
-        window.location.href = data.session_url;
+        try {
+          if (window.top) {
+            window.top.location.href = data.session_url;
+          } else {
+            window.location.href = data.session_url;
+          }
+        } catch (e) {
+          // Fallback if cross-origin restricts window.top
+          window.location.href = data.session_url;
+        }
       } else {
         setError(data.error || 'Payment failed to start');
       }
@@ -1264,11 +1317,14 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
         {/* STEP 5: PAYMENT (Breakdown) */}
         <div className={`v3-step ${step === 5 ? 'visible' : ''}`}>
           <h1 className="v3-step-title">{t.paymentTitle}</h1>
-          <p className="v3-step-sub">{t.securePaymentNote}</p>
+          <p className="v3-step-sub">{siteConfig?.hasPayment ? t.securePaymentNote : t.paymentSubtitle}</p>
 
           <div className="v3-breakdown">
             <div className="v3-breakdown-row">
-              <span>{selectedUnit?.name} · {nights} {t.nightsShort}</span>
+              <span>
+                {selectedUnit?.name} · {nights} {t.nightsShort}
+                {checkIn && checkOut && ` (${formatDisplayDate(checkIn, lang)} – ${formatDisplayDate(checkOut, lang)})`}
+              </span>
               <span className="v3-breakdown-val">{formatPrice(selectedUnit?.totalPrice || 0, siteCurrency)}</span>
             </div>
             {services.filter(s => selectedServiceIds.has(s.id)).map(s => (
@@ -1283,7 +1339,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </div>
           </div>
 
-          {siteConfig?.config?.payment?.enabled ? (
+          {siteConfig?.hasPayment ? (
             <>
               <div className="v3-pay-method selected">
                 <div className="v3-pay-method-radio"></div>
