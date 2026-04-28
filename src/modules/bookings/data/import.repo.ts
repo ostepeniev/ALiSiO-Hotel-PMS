@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb, generateGuestToken } from '@core/db';
+import { findOrCreateGuest } from '@guests';
 
 export interface UnitTypeMatch {
   id: string;
@@ -109,9 +110,10 @@ export function cancelReservation(reservationId: string): void {
 }
 
 /**
- * Find or create a guest by name + optional country/phone.
- * Booking.com exports rarely include email or phone, so name + country is the
- * best dedup key we have. Returns the guest id.
+ * Thin wrapper over the unified @guests/findOrCreateGuest helper.
+ * Booking.com exports rarely include email, so this flow has no email key —
+ * the helper falls back to phone, then to first+last name. Address/country
+ * are filled in if missing on an existing row.
  */
 export function findOrCreateGuestForImport(args: {
   firstName: string;
@@ -122,35 +124,14 @@ export function findOrCreateGuestForImport(args: {
 }): string {
   const db = getDb();
   const org = db.prepare('SELECT id FROM organizations LIMIT 1').get() as any;
-  const orgId = org?.id;
-
-  const existing = db.prepare(`
-    SELECT id FROM guests
-    WHERE LOWER(first_name) = LOWER(?) AND LOWER(last_name) = LOWER(?)
-      AND organization_id = ?
-    LIMIT 1
-  `).get(args.firstName, args.lastName, orgId) as any;
-
-  if (existing) {
-    if (args.phone || args.address || args.country) {
-      db.prepare(`
-        UPDATE guests
-        SET phone = COALESCE(NULLIF(?, ''), phone),
-            address = COALESCE(NULLIF(?, ''), address),
-            country = COALESCE(NULLIF(?, ''), country),
-            updated_at = datetime('now')
-        WHERE id = ?
-      `).run(args.phone || '', args.address || '', args.country || '', existing.id);
-    }
-    return existing.id;
-  }
-
-  const guestId = `g_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  db.prepare(`
-    INSERT INTO guests (id, organization_id, first_name, last_name, phone, address, country)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(guestId, orgId, args.firstName, args.lastName, args.phone || null, args.address || null, args.country || null);
-  return guestId;
+  return findOrCreateGuest({
+    organizationId: org?.id,
+    firstName: args.firstName,
+    lastName: args.lastName,
+    phone: args.phone,
+    address: args.address,
+    country: args.country,
+  }).id;
 }
 
 export interface InsertReservationArgs {
