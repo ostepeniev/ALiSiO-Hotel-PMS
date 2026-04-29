@@ -121,12 +121,12 @@ export function findFreeResortUnitByCapacity(
     ? `AND u.id NOT IN (${excludeUnitIds.map(() => '?').join(',')})`
     : '';
 
-  // Match on base_occupancy — that's the standard sale capacity ("Triple
-  // Room" = sleeps 3 by default). max_occupancy includes extra beds and
-  // would let a 2-person room be picked for a Triple booking, which is
-  // not what Booking sells. We fall back to max_occupancy / max_adults
-  // only when base_occupancy isn't filled in.
-  const occExpr = 'COALESCE(ut.base_occupancy, ut.max_occupancy, ut.max_adults, 0)';
+  // Capacity per unit: prefer units.beds (this is what the UI labels show —
+  // "F1 · 2 місць" = beds=2), then fall back to unit_types fields. base_
+  // occupancy and max_occupancy are often NULL in practice, so the legacy
+  // chain alone returns nothing. units.beds is filled in for every active
+  // unit, so it works as a robust primary key for capacity.
+  const occExpr = 'COALESCE(u.beds, ut.base_occupancy, ut.max_occupancy, ut.max_adults, 0)';
 
   // Pass 1 — exact match. Building F preferred over any other building.
   const exact = db.prepare(`
