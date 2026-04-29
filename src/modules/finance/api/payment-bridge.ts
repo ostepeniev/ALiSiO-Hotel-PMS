@@ -18,6 +18,46 @@ export interface CreatePaymentOperationInput {
   accountId?: string;
   status?: 'completed' | 'pending';
   comment?: string;
+  /**
+   * When true, the operation is a "PMS payment signal" — guest paid the
+   * channel/Teya, but we don't have the money on our bank yet. PMS uses
+   * it to compute reservation.payment_status (so check-in works), but
+   * /finance/operations and cashflow hide it. Real money lands when the
+   * bank statement arrives — that creates a separate, real fin_operation.
+   *
+   * Defaults to true for source IN ('hostex', 'teia', 'booking_widget',
+   * 'guest_page') unless overridden.
+   */
+  isPmsSignal?: boolean;
+  /**
+   * Channel descriptor (Hostex passes 'booking.com' / 'airbnb' / 'vrbo').
+   * Used by the resolver to route the operation to the matching clearing
+   * account ('Booking.com (CZK)' / 'Airbnb (EUR)' / etc) instead of
+   * defaulting to the first cash account.
+   */
+  channelType?: string;
+}
+
+/**
+ * Look up the clearing account that matches a channel + currency. Returns
+ * null when no clearing account is seeded for this combination — caller
+ * should then fall back AND tag the operation as needs_review.
+ */
+function findClearingAccount(db: any, orgId: string, channelType: string | undefined, currency: string): string | null {
+  if (!channelType) return null;
+  const ch = channelType.toLowerCase();
+  const display = ch === 'booking.com' || ch === 'booking_com' || ch === 'booking'
+    ? 'Booking.com'
+    : ch === 'airbnb' ? 'Airbnb'
+    : ch === 'vrbo' ? 'VRBO'
+    : ch === 'expedia' ? 'Expedia'
+    : null;
+  if (!display) return null;
+  const wanted = `${display} (${currency.toUpperCase()})`;
+  const row = db.prepare(
+    "SELECT id FROM finance_accounts WHERE organization_id = ? AND name = ? AND type = 'clearing' AND is_active = 1 LIMIT 1"
+  ).get(orgId, wanted) as { id: string } | undefined;
+  return row?.id || null;
 }
 
 /**
@@ -51,18 +91,36 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
   const isRefund = paymentSubtype === 'refund';
   const opType = isRefund ? 'expense' : 'income';
 
-  // Resolve account — income requires account_to_id, expense requires account_from_id.
-  // If not explicitly provided, fall back to the organization's default account
-  // (first active CZK account, or simply the first account).
+  // Resolve account in 3 stages:
+  //   1) Explicit accountId from caller — always honoured.
+  //   2) For channel signals (Hostex prepaid via Booking/Airbnb/VRBO),
+  //      route to the matching clearing account ("Booking.com (CZK)" etc).
+  //   3) Final fallback — first cash account in matching currency, BUT
+  //      flag the operation needs_review=1 so the admin can triage.
   let resolvedAccountId = accountId;
-  if (!resolvedAccountId) {
-    const defaultAccount = db.prepare(`
-      SELECT id FROM finance_accounts
-      WHERE organization_id = ? AND currency = 'CZK'
-      ORDER BY sort_order ASC, created_at ASC LIMIT 1
-    `).get(row.org_id) as { id: string } | undefined;
-    resolvedAccountId = defaultAccount?.id || undefined;
+  let needsReview = 0;
+  if (!resolvedAccountId && source === 'hostex') {
+    resolvedAccountId = findClearingAccount(db, row.org_id, input.channelType, currency) || undefined;
   }
+  if (!resolvedAccountId) {
+    const fallback = db.prepare(`
+      SELECT id FROM finance_accounts
+      WHERE organization_id = ? AND currency = ?
+        AND type IN ('cash', 'bank') AND is_active = 1
+      ORDER BY sort_order ASC, created_at ASC LIMIT 1
+    `).get(row.org_id, currency) as { id: string } | undefined;
+    resolvedAccountId = fallback?.id || undefined;
+    // Channel signals that fell back to cash deserve admin attention —
+    // ideally a clearing account should have matched.
+    if (source === 'hostex' || source === 'teia' || source === 'booking_widget') {
+      needsReview = 1;
+    }
+  }
+
+  // Default-tag known channel/online sources as PMS signals unless caller overrode.
+  const isPmsSignal = input.isPmsSignal !== undefined
+    ? input.isPmsSignal
+    : (source === 'hostex' || source === 'teia' || source === 'booking_widget');
 
   const operationId = createOperationInTx(db, row.org_id, {
     op_type: opType,
@@ -78,6 +136,8 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     comment: comment || null,
     source,
     source_ref: sourceRef || reservationId,
+    is_pms_signal: isPmsSignal ? 1 : 0,
+    needs_review: needsReview,
   });
 
   recalcReservationPaymentStatus(db, reservationId);
