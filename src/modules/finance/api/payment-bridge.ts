@@ -18,6 +18,17 @@ export interface CreatePaymentOperationInput {
   accountId?: string;
   status?: 'completed' | 'pending';
   comment?: string;
+  /**
+   * When true, the operation is a "PMS payment signal" — guest paid the
+   * channel/Teya, but we don't have the money on our bank yet. PMS uses
+   * it to compute reservation.payment_status (so check-in works), but
+   * /finance/operations and cashflow hide it. Real money lands when the
+   * bank statement arrives — that creates a separate, real fin_operation.
+   *
+   * Defaults to true for source IN ('hostex', 'teia', 'booking_widget',
+   * 'guest_page') unless overridden.
+   */
+  isPmsSignal?: boolean;
 }
 
 /**
@@ -64,6 +75,11 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     resolvedAccountId = defaultAccount?.id || undefined;
   }
 
+  // Default-tag known channel/online sources as PMS signals unless caller overrode.
+  const isPmsSignal = input.isPmsSignal !== undefined
+    ? input.isPmsSignal
+    : (source === 'hostex' || source === 'teia' || source === 'booking_widget');
+
   const operationId = createOperationInTx(db, row.org_id, {
     op_type: opType,
     account_from_id: isRefund ? (resolvedAccountId || null) : null,
@@ -78,6 +94,7 @@ export function createPaymentOperation(input: CreatePaymentOperationInput): { op
     comment: comment || null,
     source,
     source_ref: sourceRef || reservationId,
+    is_pms_signal: isPmsSignal ? 1 : 0,
   });
 
   recalcReservationPaymentStatus(db, reservationId);
