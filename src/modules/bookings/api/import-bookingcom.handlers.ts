@@ -21,10 +21,18 @@ import {
   cancelReservation,
 } from '../data/import.repo';
 
+export interface PlannedUnit {
+  unitId: string;
+  unitName: string;
+  capacity: number;        // capacity used to find this unit
+  unitTypeId: string;
+}
+
 export interface PreviewRow extends BookingComRow {
   matchedUnitType: { id: string; name: string; code: string } | null;
-  freeUnitId: string | null;
+  freeUnitId: string | null;       // first unit (kept for backwards compat / display)
   freeUnitName: string | null;
+  plannedUnits: PlannedUnit[];     // one entry per room in the group
   existing: { id: string; status: string } | null;
   action: 'create' | 'cancel' | 'skip-already' | 'skip-cancelled-not-found' | 'skip-no-unit-type' | 'skip-no-free-unit';
   warnings: string[];
@@ -61,19 +69,20 @@ async function requireBookingsPermission(): Promise<NextResponse | null> {
   return null;
 }
 
-function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'freeUnitId' | 'freeUnitName' | 'existing' | 'action' | 'warnings'> {
+function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'freeUnitId' | 'freeUnitName' | 'plannedUnits' | 'existing' | 'action' | 'warnings'> {
   const warnings: string[] = [];
   const existing = findReservationByBcomId(row.bookNumber);
   const isCancelInExcel = row.status === 'cancelled_by_guest' || row.status === 'cancelled';
 
   if (isCancelInExcel) {
     if (existing && existing.status !== 'cancelled') {
-      return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, existing, action: 'cancel', warnings };
+      return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing, action: 'cancel', warnings };
     }
     return {
       matchedUnitType: null,
       freeUnitId: null,
       freeUnitName: null,
+      plannedUnits: [],
       existing,
       action: existing ? 'skip-already' : 'skip-cancelled-not-found',
       warnings,
@@ -81,55 +90,73 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
   }
 
   if (existing) {
-    return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, existing, action: 'skip-already', warnings };
+    return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing, action: 'skip-already', warnings };
   }
 
-  const primaryType = row.unitTypes[0] || row.unitTypeRaw;
+  // Resolve a list of capacities the booking needs. Booking sells by guest
+  // count ("Triple Room" = 3, "Quadruple Room" = 4). When rooms > 1 with a
+  // single type, repeat the same capacity. When the type list itself spans
+  // multiple types ("Triple Room, Quadruple Room"), round-robin through the
+  // listed types until we have `rooms` capacities.
+  const requestedCount = Math.max(1, row.rooms || 1);
+  const typeCapacities: number[] = (row.unitTypes.length > 0 ? row.unitTypes : [row.unitTypeRaw])
+    .map((t) => parseCapacityFromUnitTypeName(t))
+    .filter((n): n is number => n != null);
 
-  // Two-step resolution. Capacity wins: Booking sells rooms by guest count
-  // ("Triple Room" = 3, "Quadruple Room" = 4), and we have unit_types with
-  // max_occupancy set. A capacity match against the first free unit_type
-  // is what the user actually wants. We fall back to name match only if
-  // the capacity hint is missing from the row.
-  const capacity = primaryType ? parseCapacityFromUnitTypeName(primaryType) : null;
-  let matchedUnitType = null;
-  let freeUnit = null;
-
-  if (capacity != null) {
-    freeUnit = findFreeResortUnitByCapacity(capacity, row.checkIn, row.checkOut);
-    if (freeUnit) {
-      matchedUnitType = { id: freeUnit.unit_type_id, name: `${capacity}-місна`, code: '' };
+  let perRoomCapacity: number[] = [];
+  if (typeCapacities.length > 0) {
+    for (let i = 0; i < requestedCount; i++) {
+      perRoomCapacity.push(typeCapacities[i % typeCapacities.length]);
     }
   }
 
-  // Capacity didn't yield a free unit (or we couldn't read capacity from the
-  // name). Try the legacy name match as a last-resort hint.
-  if (!freeUnit && primaryType) {
-    matchedUnitType = findUnitTypeByName(primaryType);
-    if (matchedUnitType) {
-      freeUnit = findFreeResortUnit(matchedUnitType.id, row.checkIn, row.checkOut);
+  const plannedUnits: PlannedUnit[] = [];
+  const usedUnitIds: string[] = [];
+
+  if (perRoomCapacity.length > 0) {
+    for (const cap of perRoomCapacity) {
+      const free = findFreeResortUnitByCapacity(cap, row.checkIn, row.checkOut, usedUnitIds);
+      if (!free) break; // can't fill all rooms — fall through to single-type fallback
+      plannedUnits.push({ unitId: free.id, unitName: free.name, capacity: cap, unitTypeId: free.unit_type_id });
+      usedUnitIds.push(free.id);
     }
   }
 
-  if (!matchedUnitType) {
+  // Fallback to legacy name match for the primary type when capacity didn't
+  // give us anything (rare — exotic type names).
+  if (plannedUnits.length === 0) {
+    const primaryType = row.unitTypes[0] || row.unitTypeRaw;
+    const matched = primaryType ? findUnitTypeByName(primaryType) : null;
+    if (matched) {
+      const free = findFreeResortUnit(matched.id, row.checkIn, row.checkOut);
+      if (free) {
+        plannedUnits.push({ unitId: free.id, unitName: free.name, capacity: row.persons || 1, unitTypeId: free.unit_type_id });
+      }
+    }
+  }
+
+  if (plannedUnits.length === 0) {
     warnings.push(`Тип юніту "${row.unitTypeRaw}" не зматчено за місткістю в категорії resort`);
-    return { matchedUnitType, freeUnitId: null, freeUnitName: null, existing: null, action: 'skip-no-unit-type', warnings };
-  }
-  if (row.unitTypes.length > 1) {
-    warnings.push(`Бронювання на ${row.rooms} кімнат(и): ${row.unitTypeRaw}. Створиться одна резервація з типом "${matchedUnitType.name}", решту додай вручну.`);
-  } else if (row.rooms > 1) {
-    warnings.push(`Booking каже rooms=${row.rooms}. Створиться одна резервація. Додай решту юнітів вручну.`);
+    return { matchedUnitType: null, freeUnitId: null, freeUnitName: null, plannedUnits: [], existing: null, action: 'skip-no-unit-type', warnings };
   }
 
-  if (!freeUnit) {
-    warnings.push(`Немає вільного юніту на ${capacity ?? '?'} осіб у resort на ${row.checkIn}–${row.checkOut}. Овербукінг.`);
-    return { matchedUnitType, freeUnitId: null, freeUnitName: null, existing: null, action: 'skip-no-free-unit', warnings };
+  if (plannedUnits.length < requestedCount) {
+    warnings.push(`Booking просив ${requestedCount} кімнат(и); знайдено вільних ${plannedUnits.length}. Решту вписуй вручну (можливий овербукінг).`);
   }
 
+  if (plannedUnits.length > 1) {
+    const codes = plannedUnits.map((p) => p.unitName).join(', ');
+    warnings.push(`Бронювання на ${plannedUnits.length} кімнат: ${codes}. Створяться окремі резервації з тим самим Booking #.`);
+  }
+
+  // matchedUnitType / freeUnitId reflect the FIRST unit for backwards-compat
+  // with the existing UI columns; the full list lives in plannedUnits.
+  const first = plannedUnits[0];
   return {
-    matchedUnitType,
-    freeUnitId: freeUnit.id,
-    freeUnitName: freeUnit.name,
+    matchedUnitType: { id: first.unitTypeId, name: `${first.capacity}-місна`, code: '' },
+    freeUnitId: first.unitId,
+    freeUnitName: first.unitName,
+    plannedUnits,
     existing: null,
     action: 'create',
     warnings,
@@ -227,9 +254,9 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
         const plan = planRow(row);
 
         if (plan.action === 'create') {
-          if (!plan.matchedUnitType || !plan.freeUnitId) {
+          if (plan.plannedUnits.length === 0) {
             skipped++;
-            details.push({ bookNumber: row.bookNumber, action: 'skip', error: 'unit type or free unit not resolved' });
+            details.push({ bookNumber: row.bookNumber, action: 'skip', error: 'no free unit could be resolved' });
             continue;
           }
           const { firstName, lastName } = normalizeName(row.bookedBy || row.guestName);
@@ -240,32 +267,53 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
             phone: row.phone,
             address: row.address,
           });
-          const notes = [
+          const baseNotes = [
             `Booking.com #${row.bookNumber}`,
-            row.rooms > 1 ? `Multi-room booking: rooms=${row.rooms}, types=${row.unitTypeRaw}` : '',
             row.remarks ? `Remarks: ${row.remarks}` : '',
             row.children > 0 && row.childrenAges ? `Children ages: ${row.childrenAges}` : '',
             row.bookedAt ? `Booked at: ${row.bookedAt}` : '',
             row.travelPurpose ? `Purpose: ${row.travelPurpose}` : '',
-          ].filter(Boolean).join('\n');
+          ].filter(Boolean);
 
-          const resId = insertImportedReservation({
-            propertyId,
-            unitId: plan.freeUnitId,
-            guestId,
-            checkIn: row.checkIn,
-            checkOut: row.checkOut,
-            nights: row.duration || 1,
-            adults: row.adults,
-            children: row.children,
-            totalPrice: row.priceMajor,
-            currency: row.currency,
-            bcomReservationId: row.bookNumber,
-            commissionAmount: row.commissionMajor,
-            notes,
-          });
-          created++;
-          details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: resId });
+          // Split price proportional to unit capacity. For a 367.21 EUR group
+          // booking across 3-3-4 capacity rooms: 110.16 / 110.16 / 146.89.
+          // Adults per room = the room's capacity, so per-unit reports stay
+          // sensible (no zeroes). Children all go on the first room.
+          const totalCapacity = plan.plannedUnits.reduce((s, u) => s + u.capacity, 0);
+          for (let i = 0; i < plan.plannedUnits.length; i++) {
+            const unit = plan.plannedUnits[i];
+            const isFirst = i === 0;
+            const sharePrice = totalCapacity > 0
+              ? +(row.priceMajor * unit.capacity / totalCapacity).toFixed(2)
+              : +(row.priceMajor / plan.plannedUnits.length).toFixed(2);
+            const notes = [
+              ...baseNotes,
+              plan.plannedUnits.length > 1
+                ? `Кімната ${i + 1} з ${plan.plannedUnits.length} (${unit.unitName})`
+                : '',
+              plan.plannedUnits.length > 1
+                ? `Group total: ${row.priceMajor.toFixed(2)} ${row.currency}`
+                : '',
+            ].filter(Boolean).join('\n');
+
+            const resId = insertImportedReservation({
+              propertyId,
+              unitId: unit.unitId,
+              guestId,
+              checkIn: row.checkIn,
+              checkOut: row.checkOut,
+              nights: row.duration || 1,
+              adults: unit.capacity,
+              children: isFirst ? row.children : 0,
+              totalPrice: sharePrice,
+              currency: row.currency,
+              bcomReservationId: row.bookNumber,
+              commissionAmount: isFirst ? row.commissionMajor : 0,
+              notes,
+            });
+            created++;
+            details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: resId });
+          }
         } else if (plan.action === 'cancel' && plan.existing) {
           cancelReservation(plan.existing.id);
           cancelled++;

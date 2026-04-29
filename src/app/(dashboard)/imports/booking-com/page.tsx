@@ -233,7 +233,11 @@ export default function BookingComImportPage() {
                       <td style={td}>{row.guestName}</td>
                       <td style={td}>{row.checkIn} → {row.checkOut} ({row.duration}н)</td>
                       <td style={td}>{row.unitTypeRaw}{row.rooms > 1 ? ` ×${row.rooms}` : ''}</td>
-                      <td style={td}>{row.freeUnitName || '—'}</td>
+                      <td style={td}>
+                        {row.plannedUnits && row.plannedUnits.length > 0
+                          ? row.plannedUnits.map((u) => u.unitName).join(', ')
+                          : (row.freeUnitName || '—')}
+                      </td>
                       <td style={td}>{row.adults}/{row.children}</td>
                       <td style={td}>{row.priceMajor.toFixed(2)} {row.currency}</td>
                       <td style={{ ...td, color: row.warnings.length > 0 ? '#f59e0b' : 'var(--text-tertiary)' }}>
