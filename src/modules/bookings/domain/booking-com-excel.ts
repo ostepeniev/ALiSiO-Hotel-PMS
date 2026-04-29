@@ -193,6 +193,34 @@ export function parseBookingComExcel(buffer: Buffer): ParseResult {
 }
 
 /**
+ * Booking.com type-name → number of guests the room is sold for.
+ * "Single Room" → 1, "Double Room" → 2, "Triple Room" → 3, "Quadruple Room" → 4,
+ * "Quintuple Room" → 5, "Sextuple Room" → 6.
+ *
+ * Returns null when the name doesn't carry a clear capacity hint (we leave
+ * that to the caller to surface as a warning instead of guessing).
+ */
+export function parseCapacityFromUnitTypeName(raw: string): number | null {
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  // Plain digit (rare but possible: "Room for 3 people")
+  const m = lower.match(/(\d+)\s*(?:guest|person|people|pax)/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= 12) return n;
+  }
+  if (lower.includes('single')) return 1;
+  if (lower.includes('double')) return 2;
+  if (lower.includes('twin')) return 2;
+  if (lower.includes('triple')) return 3;
+  if (lower.includes('quadruple') || lower.includes('quad ')) return 4;
+  if (lower.includes('quintuple') || lower.includes('5-bed')) return 5;
+  if (lower.includes('sextuple') || lower.includes('6-bed')) return 6;
+  if (lower.includes('mixed dormitory')) return 1; // hostel bed — counted as one slot
+  return null;
+}
+
+/**
  * Split "Last, First" → "First Last", or pass through if already "First Last".
  * Booking exports typically use "Last, First" in the "Booked by" field.
  */

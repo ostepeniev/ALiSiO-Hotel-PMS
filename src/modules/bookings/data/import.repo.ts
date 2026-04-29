@@ -88,6 +88,41 @@ export function findFreeResortUnit(
   return row || null;
 }
 
+/**
+ * Capacity-based fallback: find the first free resort unit whose unit_type
+ * holds the given number of guests. Used when the imported Excel row carries
+ * a Booking.com unit-type name (e.g. "Triple Room") that doesn't exactly
+ * match a local unit_type record.
+ *
+ * Match preference: max_occupancy first (the firm cap), falling back to
+ * max_adults (some setups only fill the latter). Sorted by sort_order so we
+ * always pick a deterministic "first available" unit.
+ */
+export function findFreeResortUnitByCapacity(
+  capacity: number,
+  checkIn: string,
+  checkOut: string,
+): FreeUnit | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT u.id, u.name, u.code, u.unit_type_id
+    FROM units u
+    JOIN categories c ON c.id = u.category_id
+    JOIN unit_types ut ON ut.id = u.unit_type_id
+    WHERE c.type = 'resort'
+      AND u.is_active = 1
+      AND (ut.max_occupancy = ? OR (ut.max_occupancy IS NULL AND ut.max_adults = ?))
+      AND u.id NOT IN (
+        SELECT unit_id FROM reservations
+        WHERE status NOT IN ('cancelled', 'no_show')
+          AND check_in < ? AND check_out > ?
+      )
+    ORDER BY u.sort_order ASC, u.name ASC
+    LIMIT 1
+  `).get(capacity, capacity, checkOut, checkIn) as any;
+  return row || null;
+}
+
 /** Find a reservation already imported with this Booking.com book number. */
 export function findReservationByBcomId(bookNumber: string): ExistingReservation | null {
   const db = getDb();

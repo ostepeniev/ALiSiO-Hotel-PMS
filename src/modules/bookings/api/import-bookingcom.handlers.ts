@@ -7,12 +7,14 @@ import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
 import {
   parseBookingComExcel,
   normalizeName,
+  parseCapacityFromUnitTypeName,
   type BookingComRow,
 } from '../domain/booking-com-excel';
 import {
   findResortPropertyId,
   findUnitTypeByName,
   findFreeResortUnit,
+  findFreeResortUnitByCapacity,
   findReservationByBcomId,
   findOrCreateGuestForImport,
   insertImportedReservation,
@@ -83,9 +85,34 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
   }
 
   const primaryType = row.unitTypes[0] || row.unitTypeRaw;
-  const matchedUnitType = primaryType ? findUnitTypeByName(primaryType) : null;
+
+  // Two-step resolution. Capacity wins: Booking sells rooms by guest count
+  // ("Triple Room" = 3, "Quadruple Room" = 4), and we have unit_types with
+  // max_occupancy set. A capacity match against the first free unit_type
+  // is what the user actually wants. We fall back to name match only if
+  // the capacity hint is missing from the row.
+  const capacity = primaryType ? parseCapacityFromUnitTypeName(primaryType) : null;
+  let matchedUnitType = null;
+  let freeUnit = null;
+
+  if (capacity != null) {
+    freeUnit = findFreeResortUnitByCapacity(capacity, row.checkIn, row.checkOut);
+    if (freeUnit) {
+      matchedUnitType = { id: freeUnit.unit_type_id, name: `${capacity}-місна`, code: '' };
+    }
+  }
+
+  // Capacity didn't yield a free unit (or we couldn't read capacity from the
+  // name). Try the legacy name match as a last-resort hint.
+  if (!freeUnit && primaryType) {
+    matchedUnitType = findUnitTypeByName(primaryType);
+    if (matchedUnitType) {
+      freeUnit = findFreeResortUnit(matchedUnitType.id, row.checkIn, row.checkOut);
+    }
+  }
+
   if (!matchedUnitType) {
-    warnings.push(`Тип юніту "${row.unitTypeRaw}" не знайдено в категорії resort`);
+    warnings.push(`Тип юніту "${row.unitTypeRaw}" не зматчено за місткістю в категорії resort`);
     return { matchedUnitType, freeUnitId: null, freeUnitName: null, existing: null, action: 'skip-no-unit-type', warnings };
   }
   if (row.unitTypes.length > 1) {
@@ -94,9 +121,8 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
     warnings.push(`Booking каже rooms=${row.rooms}. Створиться одна резервація. Додай решту юнітів вручну.`);
   }
 
-  const freeUnit = findFreeResortUnit(matchedUnitType.id, row.checkIn, row.checkOut);
   if (!freeUnit) {
-    warnings.push(`Немає вільного юніту "${matchedUnitType.name}" на ${row.checkIn}–${row.checkOut}. Овербукінг.`);
+    warnings.push(`Немає вільного юніту на ${capacity ?? '?'} осіб у resort на ${row.checkIn}–${row.checkOut}. Овербукінг.`);
     return { matchedUnitType, freeUnitId: null, freeUnitName: null, existing: null, action: 'skip-no-free-unit', warnings };
   }
 
