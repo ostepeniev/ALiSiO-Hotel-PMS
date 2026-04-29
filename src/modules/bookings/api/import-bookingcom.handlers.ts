@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { getSessionUser } from '@/lib/auth';
 import { hasPermission } from '@/lib/permissions';
 import { sendTelegramMessage } from '@/lib/channels/telegram-bot';
+import { getEurCzkRate } from '@/lib/hostex';
 import {
   parseBookingComExcel,
   normalizeName,
@@ -261,6 +262,11 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
       return NextResponse.json({ error: 'Resort property не знайдено' }, { status: 422 });
     }
 
+    // Fetch the daily ČNB EUR→CZK rate once per import. Same source Hostex
+    // sync uses, so EUR Booking.com rows land in DB with the same conversion
+    // logic (total_price in CZK, total_rate_eur preserved, currency='CZK').
+    const eurToCzk = await getEurCzkRate();
+
     let created = 0;
     let cancelled = 0;
     let skipped = 0;
@@ -298,12 +304,30 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
           // Adults per room = the room's capacity, so per-unit reports stay
           // sensible (no zeroes). Children all go on the first room.
           const totalCapacity = plan.plannedUnits.reduce((s, u) => s + u.capacity, 0);
+
+          // Currency handling mirrors Hostex sync: Booking sells in EUR for our
+          // listings, but the PMS reports in CZK by default. Convert once per
+          // row using the daily ČNB rate, then store both:
+          //   total_price = CZK converted, currency = 'CZK'
+          //   total_rate_eur = original EUR (preserved for audit + investor metrics)
+          const isEurRow = (row.currency || '').toUpperCase() === 'EUR';
+
           for (let i = 0; i < plan.plannedUnits.length; i++) {
             const unit = plan.plannedUnits[i];
             const isFirst = i === 0;
-            const sharePrice = totalCapacity > 0
+            const shareNative = totalCapacity > 0
               ? +(row.priceMajor * unit.capacity / totalCapacity).toFixed(2)
               : +(row.priceMajor / plan.plannedUnits.length).toFixed(2);
+            const shareCommissionNative = totalCapacity > 0
+              ? +(row.commissionMajor * unit.capacity / totalCapacity).toFixed(2)
+              : +(row.commissionMajor / plan.plannedUnits.length).toFixed(2);
+
+            const totalPriceCzk = isEurRow ? +(shareNative * eurToCzk).toFixed(2) : shareNative;
+            const commissionCzk = isEurRow ? +(shareCommissionNative * eurToCzk).toFixed(2) : shareCommissionNative;
+            const totalRateEur = isEurRow ? shareNative : null;
+            const commissionEur = isEurRow ? shareCommissionNative : null;
+            const storedCurrency = isEurRow ? 'CZK' : (row.currency || 'CZK');
+
             const notes = [
               ...baseNotes,
               plan.plannedUnits.length > 1
@@ -311,6 +335,9 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
                 : '',
               plan.plannedUnits.length > 1
                 ? `Group total: ${row.priceMajor.toFixed(2)} ${row.currency}`
+                : '',
+              isEurRow
+                ? `Конвертовано з EUR за курсом ${eurToCzk.toFixed(3)} (ČNB)`
                 : '',
             ].filter(Boolean).join('\n');
 
@@ -323,11 +350,13 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
               nights: row.duration || 1,
               adults: unit.capacity,
               children: isFirst ? row.children : 0,
-              totalPrice: sharePrice,
-              currency: row.currency,
+              totalPrice: totalPriceCzk,
+              currency: storedCurrency,
               bcomReservationId: row.bookNumber,
-              commissionAmount: isFirst ? row.commissionMajor : 0,
+              commissionAmount: isFirst ? commissionCzk : 0,
               notes,
+              totalRateEur,
+              commissionEur: isFirst ? commissionEur : (totalRateEur != null ? 0 : null),
             });
             created++;
             details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: resId });
