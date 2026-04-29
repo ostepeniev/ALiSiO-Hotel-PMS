@@ -71,7 +71,28 @@ async function requireBookingsPermission(): Promise<NextResponse | null> {
   return null;
 }
 
-function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'freeUnitId' | 'freeUnitName' | 'plannedUnits' | 'existing' | 'action' | 'warnings'> {
+interface ClaimedSlot {
+  unitId: string;
+  checkIn: string;
+  checkOut: string;
+}
+
+/**
+ * Returns the unit ids from `claimedSlots` whose dates overlap [checkIn, checkOut).
+ * Used during preview so two rows in the same import don't both claim the
+ * same unit on the same date range — the DB query won't see those "virtual"
+ * reservations until confirm runs.
+ */
+function overlappingClaimedUnits(claimedSlots: ClaimedSlot[], checkIn: string, checkOut: string): string[] {
+  return claimedSlots
+    .filter((s) => s.checkIn < checkOut && s.checkOut > checkIn)
+    .map((s) => s.unitId);
+}
+
+function planRow(
+  row: BookingComRow,
+  claimedSlots: ClaimedSlot[] = [],
+): Pick<PreviewRow, 'matchedUnitType' | 'freeUnitId' | 'freeUnitName' | 'plannedUnits' | 'existing' | 'action' | 'warnings'> {
   const warnings: string[] = [];
   const existing = findReservationByBcomId(row.bookNumber);
   const isCancelInExcel = row.status === 'cancelled_by_guest' || row.status === 'cancelled';
@@ -113,7 +134,12 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
   }
 
   const plannedUnits: PlannedUnit[] = [];
-  const usedUnitIds: string[] = [];
+  // usedUnitIds combines:
+  //   - units already claimed by EARLIER rows in this preview run (overlap on dates);
+  //   - units claimed by THIS row's own earlier multi-room iterations.
+  // Both must be excluded so the DB-level "free unit" query doesn't pick a
+  // unit we have virtually reserved seconds ago in the same import batch.
+  const usedUnitIds: string[] = overlappingClaimedUnits(claimedSlots, row.checkIn, row.checkOut);
 
   if (perRoomCapacity.length > 0) {
     for (const cap of perRoomCapacity) {
@@ -134,7 +160,10 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
     const matched = primaryType ? findUnitTypeByName(primaryType) : null;
     if (matched) {
       const free = findFreeResortUnit(matched.id, row.checkIn, row.checkOut);
-      if (free) {
+      // Honour cross-row claims here too, even though findFreeResortUnit
+      // currently doesn't accept excludeUnitIds — skip if the only candidate
+      // was already claimed.
+      if (free && !usedUnitIds.includes(free.id)) {
         plannedUnits.push({
           unitId: free.id, unitName: free.name, capacity: row.persons || 1,
           unitTypeId: free.unit_type_id, buildingCode: free.building_code,
@@ -205,7 +234,21 @@ export async function previewBookingComImport(request: NextRequest): Promise<Nex
     }
 
     const propertyId = findResortPropertyId();
-    const rows: PreviewRow[] = parsed.rows.map((r) => ({ ...r, ...planRow(r) }));
+
+    // Walk rows in order, accumulating the units we have already promised to
+    // earlier rows. This makes the preview's per-row plan internally consistent:
+    // F1 won't appear under three different guests with the same dates.
+    const claimedSlots: ClaimedSlot[] = [];
+    const rows: PreviewRow[] = [];
+    for (const r of parsed.rows) {
+      const planned = planRow(r, claimedSlots);
+      rows.push({ ...r, ...planned });
+      if (planned.action === 'create') {
+        for (const u of planned.plannedUnits) {
+          claimedSlots.push({ unitId: u.unitId, checkIn: r.checkIn, checkOut: r.checkOut });
+        }
+      }
+    }
 
     const summary = {
       create: rows.filter((r) => r.action === 'create').length,
@@ -273,9 +316,16 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
     let failed = 0;
     const details: ConfirmResponse['details'] = [];
 
+    // Mirror the preview accumulator so confirm picks the same units as
+    // preview did. Each successful create extends the claimedSlots list.
+    // (Defence in depth — even though insertImportedReservation immediately
+    // commits to DB and subsequent SQL queries see the new rows, this keeps
+    // the picker deterministic if any step ever runs in a transaction.)
+    const claimedSlots: ClaimedSlot[] = [];
+
     for (const row of body.rows) {
       try {
-        const plan = planRow(row);
+        const plan = planRow(row, claimedSlots);
 
         if (plan.action === 'create') {
           if (plan.plannedUnits.length === 0) {
@@ -360,6 +410,7 @@ export async function confirmBookingComImport(request: NextRequest): Promise<Nex
             });
             created++;
             details.push({ bookNumber: row.bookNumber, action: 'create', reservationId: resId });
+            claimedSlots.push({ unitId: unit.unitId, checkIn: row.checkIn, checkOut: row.checkOut });
           }
         } else if (plan.action === 'cancel' && plan.existing) {
           cancelReservation(plan.existing.id);

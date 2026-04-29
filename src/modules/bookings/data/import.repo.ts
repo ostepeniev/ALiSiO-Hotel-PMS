@@ -121,6 +121,13 @@ export function findFreeResortUnitByCapacity(
     ? `AND u.id NOT IN (${excludeUnitIds.map(() => '?').join(',')})`
     : '';
 
+  // Match on base_occupancy — that's the standard sale capacity ("Triple
+  // Room" = sleeps 3 by default). max_occupancy includes extra beds and
+  // would let a 2-person room be picked for a Triple booking, which is
+  // not what Booking sells. We fall back to max_occupancy / max_adults
+  // only when base_occupancy isn't filled in.
+  const occExpr = 'COALESCE(ut.base_occupancy, ut.max_occupancy, ut.max_adults, 0)';
+
   // Pass 1 — exact match. Building F preferred over any other building.
   const exact = db.prepare(`
     SELECT u.id, u.name, u.code, u.unit_type_id, b.code AS building_code
@@ -130,7 +137,7 @@ export function findFreeResortUnitByCapacity(
     LEFT JOIN buildings b ON b.id = u.building_id
     WHERE c.type = 'resort'
       AND u.is_active = 1
-      AND (ut.max_occupancy = ? OR (ut.max_occupancy IS NULL AND ut.max_adults = ?))
+      AND ${occExpr} = ?
       AND u.id NOT IN (
         SELECT unit_id FROM reservations
         WHERE status NOT IN ('cancelled', 'no_show')
@@ -139,7 +146,7 @@ export function findFreeResortUnitByCapacity(
       ${excludeClause}
     ORDER BY ${PREFER_F_ORDER}, u.sort_order ASC, u.name ASC
     LIMIT 1
-  `).get(capacity, capacity, checkOut, checkIn, ...excludeUnitIds) as any;
+  `).get(capacity, checkOut, checkIn, ...excludeUnitIds) as any;
   if (exact) return exact;
 
   // Pass 2 — round up to the smallest unit type that fits, still preferring F.
@@ -151,16 +158,14 @@ export function findFreeResortUnitByCapacity(
     LEFT JOIN buildings b ON b.id = u.building_id
     WHERE c.type = 'resort'
       AND u.is_active = 1
-      AND (
-        COALESCE(ut.max_occupancy, ut.max_adults, 0) >= ?
-      )
+      AND ${occExpr} >= ?
       AND u.id NOT IN (
         SELECT unit_id FROM reservations
         WHERE status NOT IN ('cancelled', 'no_show')
           AND check_in < ? AND check_out > ?
       )
       ${excludeClause}
-    ORDER BY ${PREFER_F_ORDER}, COALESCE(ut.max_occupancy, ut.max_adults, 0) ASC, u.sort_order ASC, u.name ASC
+    ORDER BY ${PREFER_F_ORDER}, ${occExpr} ASC, u.sort_order ASC, u.name ASC
     LIMIT 1
   `).get(capacity, checkOut, checkIn, ...excludeUnitIds) as any;
   return roundUp || null;
