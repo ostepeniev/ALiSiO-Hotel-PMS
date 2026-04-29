@@ -89,22 +89,33 @@ export function findFreeResortUnit(
 }
 
 /**
- * Capacity-based fallback: find the first free resort unit whose unit_type
- * holds the given number of guests. Used when the imported Excel row carries
- * a Booking.com unit-type name (e.g. "Triple Room") that doesn't exactly
- * match a local unit_type record.
+ * Capacity-based match: find the first free resort unit whose unit_type can
+ * accommodate at least the requested number of guests. Used when the Excel
+ * row carries a Booking.com unit-type name (e.g. "Triple Room") that doesn't
+ * exactly match a local unit_type record.
  *
- * Match preference: max_occupancy first (the firm cap), falling back to
- * max_adults (some setups only fill the latter). Sorted by sort_order so we
- * always pick a deterministic "first available" unit.
+ * Strategy:
+ *   1. Exact match on max_occupancy (or max_adults when max_occupancy is NULL).
+ *   2. Round-up: smallest unit_type with max_occupancy >= capacity.
+ *      A guest who booked a Triple Room (3) can stay in a Quadruple (4).
+ *      They cannot stay in a Double (2) — that would be overbooked.
+ *
+ * Excludes the optional `excludeUnitIds` set so a multi-room booking does
+ * not pick the same unit twice for two rooms in the same group.
  */
 export function findFreeResortUnitByCapacity(
   capacity: number,
   checkIn: string,
   checkOut: string,
+  excludeUnitIds: string[] = [],
 ): FreeUnit | null {
   const db = getDb();
-  const row = db.prepare(`
+  const excludeClause = excludeUnitIds.length > 0
+    ? `AND u.id NOT IN (${excludeUnitIds.map(() => '?').join(',')})`
+    : '';
+
+  // Pass 1 — exact match.
+  const exact = db.prepare(`
     SELECT u.id, u.name, u.code, u.unit_type_id
     FROM units u
     JOIN categories c ON c.id = u.category_id
@@ -117,10 +128,33 @@ export function findFreeResortUnitByCapacity(
         WHERE status NOT IN ('cancelled', 'no_show')
           AND check_in < ? AND check_out > ?
       )
+      ${excludeClause}
     ORDER BY u.sort_order ASC, u.name ASC
     LIMIT 1
-  `).get(capacity, capacity, checkOut, checkIn) as any;
-  return row || null;
+  `).get(capacity, capacity, checkOut, checkIn, ...excludeUnitIds) as any;
+  if (exact) return exact;
+
+  // Pass 2 — round up to the smallest unit type that fits.
+  const roundUp = db.prepare(`
+    SELECT u.id, u.name, u.code, u.unit_type_id
+    FROM units u
+    JOIN categories c ON c.id = u.category_id
+    JOIN unit_types ut ON ut.id = u.unit_type_id
+    WHERE c.type = 'resort'
+      AND u.is_active = 1
+      AND (
+        COALESCE(ut.max_occupancy, ut.max_adults, 0) >= ?
+      )
+      AND u.id NOT IN (
+        SELECT unit_id FROM reservations
+        WHERE status NOT IN ('cancelled', 'no_show')
+          AND check_in < ? AND check_out > ?
+      )
+      ${excludeClause}
+    ORDER BY COALESCE(ut.max_occupancy, ut.max_adults, 0) ASC, u.sort_order ASC, u.name ASC
+    LIMIT 1
+  `).get(capacity, checkOut, checkIn, ...excludeUnitIds) as any;
+  return roundUp || null;
 }
 
 /** Find a reservation already imported with this Booking.com book number. */
