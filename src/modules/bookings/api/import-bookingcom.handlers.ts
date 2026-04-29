@@ -26,6 +26,7 @@ export interface PlannedUnit {
   unitName: string;
   capacity: number;        // capacity used to find this unit
   unitTypeId: string;
+  buildingCode: string | null;   // 'F' (preferred), 'D' (fallback), null
 }
 
 export interface PreviewRow extends BookingComRow {
@@ -117,7 +118,10 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
     for (const cap of perRoomCapacity) {
       const free = findFreeResortUnitByCapacity(cap, row.checkIn, row.checkOut, usedUnitIds);
       if (!free) break; // can't fill all rooms — fall through to single-type fallback
-      plannedUnits.push({ unitId: free.id, unitName: free.name, capacity: cap, unitTypeId: free.unit_type_id });
+      plannedUnits.push({
+        unitId: free.id, unitName: free.name, capacity: cap,
+        unitTypeId: free.unit_type_id, buildingCode: free.building_code,
+      });
       usedUnitIds.push(free.id);
     }
   }
@@ -130,7 +134,10 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
     if (matched) {
       const free = findFreeResortUnit(matched.id, row.checkIn, row.checkOut);
       if (free) {
-        plannedUnits.push({ unitId: free.id, unitName: free.name, capacity: row.persons || 1, unitTypeId: free.unit_type_id });
+        plannedUnits.push({
+          unitId: free.id, unitName: free.name, capacity: row.persons || 1,
+          unitTypeId: free.unit_type_id, buildingCode: free.building_code,
+        });
       }
     }
   }
@@ -147,6 +154,17 @@ function planRow(row: BookingComRow): Pick<PreviewRow, 'matchedUnitType' | 'free
   if (plannedUnits.length > 1) {
     const codes = plannedUnits.map((p) => p.unitName).join(', ');
     warnings.push(`Бронювання на ${plannedUnits.length} кімнат: ${codes}. Створяться окремі резервації з тим самим Booking #.`);
+  }
+
+  // Highlight any unit that fell out of building F (the preferred resort
+  // building). The user wants to know when F is full and we had to spill
+  // into D / other buildings.
+  const nonFUnits = plannedUnits.filter((u) => u.buildingCode !== 'F');
+  if (nonFUnits.length > 0) {
+    const detail = nonFUnits
+      .map((u) => `${u.unitName}${u.buildingCode ? ` (${u.buildingCode})` : ''}`)
+      .join(', ');
+    warnings.push(`Будівлю F заповнено на ці дати — ${nonFUnits.length === plannedUnits.length ? 'усі' : 'частина'} кімнат(и) поза F: ${detail}.`);
   }
 
   // matchedUnitType / freeUnitId reflect the FIRST unit for backwards-compat

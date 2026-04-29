@@ -13,6 +13,7 @@ export interface FreeUnit {
   name: string;
   code: string;
   unit_type_id: string;
+  building_code: string | null;   // 'F', 'D', etc — used for "fell back to other building" warnings
 }
 
 export interface ExistingReservation {
@@ -63,6 +64,11 @@ export function findUnitTypeByName(name: string): UnitTypeMatch | null {
   return fuzzy || null;
 }
 
+// Building priority: F is the primary resort building, fall back to others
+// (D — Wellness Hostel, etc) only when F is fully booked. The CASE turns
+// "is it F?" into a 0/1 sort key that we put first in ORDER BY.
+const PREFER_F_ORDER = "CASE WHEN b.code = 'F' THEN 0 ELSE 1 END ASC";
+
 /** Find any free resort unit of the given type for the given dates. */
 export function findFreeResortUnit(
   unitTypeId: string,
@@ -71,9 +77,10 @@ export function findFreeResortUnit(
 ): FreeUnit | null {
   const db = getDb();
   const row = db.prepare(`
-    SELECT u.id, u.name, u.code, u.unit_type_id
+    SELECT u.id, u.name, u.code, u.unit_type_id, b.code AS building_code
     FROM units u
     JOIN categories c ON c.id = u.category_id
+    LEFT JOIN buildings b ON b.id = u.building_id
     WHERE c.type = 'resort'
       AND u.unit_type_id = ?
       AND u.is_active = 1
@@ -82,7 +89,7 @@ export function findFreeResortUnit(
         WHERE status NOT IN ('cancelled', 'no_show')
           AND check_in < ? AND check_out > ?
       )
-    ORDER BY u.sort_order ASC, u.name ASC
+    ORDER BY ${PREFER_F_ORDER}, u.sort_order ASC, u.name ASC
     LIMIT 1
   `).get(unitTypeId, checkOut, checkIn) as any;
   return row || null;
@@ -114,12 +121,13 @@ export function findFreeResortUnitByCapacity(
     ? `AND u.id NOT IN (${excludeUnitIds.map(() => '?').join(',')})`
     : '';
 
-  // Pass 1 — exact match.
+  // Pass 1 — exact match. Building F preferred over any other building.
   const exact = db.prepare(`
-    SELECT u.id, u.name, u.code, u.unit_type_id
+    SELECT u.id, u.name, u.code, u.unit_type_id, b.code AS building_code
     FROM units u
     JOIN categories c ON c.id = u.category_id
     JOIN unit_types ut ON ut.id = u.unit_type_id
+    LEFT JOIN buildings b ON b.id = u.building_id
     WHERE c.type = 'resort'
       AND u.is_active = 1
       AND (ut.max_occupancy = ? OR (ut.max_occupancy IS NULL AND ut.max_adults = ?))
@@ -129,17 +137,18 @@ export function findFreeResortUnitByCapacity(
           AND check_in < ? AND check_out > ?
       )
       ${excludeClause}
-    ORDER BY u.sort_order ASC, u.name ASC
+    ORDER BY ${PREFER_F_ORDER}, u.sort_order ASC, u.name ASC
     LIMIT 1
   `).get(capacity, capacity, checkOut, checkIn, ...excludeUnitIds) as any;
   if (exact) return exact;
 
-  // Pass 2 — round up to the smallest unit type that fits.
+  // Pass 2 — round up to the smallest unit type that fits, still preferring F.
   const roundUp = db.prepare(`
-    SELECT u.id, u.name, u.code, u.unit_type_id
+    SELECT u.id, u.name, u.code, u.unit_type_id, b.code AS building_code
     FROM units u
     JOIN categories c ON c.id = u.category_id
     JOIN unit_types ut ON ut.id = u.unit_type_id
+    LEFT JOIN buildings b ON b.id = u.building_id
     WHERE c.type = 'resort'
       AND u.is_active = 1
       AND (
@@ -151,7 +160,7 @@ export function findFreeResortUnitByCapacity(
           AND check_in < ? AND check_out > ?
       )
       ${excludeClause}
-    ORDER BY COALESCE(ut.max_occupancy, ut.max_adults, 0) ASC, u.sort_order ASC, u.name ASC
+    ORDER BY ${PREFER_F_ORDER}, COALESCE(ut.max_occupancy, ut.max_adults, 0) ASC, u.sort_order ASC, u.name ASC
     LIMIT 1
   `).get(capacity, checkOut, checkIn, ...excludeUnitIds) as any;
   return roundUp || null;
