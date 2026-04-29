@@ -491,6 +491,7 @@ function createAutoPayment(_db: any, reservationId: string, amountCzk: number, c
     method: 'booking_platform',
     paymentSubtype: 'full',
     source: 'hostex',
+    channelType,                       // 'booking.com' / 'airbnb' / 'vrbo' — drives clearing-account routing
     paidAt,
     status: 'completed',
     comment: notes,
