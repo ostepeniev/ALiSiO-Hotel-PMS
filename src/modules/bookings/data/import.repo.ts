@@ -221,11 +221,15 @@ export interface InsertReservationArgs {
   nights: number;
   adults: number;
   children: number;
-  totalPrice: number;
-  currency: string;
+  totalPrice: number;            // Amount in `currency`
+  currency: string;              // Stored currency tag — usually 'CZK' even for EUR-source bookings
   bcomReservationId: string;
-  commissionAmount: number;
+  commissionAmount: number;      // In `currency`
   notes: string;
+  // Native EUR fields preserved alongside the CZK totals (mirrors Hostex sync).
+  // Set when the original Booking.com row was priced in EUR.
+  totalRateEur?: number | null;
+  commissionEur?: number | null;
 }
 
 export function insertImportedReservation(args: InsertReservationArgs): string {
@@ -239,14 +243,16 @@ export function insertImportedReservation(args: InsertReservationArgs): string {
       check_in, check_out, nights, adults, children,
       status, payment_status, source, total_price, currency,
       external_uid, bcom_reservation_id,
-      commission_amount, notes, guest_page_token
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'unpaid', 'booking_com', ?, ?, ?, ?, ?, ?, ?)
+      commission_amount, notes, guest_page_token,
+      total_rate_eur, commission_eur
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'unpaid', 'booking_com', ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     resId, args.propertyId, args.unitId, args.guestId,
     args.checkIn, args.checkOut, args.nights, args.adults, args.children,
     args.totalPrice, args.currency,
     args.bcomReservationId, args.bcomReservationId,
     args.commissionAmount, args.notes, guestPageToken,
+    args.totalRateEur ?? null, args.commissionEur ?? null,
   );
 
   return resId;
