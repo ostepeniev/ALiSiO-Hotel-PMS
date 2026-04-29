@@ -60,12 +60,15 @@ export async function listOperations(request: NextRequest): Promise<NextResponse
     // payment signals (default off — these are awaiting bank confirmation
     // and shouldn't pollute the operations list).
     const includePmsSignals = sp.get('include_pms_signals') === '1';
+    // needs_review=1 → only ops the resolver flagged for admin triage.
+    const needsReviewOnly = sp.get('needs_review') === '1';
     const page = Math.max(1, parseInt(sp.get('page') || '1', 10));
     const pageSize = Math.min(500, Math.max(1, parseInt(sp.get('pageSize') || '50', 10)));
 
     const where: string[] = ['o.organization_id = ?'];
     const params: any[] = [orgId];
     if (!includePmsSignals) where.push('o.is_pms_signal = 0');
+    if (needsReviewOnly) where.push('o.needs_review = 1');
     if (opType && (OP_TYPES as readonly string[]).includes(opType)) { where.push('o.op_type = ?'); params.push(opType); }
     if (from) { where.push('o.paid_at >= ?'); params.push(from); }
     if (to) { where.push('o.paid_at <= ?'); params.push(to); }
@@ -163,6 +166,8 @@ interface CreateOperationInput {
   /** 1 → "PMS payment signal" (Hostex/Teya/widget). Hidden from
    *  /finance/operations + cashflow + default P&L. See PR #A. */
   is_pms_signal?: number;
+  /** 1 → admin needs to triage (account resolver fell back). See PR #C. */
+  needs_review?: number;
 }
 
 export function createOperationInTx(db: any, orgId: string, input: CreateOperationInput, createdBy?: string | null): string {
@@ -202,8 +207,9 @@ export function createOperationInTx(db: any, orgId: string, input: CreateOperati
        paid_at, accrued_at, period_from, period_to,
        category_id, project_id, counterparty_id,
        reservation_id, status, method, payment_subtype,
-       comment, is_planned, source, source_ref, created_by, is_pms_signal)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       comment, is_planned, source, source_ref, created_by,
+       is_pms_signal, needs_review)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, orgId, op_type,
     input.account_from_id || null, input.account_to_id || null,
@@ -217,6 +223,7 @@ export function createOperationInTx(db: any, orgId: string, input: CreateOperati
     input.comment || null, input.is_planned ? 1 : 0, source, input.source_ref || null,
     createdBy || null,
     input.is_pms_signal ? 1 : 0,
+    input.needs_review ? 1 : 0,
   );
 
   if (input.tag_ids && input.tag_ids.length > 0) {

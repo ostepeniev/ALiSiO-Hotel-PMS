@@ -3263,7 +3263,13 @@ function runMigrations(database: any) {
       database.exec("ALTER TABLE fin_operations ADD COLUMN is_pms_signal INTEGER NOT NULL DEFAULT 0");
       database.exec("CREATE INDEX IF NOT EXISTS idx_fop_is_pms_signal ON fin_operations(is_pms_signal)");
     }
-  } catch (e: any) { console.log('[DB] PR #A is_pms_signal column:', e.message); }
+    // PR #C: needs_review flag for ops where the channel→account resolver
+    // had to fall back. Surfaces a queue for the admin to triage.
+    if (!cols.some((c) => c.name === 'needs_review')) {
+      database.exec("ALTER TABLE fin_operations ADD COLUMN needs_review INTEGER NOT NULL DEFAULT 0");
+      database.exec("CREATE INDEX IF NOT EXISTS idx_fop_needs_review ON fin_operations(needs_review)");
+    }
+  } catch (e: any) { console.log('[DB] PR #A/C fin_operations columns:', e.message); }
 
   // Retro-migrate: existing operations from Hostex / Teya / widget paths
   // are by definition signals (money was at platform, may or may not yet
