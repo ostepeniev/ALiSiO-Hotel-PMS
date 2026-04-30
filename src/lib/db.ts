@@ -3777,6 +3777,123 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] PR #15 receivables backfill:', e.message); }
 
+  // --- Migration: create vouchers table (feature/vouchers) ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS vouchers (
+      id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      property_id     TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+      code            TEXT NOT NULL UNIQUE,
+      template_id     TEXT NOT NULL DEFAULT 'custom',
+      name            TEXT NOT NULL,
+      type            TEXT NOT NULL DEFAULT 'open_date'
+                      CHECK (type IN ('open_date', 'package', 'discount')),
+      value_type      TEXT NOT NULL DEFAULT 'fixed_czk'
+                      CHECK (value_type IN ('fixed_czk', 'fixed_eur', 'percent', 'nights')),
+      face_value      REAL NOT NULL DEFAULT 0,
+      currency        TEXT NOT NULL DEFAULT 'CZK',
+      status          TEXT NOT NULL DEFAULT 'draft'
+                      CHECK (status IN ('draft', 'active', 'paid', 'redeemed', 'expired', 'cancelled')),
+      recipient_name  TEXT,
+      recipient_email TEXT,
+      buyer_name      TEXT,
+      buyer_email     TEXT,
+      buyer_phone     TEXT,
+      message         TEXT,
+      expires_at      TEXT,
+      paid_at         TEXT,
+      redeemed_at     TEXT,
+      reservation_id  TEXT REFERENCES reservations(id) ON DELETE SET NULL,
+      config_json     TEXT NOT NULL DEFAULT '{}',
+      notes           TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vouchers_property ON vouchers(property_id)');
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)');
+  console.log('[DB] vouchers table ready');
+
+  // --- Migration: voucher automation rules table ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS voucher_automation_rules (
+      id               TEXT PRIMARY KEY,
+      site_id          TEXT NOT NULL,
+      template_id      TEXT,
+      name             TEXT NOT NULL DEFAULT 'Автоматизований ваучер',
+      discount_type    TEXT NOT NULL DEFAULT 'percentage',
+      discount_value   REAL NOT NULL DEFAULT 0,
+      valid_from       TEXT,
+      valid_until      TEXT,
+      min_nights       INTEGER,
+      max_nights       INTEGER,
+      allowed_days     TEXT,
+      applies_to       TEXT NOT NULL DEFAULT 'listings',
+      redemption_limit INTEGER NOT NULL DEFAULT 1,
+      generated_count  INTEGER NOT NULL DEFAULT 0,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_var_site ON voucher_automation_rules(site_id)');
+
+  // --- Migration: add voucher_rule_id to promo_codes ---
+  try {
+    database.exec(`ALTER TABLE promo_codes ADD COLUMN voucher_rule_id TEXT REFERENCES voucher_automation_rules(id) ON DELETE SET NULL`);
+    console.log('[DB] Added voucher_rule_id to promo_codes');
+  } catch { /* column already exists */ }
+
+  // --- Migration: add extra fields to promo_codes (min_nights, max_nights, redemption_limit, site_id, allowed_days, applies_to) ---
+  for (const col of [
+    'min_nights INTEGER',
+    'max_nights INTEGER',
+    'redemption_limit INTEGER',
+    'site_id TEXT',
+    'allowed_days TEXT',
+    'applies_to TEXT DEFAULT \'services\'',
+  ]) {
+    try { database.exec(`ALTER TABLE promo_codes ADD COLUMN ${col}`); } catch { /* already exists */ }
+  }
+
+  console.log('[DB] voucher_automation_rules ready');
+
+  // --- Migration: voucher_bundles (bundle/package vouchers) ---
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS voucher_bundles (
+      id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      site_id         TEXT NOT NULL,
+      name            TEXT NOT NULL,
+      description     TEXT,
+      price           REAL NOT NULL DEFAULT 0,
+      currency        TEXT NOT NULL DEFAULT 'CZK',
+      nights_included INTEGER NOT NULL DEFAULT 0,
+      listing_type    TEXT,
+      included_services TEXT NOT NULL DEFAULT '[]',
+      validity_months INTEGER NOT NULL DEFAULT 12,
+      is_active       INTEGER NOT NULL DEFAULT 1,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_vb_site ON voucher_bundles(site_id)');
+
+  // --- Migration: add bundle_id to vouchers ---
+  try {
+    database.exec(`ALTER TABLE vouchers ADD COLUMN bundle_id TEXT REFERENCES voucher_bundles(id) ON DELETE SET NULL`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add allowed_days to voucher_bundles ---
+  try {
+    database.exec(`ALTER TABLE voucher_bundles ADD COLUMN allowed_days TEXT`);
+  } catch { /* already exists */ }
+
+  // --- Migration: add promo_code, redemption_limit, current_uses to voucher_bundles ---
+  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN promo_code TEXT`); } catch { /* already exists */ }
+  try { database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vb_promo_code ON voucher_bundles(promo_code) WHERE promo_code IS NOT NULL`); } catch {}
+  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN redemption_limit INTEGER DEFAULT 1`); } catch { /* already exists */ }
+  try { database.exec(`ALTER TABLE voucher_bundles ADD COLUMN current_uses INTEGER DEFAULT 0`); } catch { /* already exists */ }
+
+  console.log('[DB] voucher_bundles ready');
+
 }
 
 

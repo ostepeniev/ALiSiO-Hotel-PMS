@@ -10,11 +10,18 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const db = getDb();
-    const siteId = new URL(req.url).searchParams.get('site_id');
+    const url = new URL(req.url);
+    const siteId = url.searchParams.get('site_id');
+    const ruleId = url.searchParams.get('rule_id');
 
-    const codes = siteId
-      ? db.prepare('SELECT * FROM promo_codes WHERE site_id = ? ORDER BY created_at DESC').all(siteId)
-      : db.prepare('SELECT * FROM promo_codes ORDER BY created_at DESC').all();
+    let sql = 'SELECT * FROM promo_codes WHERE 1=1';
+    const params: (string | number)[] = [];
+
+    if (siteId) { sql += ' AND site_id = ?'; params.push(siteId); }
+    if (ruleId) { sql += ' AND voucher_rule_id = ?'; params.push(ruleId); }
+
+    sql += ' ORDER BY created_at DESC';
+    const codes = db.prepare(sql).all(...params);
 
     return NextResponse.json(codes);
   } catch (e: any) {

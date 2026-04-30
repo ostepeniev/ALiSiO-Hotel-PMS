@@ -343,7 +343,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
   const [reservation, setReservation] = useState<ReserveResponse | null>(null);
   const [promoCode, setPromoCode] = useState('');
   const [showPromo, setShowPromo] = useState(false);
-  const [promoApplied, setPromoApplied] = useState<{ code: string; discount_type: string; discount_value: number; description?: string } | null>(null);
+  const [promoApplied, setPromoApplied] = useState<{ code: string; discount_type: string; discount_value: number; description?: string; bundle?: any } | null>(null);
   const [promoError, setPromoError] = useState('');
   const [applyingPromo, setApplyingPromo] = useState(false);
 
@@ -639,23 +639,44 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
 
     let base = selectedUnit.totalPrice + extraCharge;
 
-    if (promoApplied) {
-      if (promoApplied.discount_type === 'fixed_price') {
-        base -= promoApplied.discount_value;
-      } else if (promoApplied.discount_type === 'percentage') {
-        base = Math.round(base * (1 - promoApplied.discount_value / 100));
-      }
-    }
-    if (base < 0) base = 0;
-
-    // Add selected services
     let servicesTotal = 0;
     const guestsCount = adults + kids || 1;
-    services.forEach(s => {
-      if (selectedServiceIds.has(s.id)) {
-        servicesTotal += (s.price || 0) * guestsCount;
+
+    if (promoApplied && promoApplied.discount_type === 'package' && promoApplied.bundle) {
+      // 1. Base price is overridden by bundle price
+      base = promoApplied.bundle.price;
+
+      // 2. Extra nights? (Simple implementation: just use the bundle price as the base)
+      // Extra nights logic could be added here if needed, but bundle covers the stay.
+      
+      // 3. Services total. Included services are free up to their qty.
+      const included = promoApplied.bundle.included_services || [];
+      services.forEach(s => {
+        if (selectedServiceIds.has(s.id)) {
+          const bundleSvc = included.find((inc: any) => inc.service_id === s.id);
+          if (bundleSvc && bundleSvc.free) {
+            // It's free from the bundle
+          } else {
+            servicesTotal += (s.price || 0) * guestsCount;
+          }
+        }
+      });
+    } else {
+      if (promoApplied) {
+        if (promoApplied.discount_type === 'fixed_price' || promoApplied.discount_type === 'fixed_amount') {
+          base -= promoApplied.discount_value;
+        } else if (promoApplied.discount_type === 'percentage') {
+          base = Math.round(base * (1 - promoApplied.discount_value / 100));
+        }
       }
-    });
+      if (base < 0) base = 0;
+
+      services.forEach(s => {
+        if (selectedServiceIds.has(s.id)) {
+          servicesTotal += (s.price || 0) * guestsCount;
+        }
+      });
+    }
 
     return base + servicesTotal;
   }, [selectedUnit, adults, nights, services, selectedServiceIds, promoApplied]);
@@ -802,8 +823,16 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
       const res = await fetch(`${API_BASE}/api/booking/promo?code=${encodeURIComponent(code)}&unitId=${uId}&siteId=${sId}`);
       const data = await res.json();
       if (data.valid) {
-        setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description });
+        setPromoApplied({ code: data.code, discount_type: data.discount_type, discount_value: data.discount_value, description: data.description, bundle: data.bundle });
         setShowPromo(false);
+        // If it's a package, automatically select the included services
+        if (data.discount_type === 'package' && data.bundle?.included_services) {
+          const newServices = new Set(selectedServiceIds);
+          data.bundle.included_services.forEach((inc: any) => {
+            if (inc.free) newServices.add(inc.service_id);
+          });
+          setSelectedServiceIds(newServices);
+        }
       } else {
         setPromoApplied(null);
         setPromoError(data.error || 'Invalid code');
@@ -1268,7 +1297,7 @@ export default function BookingV2({ siteId, siteSlug, thankYouUrl, design, isPre
             </button>
             {promoApplied && (
               <div className="v3-promo-success">
-                🏷️ {promoApplied.code}: {promoApplied.discount_type === 'percentage' ? `-${promoApplied.discount_value}%` : `-${promoApplied.discount_value} Kč`}
+                🏷️ {promoApplied.code}: {promoApplied.discount_type === 'percentage' ? `-${promoApplied.discount_value}%` : promoApplied.discount_type === 'package' ? `Пакет` : `-${promoApplied.discount_value} Kč`}
               </div>
             )}
             {showPromo && (

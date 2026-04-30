@@ -25,12 +25,41 @@ export async function validatePromo(request: NextRequest) {
     }
 
     const db = getDb();
-    const promo = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(code) as any;
+    let promo = db.prepare('SELECT * FROM promo_codes WHERE code = ? AND is_active = 1').get(code) as any;
+    let isBundle = false;
+
+    if (!promo) {
+      promo = db.prepare('SELECT * FROM voucher_bundles WHERE promo_code = ? AND is_active = 1').get(code) as any;
+      if (promo) isBundle = true;
+    }
 
     if (!promo) {
       return NextResponse.json({ valid: false, error: 'Invalid promo code' }, { headers: CORS_HEADERS });
     }
 
+    if (isBundle) {
+      if (promo.site_id && promo.site_id !== siteId) {
+        return NextResponse.json({ valid: false, error: 'Promo code not valid for this site' }, { headers: CORS_HEADERS });
+      }
+      if (promo.redemption_limit !== null && promo.current_uses >= promo.redemption_limit) {
+        return NextResponse.json({ valid: false, error: 'Promo code usage limit reached' }, { headers: CORS_HEADERS });
+      }
+      return NextResponse.json({
+        valid: true,
+        code: promo.promo_code,
+        discount_type: 'package',
+        discount_value: promo.price,
+        description: promo.name,
+        bundle: {
+          price: promo.price,
+          nights_included: promo.nights_included,
+          included_services: promo.included_services ? JSON.parse(promo.included_services) : [],
+          allowed_days: promo.allowed_days ? JSON.parse(promo.allowed_days) : null,
+        }
+      }, { headers: CORS_HEADERS });
+    }
+
+    // Normal promo code validation
     const now = new Date().toISOString();
     if (promo.valid_from && now < promo.valid_from) {
       return NextResponse.json({ valid: false, error: 'Promo code not yet active' }, { headers: CORS_HEADERS });

@@ -139,25 +139,45 @@ export async function createWidgetReservation(request: NextRequest) {
     let promoDiscount = 0;
     if (promoCode) {
       try {
-        const promo = db.prepare(`
+        const code = String(promoCode).toUpperCase().trim();
+        let promo = db.prepare(`
           SELECT * FROM promo_codes
           WHERE code = ? AND is_active = 1
             AND (valid_from IS NULL OR valid_from <= ?)
             AND (valid_until IS NULL OR valid_until >= ?)
             AND (max_uses IS NULL OR current_uses < max_uses)
-        `).get(String(promoCode).toUpperCase().trim(), checkOut, checkIn) as any;
+        `).get(code, checkOut, checkIn) as any;
+        
+        let isBundle = false;
+
+        if (!promo) {
+          promo = db.prepare(`
+            SELECT * FROM voucher_bundles 
+            WHERE promo_code = ? AND is_active = 1 
+              AND (redemption_limit IS NULL OR current_uses < redemption_limit)
+          `).get(code) as any;
+          if (promo) isBundle = true;
+        }
 
         if (promo) {
-          if (promo.discount_type === 'percentage') {
-            promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
-          } else if (promo.discount_type === 'fixed_price') {
-            promoDiscount = Math.max(0, totalPrice - promo.discount_value);
+          if (isBundle) {
+            // Package overrides the totalPrice completely
+            promoDiscount = Math.max(0, totalPrice - promo.price);
+            db.prepare('UPDATE voucher_bundles SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
           } else {
-            promoDiscount = promo.discount_value;
+            if (promo.discount_type === 'percentage') {
+              promoDiscount = Math.round(totalPrice * promo.discount_value / 100);
+            } else if (promo.discount_type === 'fixed_price' || promo.discount_type === 'fixed_amount') {
+              promoDiscount = Math.max(0, totalPrice - promo.discount_value);
+            } else {
+              promoDiscount = promo.discount_value;
+            }
+            db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
           }
-          db.prepare('UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = ?').run(promo.id);
         }
-      } catch { /* promo lookup failed — continue without discount */ }
+      } catch (err: any) { 
+        console.error('[Promo validation error]', err);
+      }
     }
 
     let certificateDiscount = 0;
