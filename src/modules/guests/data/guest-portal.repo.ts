@@ -80,7 +80,7 @@ export function getOrderedServices(reservationId: string) {
   `).all(reservationId);
 }
 
-export function getGuestPageConfig(unitTypeId: string, propertyId: string) {
+export function getGuestPageConfig(unitTypeId: string, propertyId: string, unitId?: string) {
   const db = getDb();
   const unitTypeConfig = db.prepare('SELECT * FROM guest_page_config WHERE unit_type_id = ?').get(unitTypeId) as any || null;
 
@@ -89,9 +89,7 @@ export function getGuestPageConfig(unitTypeId: string, propertyId: string) {
     propertyConfig = db.prepare('SELECT * FROM property_guest_config WHERE property_id = ?').get(propertyId) as any || null;
   } catch { /* table may not exist yet */ }
 
-  if (!propertyConfig) return unitTypeConfig;
-
-  return {
+  const merged = !propertyConfig ? { ...unitTypeConfig } : {
     ...unitTypeConfig,
     wifi_network: unitTypeConfig?.wifi_network || propertyConfig.wifi_network,
     wifi_password: unitTypeConfig?.wifi_password || propertyConfig.wifi_password,
@@ -115,4 +113,16 @@ export function getGuestPageConfig(unitTypeId: string, propertyId: string) {
     lock_code: unitTypeConfig?.lock_code,
     entry_photo_url: unitTypeConfig?.entry_photo_url,
   };
+
+  // Per-unit override: if unit has its own lock_code or entry_photo_url, use it
+  if (unitId) {
+    try {
+      const unit = db.prepare('SELECT lock_code, entry_photo_url FROM units WHERE id = ?').get(unitId) as any;
+      if (unit?.lock_code) merged.lock_code = unit.lock_code;
+      if (unit?.entry_photo_url) merged.entry_photo_url = unit.entry_photo_url;
+    } catch { /* columns may not exist yet */ }
+  }
+
+  return merged;
 }
+
