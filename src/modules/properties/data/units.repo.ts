@@ -4,6 +4,7 @@ export function listUnits(filters: { category?: string; unitType?: string } = {}
   let query = `
     SELECT
       u.id, u.name, u.code, u.beds, u.zone, u.room_status, u.cleaning_status, u.sort_order, u.is_active,
+      u.lock_code, u.entry_photo_url,
       c.id as category_id, c.name as category_name, c.type as category_type, c.icon as category_icon, c.color as category_color,
       ut.id as unit_type_id, ut.name as unit_type_name, ut.code as unit_type_code, ut.max_adults, ut.base_occupancy,
       b.id as building_id, b.name as building_name, b.code as building_code
@@ -103,7 +104,7 @@ export function updateUnit(id: string, fields: Record<string, unknown>) {
     if (fields[f] === '') fields[f] = null;
   }
 
-  const allowed = ['name', 'code', 'unit_type_id', 'category_id', 'building_id', 'floor', 'zone', 'beds', 'room_status', 'cleaning_status', 'notes', 'sort_order', 'is_active'];
+  const allowed = ['name', 'code', 'unit_type_id', 'category_id', 'building_id', 'floor', 'zone', 'beds', 'room_status', 'cleaning_status', 'notes', 'sort_order', 'is_active', 'lock_code', 'entry_photo_url'];
   const updates: string[] = [];
   const values: unknown[] = [];
 
