@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/layout/Header';
 import { useMobileMenu } from '@/lib/MobileMenuContext';
+import { ImageUploadField } from '@/components/ui/ImageUploadField';
 import {
   ChevronRight,
   Plus,
@@ -681,18 +682,15 @@ export default function SettingsUnitsPage() {
                 <label className="form-label">Код замка</label>
                 <input className="form-input" value={unitForm.lock_code} onChange={(e) => setUnitForm((p) => ({ ...p, lock_code: e.target.value }))} placeholder="Напр.: 4971#" />
               </div>
-              <div className="form-group">
-                <label className="form-label">URL фото входу</label>
-                <input className="form-input" value={unitForm.entry_photo_url} onChange={(e) => setUnitForm((p) => ({ ...p, entry_photo_url: e.target.value }))} placeholder="https://..." />
-              </div>
             </div>
-            {unitForm.entry_photo_url && (
-              <div style={{ marginTop: 8 }}>
-                <img src={unitForm.entry_photo_url} alt="Entry preview" style={{ maxWidth: '100%', maxHeight: 140, borderRadius: 8, objectFit: 'cover' }} />
-              </div>
-            )}
+            <ImageUploadField
+              label="Фото входу / лок-бокса"
+              value={unitForm.entry_photo_url}
+              onChange={(url) => setUnitForm((p) => ({ ...p, entry_photo_url: url }))}
+              folder="entry-photos"
+            />
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 6 }}>
-              💡 Якщо порожньо — буде використано код з налаштувань типу кімнати (Guest Page Settings)
+              💡 Якщо порожньо — буде використано код/фото з налаштувань типу кімнати (Guest Page Settings)
             </div>
           </div>
         </Modal>
