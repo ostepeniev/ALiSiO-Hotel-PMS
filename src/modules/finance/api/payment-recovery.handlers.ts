@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@core/db';
 import { createPaymentOperation, hasPaymentOperation } from './payment-bridge';
 
@@ -105,6 +105,115 @@ export async function listOrphanPayments(): Promise<NextResponse> {
         (a, b) => (b.created_at || '').localeCompare(a.created_at || ''),
       ),
       count: bsoRows.length + soRows.length,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// Paid services list — every SO/BSO in payment_status='paid' across
+// time, augmented with whether a fin_operation exists for that payment.
+// Powers /finance/payments/services dashboard.
+// ════════════════════════════════════════════════════════════
+
+export async function listPaidServices(req: NextRequest): Promise<NextResponse> {
+  try {
+    const db = getDb();
+    const { searchParams } = new URL(req.url);
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    const onlyOrphans = searchParams.get('only_orphans') === '1';
+
+    const dateClause: string[] = [];
+    const dateParams: any[] = [];
+    if (from) { dateClause.push("date(t.created_at) >= ?"); dateParams.push(from); }
+    if (to)   { dateClause.push("date(t.created_at) <= ?"); dateParams.push(to); }
+    const dateWhere = dateClause.length ? `AND ${dateClause.join(' AND ')}` : '';
+
+    const bsoSql = `
+      SELECT
+        'booking_service_orders' AS source_table,
+        t.id AS order_id,
+        t.reservation_id,
+        t.service_id,
+        ads.name AS service_name,
+        t.quantity,
+        t.total_price,
+        t.payment_id,
+        t.payment_status,
+        t.service_date,
+        t.options_json,
+        t.created_at,
+        CASE WHEN g.first_name IS NOT NULL
+             THEN g.first_name || ' ' || COALESCE(g.last_name, '')
+             ELSE NULL END AS guest_name,
+        u.name AS unit_name,
+        (SELECT id FROM fin_operations o
+           WHERE o.reservation_id = t.reservation_id
+             AND o.source = 'teia'
+             AND (o.source_ref = t.payment_id OR o.source_ref = t.reservation_id)
+           LIMIT 1) AS fin_operation_id
+      FROM booking_service_orders t
+      LEFT JOIN additional_services ads ON ads.id = t.service_id
+      LEFT JOIN reservations r ON r.id = t.reservation_id
+      LEFT JOIN guests g ON g.id = r.guest_id
+      LEFT JOIN units u ON u.id = r.unit_id
+      WHERE t.payment_status = 'paid'
+      ${dateWhere}
+    `;
+    const soSql = `
+      SELECT
+        'service_orders' AS source_table,
+        t.id AS order_id,
+        t.reservation_id,
+        t.service_id,
+        ads.name AS service_name,
+        t.quantity,
+        t.total_price,
+        t.payment_id,
+        t.payment_status,
+        t.service_date,
+        NULL AS options_json,
+        t.created_at,
+        CASE WHEN g.first_name IS NOT NULL
+             THEN g.first_name || ' ' || COALESCE(g.last_name, '')
+             ELSE NULL END AS guest_name,
+        u.name AS unit_name,
+        (SELECT id FROM fin_operations o
+           WHERE o.reservation_id = t.reservation_id
+             AND o.source = 'teia'
+             AND (o.source_ref = t.payment_id OR o.source_ref = t.reservation_id)
+           LIMIT 1) AS fin_operation_id
+      FROM service_orders t
+      LEFT JOIN additional_services ads ON ads.id = t.service_id
+      LEFT JOIN reservations r ON r.id = t.reservation_id
+      LEFT JOIN guests g ON g.id = r.guest_id
+      LEFT JOIN units u ON u.id = r.unit_id
+      WHERE t.payment_status = 'paid'
+      ${dateWhere}
+    `;
+
+    const bso = db.prepare(bsoSql).all(...dateParams) as any[];
+    const so = db.prepare(soSql).all(...dateParams) as any[];
+    let rows = [...bso, ...so].sort(
+      (a, b) => (b.created_at || '').localeCompare(a.created_at || ''),
+    );
+    if (onlyOrphans) rows = rows.filter((r) => !r.fin_operation_id);
+
+    const totalsByCurrency: Record<string, number> = {};
+    let withOpCount = 0, orphanCount = 0;
+    for (const r of rows) {
+      totalsByCurrency['CZK'] = (totalsByCurrency['CZK'] || 0) + Number(r.total_price || 0);
+      if (r.fin_operation_id) withOpCount++; else orphanCount++;
+    }
+
+    return NextResponse.json({
+      services: rows,
+      count: rows.length,
+      totals_by_currency: totalsByCurrency,
+      with_fin_operation: withOpCount,
+      orphan_count: orphanCount,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
