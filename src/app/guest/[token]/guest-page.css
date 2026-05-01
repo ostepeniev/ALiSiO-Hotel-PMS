@@ -558,6 +558,13 @@
   color: var(--gp-tint); font-size: 13px; font-weight: 600;
   cursor: pointer; font-family: var(--gp-font);
 }
+.gp-btn-outline {
+  background: transparent;
+  color: var(--gp-tint);
+  border: 2px solid var(--gp-tint);
+  border-radius: 12px;
+}
+.gp-btn-outline:active { background: var(--gp-forest-light); }
 
 /* ═══════════════════════════════════════════════
    SHEET CONTENT HELPERS
