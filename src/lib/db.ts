@@ -3411,6 +3411,34 @@ function runMigrations(database: any) {
     }
   } catch (e: any) { console.log('[DB] Cleanup #C archive supabase BUs:', e.message); }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Finance PR #G: payment_webhook_log — audit trail for every Teya
+  // webhook call. Captures raw payload + outcome so that when a payment
+  // doesn't show up in the system, the admin can look here to see whether
+  // the webhook was received, parsed, matched to an order, and recorded.
+  // ═══════════════════════════════════════════════════════════════════
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS payment_webhook_log (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      provider TEXT NOT NULL,
+      event_type TEXT,
+      session_id TEXT,
+      transaction_id TEXT,
+      payment_ref TEXT,
+      amount REAL,
+      currency TEXT,
+      result TEXT NOT NULL CHECK (result IN ('recorded','no_match','duplicate','signature_invalid','parse_error','unhandled','error')),
+      error_message TEXT,
+      reservation_id TEXT,
+      operation_id TEXT,
+      raw_payload TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_created ON payment_webhook_log(created_at DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_payment_ref ON payment_webhook_log(payment_ref)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_pwl_result ON payment_webhook_log(result)');
+
   // PR #33-#35: Generic spreadsheet import wizard
   // - import_formats: persisted column→field mappings per source format
   //   (Finmap, Booking, Airbnb, etc). Saves user time on repeat imports.
