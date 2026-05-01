@@ -336,6 +336,11 @@ export const upsertMonthlyReport    = withPermission('manage_investors', _upsert
 export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
 export const sendDigestTelegram     = withPermission('manage_investors', _sendDigestTelegram);
 
+// ─── Orphan payment recovery (PR #G) — manage_payments for restore ─
+export { listOrphanPayments } from './payment-recovery.handlers';
+import { restoreOrphanPayment as _restoreOrphanPayment } from './payment-recovery.handlers';
+export const restoreOrphanPayment = withPermission('manage_payments', _restoreOrphanPayment);
+
 // ─── Receipt inbox (PR #27) — import_bank_data + manage_payments ─
 export { listReceiptInboxes, listPendingReceipts, downloadPendingReceipt } from './receipt-inbox.handlers';
 import {

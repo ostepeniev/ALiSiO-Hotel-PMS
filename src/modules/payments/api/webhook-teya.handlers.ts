@@ -19,61 +19,124 @@ function resolveIntentKind(metadata: Record<string, string> | undefined): string
   return 'unknown';
 }
 
+/**
+ * Insert a payment_webhook_log row. Truncate raw payload to 8KB to keep
+ * the table light. Wrapped in try/catch — audit logging must NEVER break
+ * the webhook handler.
+ */
+function logWebhook(
+  db: any,
+  result: 'recorded' | 'no_match' | 'duplicate' | 'signature_invalid' | 'parse_error' | 'unhandled' | 'error',
+  fields: Partial<{
+    eventType: string; sessionId: string; transactionId: string; paymentRef: string;
+    amount: number; currency: string; reservationId: string; operationId: string;
+    errorMessage: string; rawPayload: string;
+  }>,
+): void {
+  try {
+    db.prepare(`
+      INSERT INTO payment_webhook_log
+        (provider, event_type, session_id, transaction_id, payment_ref,
+         amount, currency, result, error_message, reservation_id, operation_id, raw_payload)
+      VALUES ('teya', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      fields.eventType || null, fields.sessionId || null, fields.transactionId || null,
+      fields.paymentRef || null, fields.amount ?? null, fields.currency || null,
+      result, fields.errorMessage || null,
+      fields.reservationId || null, fields.operationId || null,
+      fields.rawPayload ? fields.rawPayload.substring(0, 8192) : null,
+    );
+  } catch (e: any) {
+    console.error('[Teya Webhook] Audit log insert failed (non-fatal):', e.message);
+  }
+}
+
 export async function teyaWebhook(req: Request): Promise<NextResponse> {
+  let rawBodyForLog = '';
+  let dbForLog: any = null;
   try {
     const rawBody = await req.text();
+    rawBodyForLog = rawBody;
     const signature = req.headers.get('x-teya-signature') || '';
 
     console.log('[Teya Webhook] RAW PAYLOAD:', rawBody.substring(0, 3000));
 
+    const db = getDb();
+    dbForLog = db;
+
     if (signature && !verifyWebhookSignature(rawBody, signature)) {
       console.error('[Teya Webhook] Invalid signature');
+      logWebhook(db, 'signature_invalid', { rawPayload: rawBody });
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    const event = JSON.parse(rawBody);
+    let event: any;
+    try {
+      event = JSON.parse(rawBody);
+    } catch (parseErr: any) {
+      logWebhook(db, 'parse_error', { rawPayload: rawBody, errorMessage: parseErr.message });
+      return NextResponse.json({ received: true, error: 'parse_error' });
+    }
+
     const eventType = event.type || event.event_type || event.event
       || event.eventType || event.action || detectEventType(event);
 
     console.log('[Teya Webhook] Parsed event:', eventType);
 
-    const db = getDb();
     const metadata = event.data?.metadata || event.metadata;
     const intentKind = resolveIntentKind(metadata);
+    const refs = extractPaymentRef(event);
 
     if (isPaymentSuccess(eventType, event)) {
-      handlePaymentSuccess(db, event, eventType);
-      const { sessionId, amount, currency } = extractPaymentRef(event);
-      if (sessionId) {
+      const outcome = handlePaymentSuccess(db, event, eventType);
+      logWebhook(db, outcome.result, {
+        eventType, sessionId: refs.sessionId, transactionId: refs.transactionId,
+        paymentRef: outcome.effectiveRef || refs.sessionId || refs.transactionId,
+        amount: refs.amount, currency: refs.currency,
+        reservationId: outcome.reservationId, operationId: outcome.operationId,
+        rawPayload: rawBody,
+      });
+      if (refs.sessionId) {
         eventBus
           .emit('payment.completed', {
-            sessionId,
+            sessionId: refs.sessionId,
             provider: 'teya',
             intentKind,
-            paymentId: sessionId,
-            amount: amount > 1000 ? amount / 100 : amount,
-            currency,
+            paymentId: refs.sessionId,
+            amount: refs.amount > 1000 ? refs.amount / 100 : refs.amount,
+            currency: refs.currency,
           })
           .catch((e) => console.error('[Teya Webhook] emit completed error:', e));
       }
     } else if (isPaymentFailed(eventType, event)) {
       handlePaymentFailed(db, event);
-      const { sessionId } = extractPaymentRef(event);
-      if (sessionId) {
+      logWebhook(db, 'recorded', {
+        eventType, sessionId: refs.sessionId, transactionId: refs.transactionId,
+        amount: refs.amount, currency: refs.currency, rawPayload: rawBody,
+      });
+      if (refs.sessionId) {
         eventBus
-          .emit('payment.failed', { sessionId, provider: 'teya', intentKind })
+          .emit('payment.failed', { sessionId: refs.sessionId, provider: 'teya', intentKind })
           .catch((e) => console.error('[Teya Webhook] emit failed error:', e));
       }
     } else if (isRefund(eventType)) {
       handleRefund(db, event);
+      logWebhook(db, 'recorded', {
+        eventType, sessionId: refs.sessionId, transactionId: refs.transactionId,
+        amount: refs.amount, currency: refs.currency, rawPayload: rawBody,
+      });
     } else {
       console.log('[Teya Webhook] Unhandled event:', eventType);
+      logWebhook(db, 'unhandled', { eventType, rawPayload: rawBody });
     }
 
     return NextResponse.json({ received: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[Teya Webhook] Error:', message);
+    if (dbForLog) {
+      logWebhook(dbForLog, 'error', { errorMessage: message, rawPayload: rawBodyForLog });
+    }
     return NextResponse.json({ received: true, error: message });
   }
 }
@@ -114,10 +177,20 @@ function extractPaymentRef(event: any): { sessionId: string; transactionId: stri
   return { sessionId, transactionId, amount, currency };
 }
 
-function handlePaymentSuccess(db: any, event: any, eventType: string) {
+interface SuccessOutcome {
+  result: 'recorded' | 'no_match' | 'duplicate';
+  effectiveRef?: string;
+  reservationId?: string;
+  operationId?: string;
+}
+
+function handlePaymentSuccess(db: any, event: any, eventType: string): SuccessOutcome {
   const { sessionId, transactionId, amount, currency } = extractPaymentRef(event);
   const paymentRef = sessionId || transactionId;
-  if (!paymentRef) { console.log('[Teya Webhook] No payment reference found in success event'); return; }
+  if (!paymentRef) {
+    console.log('[Teya Webhook] No payment reference found in success event');
+    return { result: 'no_match' };
+  }
   console.log('[Teya Webhook] Processing payment success:', { eventType, sessionId, transactionId, amount, currency });
 
   const result1 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(paymentRef);
@@ -160,7 +233,8 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
     } catch { /* non-critical */ }
   }
 
-  if (bsoTotal > 0 || soTotal > 0) recordPayment(db, effectiveRef, amount, currency);
+  let recorded: { operationId?: string; reservationId?: string; duplicate?: boolean } | undefined;
+  if (bsoTotal > 0 || soTotal > 0) recorded = recordPayment(db, effectiveRef, amount, currency);
   if (bsoTotal > 0) sendWidgetOrderTG(db, effectiveRef, currency);
   if (soTotal > 0)  sendGuestOrderTG(db, effectiveRef, currency);
 
@@ -201,6 +275,19 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
   } catch (stageErr: any) { console.error('[Teya Webhook] Stage transition error:', stageErr.message); }
 
   void result4;
+
+  if (bsoTotal === 0 && soTotal === 0) {
+    return { result: 'no_match', effectiveRef };
+  }
+  if (recorded?.duplicate) {
+    return { result: 'duplicate', effectiveRef, reservationId: recorded.reservationId };
+  }
+  return {
+    result: 'recorded',
+    effectiveRef,
+    reservationId: recorded?.reservationId,
+    operationId: recorded?.operationId,
+  };
 }
 
 function handlePaymentFailed(db: any, event: any) {
@@ -221,7 +308,9 @@ function handleRefund(db: any, event: any) {
   console.log('[Teya Webhook] Refund confirmed:', ref);
 }
 
-function recordPayment(db: any, paymentRef: string, amount: number, currency: string) {
+function recordPayment(
+  db: any, paymentRef: string, amount: number, currency: string,
+): { operationId?: string; reservationId?: string; duplicate?: boolean } | undefined {
   try {
     const order = db.prepare(`
       SELECT reservation_id, total_price, service_id, options_json, service_date
@@ -229,7 +318,7 @@ function recordPayment(db: any, paymentRef: string, amount: number, currency: st
       UNION ALL SELECT reservation_id, total_price, service_id, NULL, NULL
       FROM service_orders WHERE payment_id = ? LIMIT 1
     `).get(paymentRef, paymentRef) as any;
-    if (!order) return;
+    if (!order) return undefined;
     const amountMajor = amount > 1000 ? amount / 100 : amount;
     let notes = `Teya online: ${order.service_id}`;
     if (order.options_json) {
@@ -238,21 +327,26 @@ function recordPayment(db: any, paymentRef: string, amount: number, currency: st
     // PR #6: record via finance fin_operations bridge
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createPaymentOperation, hasPaymentOperation } = require('@/modules/finance/api/payment-bridge');
-    if (!hasPaymentOperation(order.reservation_id, 'teia', paymentRef)) {
-      const { operationId } = createPaymentOperation({
-        reservationId: order.reservation_id,
-        amount: amountMajor,
-        currency,
-        method: 'online',
-        paymentSubtype: 'service',
-        source: 'teia',
-        sourceRef: paymentRef,
-        status: 'completed',
-        comment: notes,
-      });
-      console.log('[Teya Webhook] Payment recorded in finance:', operationId, amountMajor, currency);
+    if (hasPaymentOperation(order.reservation_id, 'teia', paymentRef)) {
+      return { reservationId: order.reservation_id, duplicate: true };
     }
-  } catch (e: any) { console.error('[Teya Webhook] Failed to record payment:', e.message); }
+    const { operationId } = createPaymentOperation({
+      reservationId: order.reservation_id,
+      amount: amountMajor,
+      currency,
+      method: 'online',
+      paymentSubtype: 'service',
+      source: 'teia',
+      sourceRef: paymentRef,
+      status: 'completed',
+      comment: notes,
+    });
+    console.log('[Teya Webhook] Payment recorded in finance:', operationId, amountMajor, currency);
+    return { operationId, reservationId: order.reservation_id };
+  } catch (e: any) {
+    console.error('[Teya Webhook] Failed to record payment:', e.message);
+    return undefined;
+  }
 }
 
 function sendWidgetOrderTG(db: any, paymentRef: string, currency: string) {

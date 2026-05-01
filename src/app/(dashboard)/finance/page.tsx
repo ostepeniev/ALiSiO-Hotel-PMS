@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle, Settings, ListChecks, Repeat } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle, Settings, ListChecks, Repeat, AlertOctagon } from 'lucide-react';
 import { useDevice } from '@/lib/useDevice';
 import MobileFinanceOverview from '@/components/mobile/pages/MobileFinanceOverview';
 import ReconcileWidget from './_components/ReconcileWidget';
@@ -155,6 +155,18 @@ export default function FinanceOverviewPage() {
             }}
           >
             <Repeat size={16} /> Clearing
+          </Link>
+          <Link
+            href="/finance/payments/orphans"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '0.5rem 1rem', borderRadius: '8px',
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text-primary)', textDecoration: 'none', fontSize: 14,
+            }}
+            title="Знайти платежі без fin_operation"
+          >
+            <AlertOctagon size={16} /> Orphans
           </Link>
           <Link
             href="/finance/settings"
