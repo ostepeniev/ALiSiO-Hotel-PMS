@@ -300,12 +300,25 @@ async function processReservation(db: any, res: HostexReservation, result: SyncR
       WHERE id = ?
     `).run(...params);
 
-    // Auto-create payment if prepaid and none exists
+    // Auto-create or update payment if prepaid
     if (paymentInfo.isPrepaid && totalCzk > 0) {
-      const hasPay = db.prepare(
-        "SELECT id FROM fin_operations WHERE reservation_id = ? AND source IN ('hostex','booking_widget','teia') LIMIT 1"
-      ).get(existing.id);
-      if (!hasPay) createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
+      const existingPay = db.prepare(
+        "SELECT id, amount FROM fin_operations WHERE reservation_id = ? AND source = 'hostex' LIMIT 1"
+      ).get(existing.id) as { id: string; amount: number } | undefined;
+
+      if (!existingPay) {
+        // First time — create auto-payment
+        createAutoPayment(db, existing.id, totalCzk, res.channel_type, res.booked_at);
+      } else if (existingPay.amount !== totalCzk) {
+        // Total changed (rate update / nights change / price correction) — keep amounts in sync
+        db.prepare(
+          "UPDATE fin_operations SET amount = ?, updated_at = datetime('now') WHERE id = ?"
+        ).run(totalCzk, existingPay.id);
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { recalcReservationPaymentStatus } = require('@/modules/finance/api/operations.handlers');
+        recalcReservationPaymentStatus(db, existing.id);
+        console.log(`[Hostex Sync] Auto-payment updated: ${existingPay.amount} → ${totalCzk} CZK (res: ${existing.id})`);
+      }
     }
 
     // PR #15: upsert clearing receivable for channel-sourced bookings
