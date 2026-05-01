@@ -128,40 +128,54 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
 
   console.log('[Teya Webhook] Payment confirmed:', { paymentRef, amount, currency, bookingOrders: result1.changes, serviceOrders: result2.changes, reservations: result3.changes + result4.changes });
 
-  if (result2.changes === 0 && !result1.changes) {
-    // Try again with transactionId as fallback (some Teya versions use tx ID in webhook)
-    const txFallback = db.prepare("UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
+  // Track changes from BOTH primary + fallback paths so the gates below
+  // fire even when Teya labelled the order with transactionId rather than
+  // sessionId. Previously only result1/result2 were checked, so fallback
+  // hits silently updated orders but never created a fin_operation, sent
+  // the Telegram notification, or generated the invoice — guests saw
+  // "paid" on the page but nothing showed in finance.
+  let txBsoChanges = 0;
+  let txSoChanges = 0;
+  let effectiveRef = paymentRef;
+  if (result2.changes === 0 && !result1.changes && transactionId && transactionId !== paymentRef) {
+    const txFallback  = db.prepare("UPDATE service_orders SET payment_status = 'paid', status = 'confirmed' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
     const txFallback2 = db.prepare("UPDATE booking_service_orders SET payment_status = 'paid' WHERE payment_id = ? AND payment_status IN ('pending', 'none')").run(transactionId);
-    console.log('[Teya Webhook] Fallback by transactionId:', { transactionId, so: txFallback.changes, bso: txFallback2.changes });
+    txSoChanges = txFallback.changes;
+    txBsoChanges = txFallback2.changes;
+    if (txSoChanges > 0 || txBsoChanges > 0) effectiveRef = transactionId;
+    console.log('[Teya Webhook] Fallback by transactionId:', { transactionId, so: txSoChanges, bso: txBsoChanges, effectiveRef });
   }
 
-  if (result2.changes > 0) {
+  const bsoTotal = result1.changes + txBsoChanges;
+  const soTotal  = result2.changes + txSoChanges;
+
+  if (soTotal > 0) {
     try {
       db.prepare(`
         UPDATE cart_events SET abandon_notified_at = datetime('now')
         WHERE reservation_id IN (
           SELECT reservation_id FROM service_orders WHERE payment_id = ?
         ) AND abandon_notified_at IS NULL
-      `).run(paymentRef);
+      `).run(effectiveRef);
     } catch { /* non-critical */ }
   }
 
-  if (result1.changes > 0 || result2.changes > 0) recordPayment(db, paymentRef, amount, currency);
-  if (result1.changes > 0) sendWidgetOrderTG(db, paymentRef, currency);
-  if (result2.changes > 0) sendGuestOrderTG(db, paymentRef, currency);
+  if (bsoTotal > 0 || soTotal > 0) recordPayment(db, effectiveRef, amount, currency);
+  if (bsoTotal > 0) sendWidgetOrderTG(db, effectiveRef, currency);
+  if (soTotal > 0)  sendGuestOrderTG(db, effectiveRef, currency);
 
   // Auto-generate invoice when a reservation transitions to fully paid via webhook.
   // Until now this only happened on manual PATCH (admin marking paid). Public Teya
   // payments would mark payment_status='paid' but never call generateInvoiceForReservation,
   // leaving recently-paid bookings without an invoice (PAVEL MICHALEK, Ann-Kathrin Rechner).
-  if (result3.changes > 0 || result4.changes > 0) {
+  if (result3.changes > 0 || result4.changes > 0 || bsoTotal > 0) {
     try {
       const paid = db.prepare(`
         SELECT DISTINCT r.id FROM reservations r
         WHERE r.payment_status = 'paid'
           AND (r.payment_id = ?
                OR r.id IN (SELECT reservation_id FROM booking_service_orders WHERE payment_id = ? AND reservation_id IS NOT NULL))
-      `).all(paymentRef, paymentRef) as Array<{ id: string }>;
+      `).all(effectiveRef, effectiveRef) as Array<{ id: string }>;
       for (const row of paid) {
         const invId = generateInvoiceForReservation(row.id);
         console.log('[Teya Webhook] Auto-invoice for reservation', row.id, '→', invId);
@@ -179,7 +193,7 @@ function handlePaymentSuccess(db: any, event: any, eventType: string) {
         SELECT so.reservation_id FROM service_orders so WHERE so.payment_id = ?
         UNION SELECT bso.reservation_id FROM booking_service_orders bso WHERE bso.payment_id = ?
       ) LIMIT 1
-    `).get(paymentRef, paymentRef) as any;
+    `).get(effectiveRef, effectiveRef) as any;
     if (leadByPayment) {
       const totalPrice = leadByPayment.total_price || leadByPayment.estimated_value || 0;
       onPaymentReceived(leadByPayment.id, leadByPayment.stage, !!(amount && totalPrice > 0 && amount >= totalPrice * 0.9));
