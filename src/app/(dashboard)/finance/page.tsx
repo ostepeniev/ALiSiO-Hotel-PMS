@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle, Settings, ListChecks, Repeat, AlertOctagon } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, BarChart3, AlertTriangle, CheckCircle, Settings, ListChecks, Repeat, AlertOctagon, ShoppingBag } from 'lucide-react';
 import { useDevice } from '@/lib/useDevice';
 import MobileFinanceOverview from '@/components/mobile/pages/MobileFinanceOverview';
 import ReconcileWidget from './_components/ReconcileWidget';
@@ -155,6 +155,18 @@ export default function FinanceOverviewPage() {
             }}
           >
             <Repeat size={16} /> Clearing
+          </Link>
+          <Link
+            href="/finance/payments/services"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '0.5rem 1rem', borderRadius: '8px',
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text-primary)', textDecoration: 'none', fontSize: 14,
+            }}
+            title="Усі оплачені послуги по датах + статус fin_operation"
+          >
+            <ShoppingBag size={16} /> Послуги
           </Link>
           <Link
             href="/finance/payments/orphans"

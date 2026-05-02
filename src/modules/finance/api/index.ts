@@ -336,8 +336,8 @@ export const upsertMonthlyReport    = withPermission('manage_investors', _upsert
 export const deleteMonthlyReport    = withPermission('manage_investors', _deleteMonthlyReport);
 export const sendDigestTelegram     = withPermission('manage_investors', _sendDigestTelegram);
 
-// ─── Orphan payment recovery (PR #G) — manage_payments for restore ─
-export { listOrphanPayments } from './payment-recovery.handlers';
+// ─── Orphan payment recovery (PR #G) + paid services (PR #H) ──
+export { listOrphanPayments, listPaidServices } from './payment-recovery.handlers';
 import { restoreOrphanPayment as _restoreOrphanPayment } from './payment-recovery.handlers';
 export const restoreOrphanPayment = withPermission('manage_payments', _restoreOrphanPayment);
 
